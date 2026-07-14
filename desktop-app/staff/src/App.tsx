@@ -7,6 +7,9 @@ import MeterReadings from './pages/MeterReadings';
 import Bills from './pages/Bills';
 import Payments from './pages/Payments';
 import Announcements from './pages/Announcements';
+import Messages from './pages/Messages';
+import Reports from './pages/Reports';
+import ProfileSettings from './pages/ProfileSettings';
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
@@ -26,32 +29,11 @@ function App() {
       case 'announcements':
         return <Announcements />;
       case 'messages':
-        return (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Messages Page</h2>
-              <p className="text-gray-600">Coming soon...</p>
-            </div>
-          </div>
-        );
+        return <Messages />;
       case 'reports':
-        return (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Reports Page</h2>
-              <p className="text-gray-600">Coming soon...</p>
-            </div>
-          </div>
-        );
+        return <Reports />;
       case 'settings':
-        return (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Profile Settings</h2>
-              <p className="text-gray-600">Coming soon...</p>
-            </div>
-          </div>
-        );
+        return <ProfileSettings />;
       default:
         return <Dashboard />;
     }

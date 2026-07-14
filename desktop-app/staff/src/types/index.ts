@@ -62,3 +62,81 @@ export interface DashboardStats {
   totalRevenue: number;
   revenueGrowth: number;
 }
+
+export interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  senderType: 'resident' | 'staff';
+  timestamp: string;
+  read: boolean;
+  imageUrl?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+}
+
+export interface Conversation {
+  id: string;
+  residentId: string;
+  residentName: string;
+  residentAvatar?: string;
+  residentInitials: string;
+  accountNo: string;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+  category: 'billing' | 'complaint' | 'inquiry' | 'payment' | 'technical';
+  status: 'online' | 'offline';
+  messages: Message[];
+}
+
+export type MessageCategory = 'billing' | 'complaint' | 'inquiry' | 'payment' | 'technical';
+
+export interface StaffProfile {
+  id: string;
+  fullName: string;
+  employeeId: string;
+  position: string;
+  office: string;
+  email: string;
+  mobileNumber: string;
+  address: string;
+  profilePicture?: string;
+  accountStatus: 'active' | 'inactive';
+  lastLogin: string;
+}
+
+export interface SecuritySettings {
+  requirePasswordOnLogin: boolean;
+  enableTwoFactor: boolean;
+  notifySuspiciousLogin: boolean;
+}
+
+export interface NotificationPreferences {
+  newPayments: boolean;
+  newMessages: boolean;
+  newComplaints: boolean;
+  announcementAlerts: boolean;
+  dailySummary: boolean;
+}
+
+export interface ApplicationPreferences {
+  theme: 'light' | 'dark';
+  language: 'english' | 'filipino';
+  dateFormat: 'MM/DD/YYYY' | 'DD/MM/YYYY';
+  autoRefresh: '1min' | '5min' | '10min';
+}
+
+export interface SessionInfo {
+  currentDevice: string;
+  operatingSystem: string;
+  lastLogin: string;
+  sessionStatus: 'active' | 'inactive';
+}
+
+export interface ActivitySummary {
+  billsGenerated: number;
+  paymentsVerified: number;
+  residentsAssisted: number;
+  announcementsPosted: number;
+}

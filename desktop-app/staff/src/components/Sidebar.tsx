@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -12,13 +12,39 @@ import {
   LogOut,
   Droplet,
 } from 'lucide-react';
+import LogoutModal from './LogoutModal';
 
 interface SidebarProps {
   activePage: string;
   onPageChange: (page: string) => void;
+  onLogout?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout }) => {
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogoutClick = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleLogoutConfirm = () => {
+    setShowLogoutModal(false);
+    if (onLogout) {
+      onLogout();
+    } else {
+      // Default logout behavior - redirect to login or clear session
+      console.log('Logging out...');
+      // In a real app, you would:
+      // 1. Clear local storage/session storage
+      // 2. Clear any auth tokens
+      // 3. Redirect to login page
+      // Example: window.location.href = '/login';
+    }
+  };
+
+  const handleLogoutCancel = () => {
+    setShowLogoutModal(false);
+  };
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'residents', label: 'Residents', icon: Users },
@@ -81,11 +107,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange }) => {
           <Settings className="w-5 h-5" />
           <span className="text-sm font-medium">Profile Settings</span>
         </button>
-        <button className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-all duration-200">
+        <button
+          onClick={handleLogoutClick}
+          className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-all duration-200"
+        >
           <LogOut className="w-5 h-5" />
           <span className="text-sm font-medium">Logout</span>
         </button>
       </div>
+
+      {/* Logout Modal */}
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onClose={handleLogoutCancel}
+        onConfirm={handleLogoutConfirm}
+      />
     </div>
   );
 };

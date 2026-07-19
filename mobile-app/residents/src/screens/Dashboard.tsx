@@ -5,6 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { QuickActions } from '@/components/ui/QuickActions';
+import NotificationsScreen from '@/screens/Notifications';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
 
@@ -13,7 +14,7 @@ type DashboardProps = {
   onTabPress?: (tab: NavTab) => void;
 };
 
-type QuickActionScreen = 'viewBills' | 'waterSchedule' | null;
+type QuickActionScreen = 'viewBills' | 'waterSchedule' | 'notifications' | null;
 
 function EditFab({ onPress }: { onPress?: () => void }) {
   return (
@@ -70,6 +71,19 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
     );
   }
 
+  if (quickActionScreen === 'notifications') {
+    return (
+      <NotificationsScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
+
   return (
     <View className="flex-1 bg-slate-50">
       <View className="bg-brand px-5 pb-6" style={{ paddingTop: insets.top + 16 }}>
@@ -112,6 +126,7 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
           <QuickActions
             onViewBills={() => setQuickActionScreen('viewBills')}
             onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
+            onNotifications={() => setQuickActionScreen('notifications')}
           />
 
           <View>

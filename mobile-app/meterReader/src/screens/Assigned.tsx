@@ -85,7 +85,7 @@ export default function Assigned({
             <Pressable
               onPress={() => {
                 setSearchQuery('');
-                setFilter('all');
+                setFilter('all'); 
               }}
               className="mt-3"
               accessibilityRole="button"

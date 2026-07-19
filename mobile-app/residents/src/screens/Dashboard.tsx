@@ -1,14 +1,19 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { QuickActions } from '@/components/ui/QuickActions';
+import ViewBillsScreen from '@/screens/ViewBills';
+import WaterScheduleScreen from '@/screens/WaterSchedule';
 
 type DashboardProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
 };
+
+type QuickActionScreen = 'viewBills' | 'waterSchedule' | null;
 
 function EditFab({ onPress }: { onPress?: () => void }) {
   return (
@@ -37,10 +42,36 @@ function EditFab({ onPress }: { onPress?: () => void }) {
 export default function Dashboard({ activeTab = 'dashboard', onTabPress }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
+  const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
+
+  if (quickActionScreen === 'viewBills') {
+    return (
+      <ViewBillsScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
+
+  if (quickActionScreen === 'waterSchedule') {
+    return (
+      <WaterScheduleScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
 
   return (
     <View className="flex-1 bg-slate-50">
-      {/* Header */}
       <View className="bg-brand px-5 pb-6" style={{ paddingTop: insets.top + 16 }}>
         <Text className="text-2xl font-bold text-white">Barangay Kalunasan</Text>
         <Text className="mt-1 text-base text-white/80">Good day, Resident</Text>
@@ -52,7 +83,6 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-6 px-4 pt-5">
-          {/* Current Water Bill */}
           <View
             className="rounded-2xl bg-white p-5"
             style={{
@@ -79,10 +109,11 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
             </Pressable>
           </View>
 
-          {/* Quick Actions */}
-          <QuickActions />
+          <QuickActions
+            onViewBills={() => setQuickActionScreen('viewBills')}
+            onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
+          />
 
-          {/* Service Announcements */}
           <View>
             <Text className="mb-3 text-base font-bold text-slate-800">Service Announcements</Text>
             <View

@@ -26,6 +26,11 @@ module.exports = {
         completed: {
           soft: '#D6EAF5',
         },
+        alert: {
+          DEFAULT: '#C62828',
+          soft: '#FDECEA',
+          muted: '#B71C1C',
+        },
         nav: {
           bar: '#C5CDD6',
           active: '#1E3A5F',

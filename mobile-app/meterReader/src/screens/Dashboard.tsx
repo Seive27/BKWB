@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
+import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 
 type DashboardProps = {
   activeTab?: NavTab;
@@ -28,17 +29,6 @@ const cardShadow = {
   shadowRadius: 8,
   elevation: 2,
 };
-
-function CloudCheckIcon() {
-  return (
-    <View className="h-[22px] w-[22px] items-center justify-center">
-      <Text className="text-base leading-[18px] text-navy">☁</Text>
-      <View className="absolute bottom-0 right-[-1px] h-2.5 w-2.5 items-center justify-center rounded-full bg-navy">
-        <Text className="text-[7px] font-bold leading-2 text-white">✓</Text>
-      </View>
-    </View>
-  );
-}
 
 function CompletedIcon() {
   return (
@@ -87,7 +77,7 @@ export default function Dashboard({
           </View>
           <View className="flex-row items-center gap-1.5">
             <Text className="text-base font-bold text-navy">{MOCK.dateLabel}</Text>
-            <CloudCheckIcon />
+            <CloudStatusIcon />
           </View>
         </View>
 

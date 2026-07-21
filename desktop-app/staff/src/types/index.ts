@@ -92,6 +92,43 @@ export interface Conversation {
 
 export type MessageCategory = 'billing' | 'complaint' | 'inquiry' | 'payment' | 'technical';
 
+// Ticket Management Types
+export type TicketCategory = 'billing' | 'payment' | 'meter-reading' | 'water-service' | 'leak-report' | 'general-inquiry';
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TicketStatus = 'pending' | 'in-progress' | 'resolved' | 'closed';
+
+export interface TicketActivity {
+  id: string;
+  type: 'submitted' | 'staff-reply' | 'resident-reply' | 'image' | 'status-change' | 'priority-change' | 'assignment';
+  userId: string;
+  userName: string;
+  userRole: 'resident' | 'staff';
+  message: string;
+  imageUrl?: string;
+  timestamp: string;
+}
+
+export interface Ticket {
+  id: string;
+  ticketNumber: string;
+  residentId: string;
+  residentName: string;
+  residentInitials: string;
+  accountNo: string;
+  residentContact: string;
+  residentAddress: string;
+  category: TicketCategory;
+  subject: string;
+  description: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  assignedStaff: string | null;
+  attachments: { name: string; url: string }[];
+  activities: TicketActivity[];
+  dateCreated: string;
+  dateUpdated: string;
+}
+
 export interface StaffProfile {
   id: string;
   fullName: string;

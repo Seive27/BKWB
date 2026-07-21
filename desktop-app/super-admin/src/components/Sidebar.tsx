@@ -1,5 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, Users, BarChart3, FileText, Settings } from 'lucide-react';
+import logo from '../assets/logo.jpg';
 
 interface SidebarProps {
   activePage: string;
@@ -20,9 +21,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange }) => {
       {/* Logo Section */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">B</span>
-          </div>
+          <img
+            src={logo}
+            alt="BKWB Logo"
+            className="w-10 h-10 rounded-lg object-cover"
+          />
           <div>
             <h1 className="text-sm font-bold text-gray-900">BKWB</h1>
             <p className="text-xs text-gray-500">Super Admin</p>

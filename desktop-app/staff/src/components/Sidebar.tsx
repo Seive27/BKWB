@@ -6,12 +6,12 @@ import {
   Receipt,
   CreditCard,
   Megaphone,
-  MessageSquare,
+  TicketCheck,
   BarChart3,
   Settings,
   LogOut,
-  Droplet,
 } from 'lucide-react';
+import logo from '../assets/logo.jpg';
 import LogoutModal from './LogoutModal';
 
 interface SidebarProps {
@@ -52,7 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
     { id: 'bills', label: 'Bills', icon: Receipt },
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'announcements', label: 'Announcements', icon: Megaphone },
-    { id: 'messages', label: 'Messages', icon: MessageSquare },
+    { id: 'ticket-management', label: 'Ticket Management', icon: TicketCheck },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
   ];
 
@@ -61,12 +61,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
       {/* Logo Section */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-            <Droplet className="w-6 h-6 text-white" />
-          </div>
+          <img
+            src={logo}
+            alt="BKWB Logo"
+            className="w-10 h-10 rounded-lg object-cover"
+          />
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Kalunasan Waters</h1>
-            <p className="text-xs text-gray-500">Admin Management</p>
+            <h1 className="text-lg font-bold text-gray-900">BKWB</h1>
+            <p className="text-xs text-gray-500">Staff Dashboard</p>
           </div>
         </div>
       </div>

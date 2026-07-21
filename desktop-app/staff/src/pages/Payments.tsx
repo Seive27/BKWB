@@ -407,9 +407,15 @@ const ConfirmPaymentModal: React.FC<{
 const PaymentSuccessModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md">
-        {/* Header */}
-        <div className="p-8 text-center">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
+        {/* Header with close button */}
+        <div className="relative p-8 text-center flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
@@ -417,8 +423,8 @@ const PaymentSuccessModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           <p className="text-sm text-gray-600">Thank you for your payment.</p>
         </div>
 
-        {/* Body */}
-        <div className="px-8 pb-8 space-y-6">
+        {/* Scrollable Body */}
+        <div className="px-8 pb-8 space-y-6 overflow-y-auto">
           <div className="p-6 bg-gray-50 rounded-xl">
             <p className="text-xs text-gray-500 uppercase text-center mb-2">Total Paid</p>
             <p className="text-4xl font-bold text-primary-600 text-center">₱500.00</p>

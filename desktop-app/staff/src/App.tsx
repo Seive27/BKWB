@@ -7,7 +7,7 @@ import MeterReadings from './pages/MeterReadings';
 import Bills from './pages/Bills';
 import Payments from './pages/Payments';
 import Announcements from './pages/Announcements';
-import Messages from './pages/Messages';
+import TicketManagement from './pages/Tickets';
 import Reports from './pages/Reports';
 import ProfileSettings from './pages/ProfileSettings';
 
@@ -28,8 +28,8 @@ function App() {
         return <Payments />;
       case 'announcements':
         return <Announcements />;
-      case 'messages':
-        return <Messages />;
+      case 'ticket-management':
+        return <TicketManagement />;
       case 'reports':
         return <Reports />;
       case 'settings':

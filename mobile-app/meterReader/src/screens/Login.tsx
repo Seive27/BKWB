@@ -1,0 +1,106 @@
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+type LoginProps = {
+  onLogin?: () => void;
+};
+
+export default function Login({ onLogin }: LoginProps) {
+  const insets = useSafeAreaInsets();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  return (
+    <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
+      <StatusBar style="dark" />
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            paddingHorizontal: 28,
+            paddingBottom: Math.max(insets.bottom, 24),
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="items-center">
+            <Image
+              source={require('../../assets/Logo/Logo.BK.png')}
+              style={{ width: 200, height: 200, marginBottom: 20 }}
+              contentFit="contain"
+              accessibilityLabel="Barangay Kalunasan official seal"
+            />
+
+            <Text className="text-center text-[22px] font-bold leading-7 text-[#1E3A5F]">
+              Barangay Kalunasan{'\n'}Water Billing System
+            </Text>
+            <Text className="mt-2 text-center text-[14px] leading-5 text-[#707B81]">
+              Secure access to your water billing information.
+            </Text>
+          </View>
+
+          <View className="mt-10 gap-3.5">
+            <TextInput
+              value={username}
+              onChangeText={setUsername}
+              placeholder="Username or Account Number"
+              placeholderTextColor="#9CA3AF"
+              className="rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              returnKeyType="next"
+            />
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor="#9CA3AF"
+              className="rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              returnKeyType="done"
+              onSubmitEditing={onLogin}
+            />
+          </View>
+
+          <Pressable
+            onPress={onLogin}
+            className="mt-5 items-center justify-center rounded-md bg-[#3581A7] py-3.5 active:opacity-85"
+            accessibilityRole="button"
+            accessibilityLabel="Login"
+          >
+            <Text className="text-base font-semibold text-white">Login</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {}}
+            className="mt-5 items-center py-1 active:opacity-70"
+            accessibilityRole="link"
+            accessibilityLabel="Forgot Password"
+          >
+            <Text className="text-[14px] text-[#6497B1]">Forgot Password?</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}

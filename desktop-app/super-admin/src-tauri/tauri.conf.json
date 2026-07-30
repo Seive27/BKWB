@@ -12,13 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "BKWB - Super Admin Dashboard",
-        "width": 1920,
-        "height": 1080,
-        "minWidth": 1366,
-        "minHeight": 768,
+        "title": "BKWB - Super Admin",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "center": true
       }
     ],
     "security": {

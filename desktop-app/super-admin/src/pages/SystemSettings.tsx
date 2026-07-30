@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Key, Radio, Plus, Edit } from 'lucide-react';
-import BroadcastNowModal from '../components/BroadcastNowModal';
+import BroadcastNowModal from '../components/modals/BroadcastNowModal';
 
 interface Role {
   id: string;
@@ -12,7 +12,6 @@ interface Role {
 
 const SystemSettings: React.FC = () => {
   const [isMfaEnabled, setIsMfaEnabled] = useState(true);
-  const [isEncryptionEnabled, setIsEncryptionEnabled] = useState(true);
   const [minPasswordLength, setMinPasswordLength] = useState('12-characters');
   const [expirationCycle, setExpirationCycle] = useState('90-days');
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
@@ -24,7 +23,7 @@ const SystemSettings: React.FC = () => {
   const [emailDispatch, setEmailDispatch] = useState(false);
 
   // Roles & Permissions
-  const [roles, setRoles] = useState<Role[]>([
+  const [roles, _setRoles] = useState<Role[]>([
     { id: '1', name: 'Super Admin', users: 12, scope: 'GLOBAL', color: 'blue' },
     { id: '2', name: 'System Editor', users: 45, scope: 'REGIONAL', color: 'green' },
     { id: '3', name: 'Audit Only', users: 8, scope: 'READ-ONLY', color: 'orange' },

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Users, Receipt, AlertCircle, DollarSign } from 'lucide-react';
-import StatCard from '../components/StatCard';
-import RevenueChart from '../components/RevenueChart';
-import MeterReadingsTable from '../components/MeterReadingsTable';
-import AnnouncementsPanel from '../components/AnnouncementsPanel';
+import StatCard from '../components/common/StatCard';
+import RevenueChart from '../components/ui/RevenueChart';
+import MeterReadingsTable from '../components/ui/MeterReadingsTable';
+import AnnouncementsPanel from '../components/ui/AnnouncementsPanel';
 import {
   dashboardStats,
   monthlyRevenue,

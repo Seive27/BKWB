@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Pause, RotateCcw, Download, Info, AlertTriangle, XCircle, CheckCircle } from 'lucide-react';
-import ExportAuditLogsModal from '../components/ExportAuditLogsModal';
+import ExportAuditLogsModal from '../components/modals/ExportAuditLogsModal';
 
 interface AuditLogsConsoleProps {
   onNavigateBack: () => void;
@@ -19,7 +19,7 @@ const AuditLogsConsole: React.FC<AuditLogsConsoleProps> = ({ onNavigateBack }) =
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
   const [eventCount, setEventCount] = useState(452);
-  const [systemUsage, setSystemUsage] = useState(12);
+  const [systemUsage] = useState(12);
 
   // Mock log messages
   const mockLogMessages = [

@@ -17,10 +17,14 @@ export default defineConfig({
   // Rust compilation creates/locks .dll, .pdb, .rlib files in src-tauri/target/,
   // and Windows chokidar watcher crashes with EBUSY when trying to watch locked files.
   // This also prevents OneDrive from triggering sync on every build artifact change.
+  // usePolling bypasses fs.watch entirely, avoiding the EBUSY crash on Windows.
   watch: {
-    ignored: [
-      '**/src-tauri/target/**',   // Rust build artifacts (DLLs, .rlib, .pdb, .d files)
-      '**/.git/**',                // Git internals (safety, though Vite ignores by default)
-    ],
+    usePolling: true,
+    interval: 500,
+    binaryInterval: 500,
+    ignored: (watchedPath: string) =>
+      /src-tauri[/\\]target/.test(watchedPath) ||
+      /\.git[/\\]/.test(watchedPath) ||
+      /\.(dll|pdb|rlib|so|dylib)$/i.test(watchedPath),
   },
 });

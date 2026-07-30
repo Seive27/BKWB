@@ -11,7 +11,7 @@ import {
   FileSpreadsheet,
   CheckCircle,
 } from 'lucide-react';
-import ExportReportModal from '../components/ExportReportModal';
+import ExportReportModal from '../components/modals/ExportReportModal';
 
 interface ExportFile {
   id: string;

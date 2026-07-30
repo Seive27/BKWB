@@ -9,7 +9,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import {
-  mockDashboardStats,
+  mockAdminDashboardStats as mockDashboardStats,
   mockActivityLogs,
   mockGlobalSettings,
   mockUserActivityData,

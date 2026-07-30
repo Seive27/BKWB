@@ -42,7 +42,6 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ onNavigateToConsole }) => {
   const [userFocus, setUserFocus] = useState('all-administrators');
   const [actionType, setActionType] = useState('security-access');
   const [deviceId, setDeviceId] = useState('global-network');
-  const [currentPage, setCurrentPage] = useState(1);
 
   // Mock audit logs data
   const auditLogs: AuditLog[] = [

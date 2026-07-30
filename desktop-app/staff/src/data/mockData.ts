@@ -1,8 +1,6 @@
 import { 
   Resident, 
   MeterReading, 
-  Bill, 
-  Payment, 
   Announcement, 
   MonthlyRevenue, 
   DashboardStats 

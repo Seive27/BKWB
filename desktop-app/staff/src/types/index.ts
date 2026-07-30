@@ -177,3 +177,33 @@ export interface ActivitySummary {
   residentsAssisted: number;
   announcementsPosted: number;
 }
+
+// ── Authentication Types ──
+
+export interface Role {
+  id: string;
+  name: 'super_admin' | 'staff' | 'resident' | 'meter_reader';
+}
+
+export interface Profile {
+  id: string;
+  role_id: string;
+  first_name: string;
+  middle_name?: string | null;
+  last_name: string;
+  date_of_birth?: string;
+  phone?: string;
+  email: string;
+  avatar_url?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  role: Role;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: Role['name'];
+  profile: Profile;
+}

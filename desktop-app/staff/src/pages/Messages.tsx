@@ -10,8 +10,8 @@ import {
   Tag,
 } from 'lucide-react';
 import { mockConversations } from '../data/mockMessages';
-import ConversationCard from '../components/ConversationCard';
-import MessageBubble from '../components/MessageBubble';
+import ConversationCard from '../components/ui/ConversationCard';
+import MessageBubble from '../components/ui/MessageBubble';
 import { Conversation } from '../types';
 
 const Messages: React.FC = () => {

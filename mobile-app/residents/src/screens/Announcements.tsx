@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 import {
   AnnouncementFilterTabs,
@@ -14,30 +13,6 @@ type AnnouncementsProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
 };
-
-function EditFab({ onPress }: { onPress?: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className="absolute bottom-24 right-5 z-10 h-12 w-12 items-center justify-center rounded-xl bg-brand shadow-md"
-      style={{
-        shadowColor: '#1E5B8C',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
-        elevation: 4,
-      }}
-      accessibilityLabel="Edit"
-    >
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 000-1.42l-2.34-2.34a1.003 1.003 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
-          fill="#FFFFFF"
-        />
-      </Svg>
-    </Pressable>
-  );
-}
 
 export default function Announcements({
   activeTab = 'announcements',
@@ -66,7 +41,6 @@ export default function Announcements({
         </View>
       </ScrollView>
 
-      <EditFab />
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
     </View>
   );

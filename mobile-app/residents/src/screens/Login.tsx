@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,6 +12,7 @@ import {
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { login } from '@/services/authService';
 
 type LoginProps = {
   onLogin?: () => void;
@@ -59,12 +61,13 @@ export default function Login({ onLogin }: LoginProps) {
             <TextInput
               value={username}
               onChangeText={setUsername}
-              placeholder="Username or Account Number"
+              placeholder="Email address"
               placeholderTextColor="#9CA3AF"
               className="rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="username"
+              autoComplete="email"
+              keyboardType="email-address"
               returnKeyType="next"
             />
             <TextInput
@@ -83,7 +86,14 @@ export default function Login({ onLogin }: LoginProps) {
           </View>
 
           <Pressable
-            onPress={onLogin}
+            onPress={async () => {
+              try {
+                await login(username, password);
+                onLogin?.();
+              } catch (error) {
+                Alert.alert('Login failed', error instanceof Error ? error.message : 'An unexpected error occurred.');
+              }
+            }}
             className="mt-5 items-center justify-center rounded-md bg-[#3581A7] py-3.5 active:opacity-85"
             accessibilityRole="button"
             accessibilityLabel="Login"

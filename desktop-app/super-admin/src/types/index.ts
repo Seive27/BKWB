@@ -37,17 +37,52 @@ export interface Payment {
   method: 'cash' | 'gcash' | 'bank';
 }
 
+// ── Announcement Types ──
+
+export type AnnouncementCategory =
+  | 'schedule'
+  | 'interruption'
+  | 'maintenance'
+  | 'billing'
+  | 'general'
+  | 'emergency';
+
+export type AnnouncementPriority = 'normal' | 'important' | 'emergency';
+
+export type AnnouncementAudience = 'all' | 'residents' | 'meter_readers' | 'staff';
+
+export interface AnnouncementCreator {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
 export interface Announcement {
   id: string;
   title: string;
-  description: string;
-  category: 'maintenance' | 'interruption' | 'schedule' | 'general';
-  status: 'active' | 'scheduled' | 'archived';
-  priority: 'low' | 'normal' | 'high' | 'urgent';
-  postedDate: string;
-  scheduledDate?: string;
-  publishImmediately: boolean;
-  sendNotification: boolean;
+  content: string;
+  category: AnnouncementCategory;
+  priority: AnnouncementPriority;
+  target_audience: AnnouncementAudience;
+  created_by: string | null;
+  is_published: boolean;
+  expires_at: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined profiles row (from created_by) for display */
+  creator?: AnnouncementCreator | null;
+}
+
+/** Data captured by the create/edit announcement form. */
+export interface AnnouncementDraft {
+  title: string;
+  content: string;
+  category: AnnouncementCategory;
+  priority: AnnouncementPriority;
+  target_audience: AnnouncementAudience;
+  is_published: boolean;
+  expires_at: string | null;
 }
 
 export interface MonthlyRevenue {

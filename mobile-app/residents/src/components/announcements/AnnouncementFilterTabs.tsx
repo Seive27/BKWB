@@ -1,12 +1,17 @@
 import { Pressable, ScrollView, Text } from 'react-native';
 
-export type AnnouncementFilter = 'all' | 'schedule' | 'interruption' | 'maintenance';
+import type { AnnouncementCategory } from '@/types/announcements';
+
+export type AnnouncementFilter = 'all' | AnnouncementCategory;
 
 const FILTERS: { id: AnnouncementFilter; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'schedule', label: 'Schedule' },
+  { id: 'schedule', label: 'Water Schedule' },
   { id: 'interruption', label: 'Interruptions' },
   { id: 'maintenance', label: 'Maintenance' },
+  { id: 'billing', label: 'Billing' },
+  { id: 'general', label: 'General' },
+  { id: 'emergency', label: 'Emergency' },
 ];
 
 type AnnouncementFilterTabsProps = {

@@ -4,10 +4,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
+import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 
 type DashboardProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
+  /** Open the full announcements screen. */
+  onOpenAnnouncements?: () => void;
 };
 
 const MOCK = {
@@ -49,6 +52,7 @@ function PendingIcon() {
 export default function Dashboard({
   activeTab = 'dashboard',
   onTabPress,
+  onOpenAnnouncements,
 }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
@@ -174,6 +178,22 @@ export default function Dashboard({
               style={{ width: `${MOCK.routeProgress}%` }}
             />
           </View>
+        </View>
+
+        {/* Announcements card */}
+        <View className="mt-6">
+          <View className="mb-3 flex-row items-center justify-between">
+            <Text className="text-[15px] font-semibold text-navy">Announcements</Text>
+            <Pressable
+              onPress={onOpenAnnouncements}
+              className="rounded-lg px-2 py-1 active:opacity-70"
+              accessibilityRole="button"
+              accessibilityLabel="View all announcements"
+            >
+              <Text className="text-[13px] font-semibold text-brand">View All ›</Text>
+            </Pressable>
+          </View>
+          <AnnouncementList filter="all" limit={4} />
         </View>
       </ScrollView>
 

@@ -1,101 +1,95 @@
-import { Pressable, Text, View } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, Text, View, type DimensionValue } from 'react-native';
 
 import type { AnnouncementFilter } from '@/components/announcements/AnnouncementFilterTabs';
+import { AnnouncementPriorityBadge } from '@/components/announcements/AnnouncementPriorityBadge';
+import { useAnnouncements } from '@/hooks/useAnnouncements';
+import {
+  ANNOUNCEMENT_CATEGORY_LABELS,
+  type AnnouncementCategory,
+} from '@/types/announcements';
 
-export type AnnouncementCategory = Exclude<AnnouncementFilter, 'all'>;
-
-type Announcement = {
-  id: string;
-  category: AnnouncementCategory;
-  title: string;
-  date: string;
-  preview: string;
-  accentColor: string;
-  icon: 'warning' | 'calendar' | 'info';
+const CATEGORY_ACCENTS: Record<AnnouncementCategory, string> = {
+  schedule: '#1E5B8C',
+  interruption: '#EF4444',
+  maintenance: '#F59E0B',
+  billing: '#8B5CF6',
+  general: '#64748B',
+  emergency: '#DC2626',
 };
 
-const ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: '1',
-    category: 'interruption',
-    title: 'Scheduled Water Interruption - Feb 10, 2026',
-    date: 'February 5, 2026',
-    preview:
-      'Water supply will be temporarily interrupted on February 10, 2026 from 8:00 AM to 4:00 PM for...',
-    accentColor: '#EF4444',
-    icon: 'warning',
-  },
-  {
-    id: '2',
-    category: 'schedule',
-    title: 'Water Distribution Schedule - February 2026',
-    date: 'February 1, 2026',
-    preview:
-      'Zone 1: Daily 6:00 AM - 12:00 PM\nZone 2: Daily 12:00 PM - 6:00 PM...',
-    accentColor: '#1E5B8C',
-    icon: 'calendar',
-  },
-  {
-    id: '3',
-    category: 'maintenance',
-    title: 'Payment Deadline Reminder',
-    date: 'January 28, 2026',
-    preview:
-      'This is to remind all consumers to settle your water bills on or before the 15th of each month to avoid...',
-    accentColor: '#14B8A6',
-    icon: 'info',
-  },
-];
-
-function WarningIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 3.5L2.5 20h19L12 3.5z"
-        fill="#FACC15"
-        stroke="#CA8A04"
-        strokeWidth={1.2}
-        strokeLinejoin="round"
-      />
-      <Path d="M12 10v4.5" stroke="#854D0E" strokeWidth={1.8} strokeLinecap="round" />
-      <Circle cx={12} cy={17.2} r={1} fill="#854D0E" />
-    </Svg>
-  );
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
-function CalendarIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Rect x={3} y={5} width={18} height={16} rx={2} fill="#E2E8F0" stroke="#94A3B8" strokeWidth={1.2} />
-      <Path d="M3 9h18" stroke="#94A3B8" strokeWidth={1.2} />
-      <Path d="M8 3.5v3M16 3.5v3" stroke="#64748B" strokeWidth={1.5} strokeLinecap="round" />
-      <Path d="M7.5 14h3M13.5 14h3M7.5 17.5h3" stroke="#1E5B8C" strokeWidth={1.5} strokeLinecap="round" />
-    </Svg>
-  );
+// ── Skeleton ──
+
+function SkeletonBlock({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: { width?: DimensionValue; height?: number; borderRadius?: number };
+}) {
+  const opacity = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 650, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.5, duration: 650, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return <Animated.View className={`bg-slate-200 ${className ?? ''}`} style={[{ opacity }, style]} />;
 }
 
-function InfoIcon() {
+function SkeletonAnnouncementCard() {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={9} fill="#E2E8F0" stroke="#94A3B8" strokeWidth={1.2} />
-      <Path d="M12 11v5" stroke="#64748B" strokeWidth={1.8} strokeLinecap="round" />
-      <Circle cx={12} cy={8} r={1.1} fill="#64748B" />
-    </Svg>
-  );
-}
-
-function AnnouncementIcon({ type }: { type: Announcement['icon'] }) {
-  return (
-    <View className="h-11 w-11 items-center justify-center rounded-lg bg-slate-100">
-      {type === 'warning' ? <WarningIcon /> : null}
-      {type === 'calendar' ? <CalendarIcon /> : null}
-      {type === 'info' ? <InfoIcon /> : null}
+    <View
+      className="overflow-hidden rounded-2xl bg-white p-5"
+      style={{
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 3,
+      }}
+    >
+      <View className="flex-row items-center gap-2">
+        <SkeletonBlock className="rounded-full" style={{ width: 80, height: 24 }} />
+        <SkeletonBlock className="rounded-full" style={{ width: 70, height: 24 }} />
+      </View>
+      <SkeletonBlock className="mt-4 rounded" style={{ width: '85%', height: 18 }} />
+      <SkeletonBlock className="mt-3 rounded" style={{ width: '100%', height: 14 }} />
+      <SkeletonBlock className="mt-2 rounded" style={{ width: '70%', height: 14 }} />
+      <SkeletonBlock className="mt-4 rounded" style={{ width: 120, height: 12 }} />
     </View>
   );
 }
 
-function AnnouncementCard({ announcement }: { announcement: Announcement }) {
+// ── Card ──
+
+type AnnouncementCardProps = {
+  title: string;
+  category: AnnouncementCategory;
+  priority: 'normal' | 'important' | 'emergency';
+  date: string;
+  content: string;
+  createdBy?: string | null;
+};
+
+function AnnouncementCard({ title, category, priority, date, content, createdBy }: AnnouncementCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <View
       className="overflow-hidden rounded-2xl bg-white"
@@ -108,40 +102,120 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
       }}
     >
       <View className="flex-row">
-        <View className="w-1.5" style={{ backgroundColor: announcement.accentColor }} />
-        <View className="flex-1 flex-row gap-3 px-4 py-4">
-          <AnnouncementIcon type={announcement.icon} />
-          <View className="flex-1">
-            <Text className="text-base font-bold text-slate-800">{announcement.title}</Text>
-            <Text className="mt-1 text-sm text-slate-400">{announcement.date}</Text>
-            <Text className="mt-2 text-sm leading-5 text-slate-600" numberOfLines={3}>
-              {announcement.preview}
+        <View className="w-1.5" style={{ backgroundColor: CATEGORY_ACCENTS[category] }} />
+        <View className="flex-1 px-4 py-4">
+          <View className="flex-row items-center gap-2">
+            <AnnouncementPriorityBadge priority={priority} size="sm" />
+            <Text className="text-xs font-semibold text-slate-400">
+              {ANNOUNCEMENT_CATEGORY_LABELS[category]}
             </Text>
-            <Pressable className="mt-2 self-start active:opacity-70" accessibilityRole="link">
-              <Text className="text-sm font-semibold text-brand">Read more</Text>
-            </Pressable>
           </View>
+          <Text className="mt-2.5 text-base font-bold leading-5 text-slate-800">{title}</Text>
+          <Text className="mt-1 text-sm text-slate-400">{formatDate(date)}</Text>
+          <Text
+            className="mt-2 text-sm leading-5 text-slate-600"
+            numberOfLines={expanded ? undefined : 3}
+          >
+            {content}
+          </Text>
+          {content.length > 160 && (
+            <Pressable
+              onPress={() => setExpanded((v) => !v)}
+              className="mt-2 self-start active:opacity-70"
+              accessibilityRole="button"
+            >
+              <Text className="text-sm font-semibold text-brand">
+                {expanded ? 'Show less' : 'Read more'}
+              </Text>
+            </Pressable>
+          )}
+          {createdBy ? (
+            <Text className="mt-3 text-xs text-slate-400">Posted by {createdBy}</Text>
+          ) : null}
         </View>
       </View>
     </View>
   );
 }
 
+// ── List ──
+
 type AnnouncementListProps = {
   filter?: AnnouncementFilter;
+  limit?: number;
 };
 
-export function AnnouncementList({ filter = 'all' }: AnnouncementListProps) {
-  const items =
-    filter === 'all'
-      ? ANNOUNCEMENTS
-      : ANNOUNCEMENTS.filter((item) => item.category === filter);
+export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProps) {
+  const { announcements, loading, refreshing, error, refresh } = useAnnouncements({
+    audience: 'residents',
+  });
+
+  const items = announcements.filter(
+    (item) => filter === 'all' || item.category === filter,
+  );
+  const visibleItems = limit ? items.slice(0, limit) : items;
+
+  if (loading) {
+    return (
+      <View className="gap-4">
+        <SkeletonAnnouncementCard />
+        <SkeletonAnnouncementCard />
+        <SkeletonAnnouncementCard />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View className="items-center rounded-2xl bg-white px-6 py-10">
+        <Text className="text-base font-bold text-slate-800">Unable to load announcements</Text>
+        <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-slate-500">
+          {error}
+        </Text>
+        <Pressable
+          onPress={() => refresh()}
+          className="mt-5 items-center rounded-xl bg-brand px-8 py-3 active:bg-brand-dark"
+          accessibilityRole="button"
+        >
+          <Text className="text-base font-semibold text-white">Try Again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (visibleItems.length === 0) {
+    return (
+      <View className="items-center rounded-2xl bg-white px-6 py-12">
+        <Text className="text-xl font-bold text-slate-800">No announcements yet</Text>
+        <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-slate-500">
+          {filter === 'all'
+            ? "There are no announcements right now. Check back later for updates."
+            : 'There are no announcements in this category right now.'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <View className="gap-4">
-      {items.map((announcement) => (
-        <AnnouncementCard key={announcement.id} announcement={announcement} />
+    <View className="gap-4 pb-2">
+      {visibleItems.map((announcement) => (
+        <AnnouncementCard
+          key={announcement.id}
+          title={announcement.title}
+          category={announcement.category}
+          priority={announcement.priority}
+          date={announcement.created_at}
+          content={announcement.content}
+          createdBy={
+            announcement.creator
+              ? `${announcement.creator.first_name} ${announcement.creator.last_name}`
+              : null
+          }
+        />
       ))}
+      {refreshing && (
+        <Text className="py-2 text-center text-xs text-slate-400">Refreshing…</Text>
+      )}
     </View>
   );
 }

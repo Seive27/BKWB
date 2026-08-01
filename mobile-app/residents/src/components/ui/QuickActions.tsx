@@ -5,6 +5,7 @@ import { Pressable, Text, View } from 'react-native';
 type QuickActionsProps = {
   onViewBills?: () => void;
   onWaterSchedule?: () => void;
+  onTickets?: () => void;
   onNotifications?: () => void;
 };
 
@@ -40,6 +41,7 @@ function ActionCard({
 export function QuickActions({
   onViewBills,
   onWaterSchedule,
+  onTickets,
   onNotifications,
 }: QuickActionsProps) {
   return (
@@ -63,13 +65,22 @@ export function QuickActions({
         </ActionCard>
       </View>
 
-      <ActionCard label="Notifications" onPress={onNotifications} className="mt-3 w-full">
-        <Image
-          source={require('../../../assets/QuickActionsIcon/Notifications.svg')}
-          style={{ width: 48, height: 48 }}
-          contentFit="contain"
-        />
-      </ActionCard>
+      <View className="mt-3 flex-row gap-3">
+        <ActionCard label="Tickets" onPress={onTickets} className="flex-1">
+          <Image
+            source={require('../../../assets/QuickActionsIcon/Tickets.svg')}
+            style={{ width: 48, height: 48 }}
+            contentFit="contain"
+          />
+        </ActionCard>
+        <ActionCard label="Notifications" onPress={onNotifications} className="flex-1">
+          <Image
+            source={require('../../../assets/QuickActionsIcon/Notifications.svg')}
+            style={{ width: 48, height: 48 }}
+            contentFit="contain"
+          />
+        </ActionCard>
+      </View>
     </View>
   );
 }

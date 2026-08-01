@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { QuickActions } from '@/components/ui/QuickActions';
+import { useAnnouncements } from '@/hooks/useAnnouncements';
 import NotificationsScreen from '@/screens/Notifications';
+import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
 
@@ -14,31 +15,12 @@ type DashboardProps = {
   onTabPress?: (tab: NavTab) => void;
 };
 
-type QuickActionScreen = 'viewBills' | 'waterSchedule' | 'notifications' | null;
-
-function EditFab({ onPress }: { onPress?: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className="absolute bottom-24 right-5 z-10 h-12 w-12 items-center justify-center rounded-xl bg-brand shadow-md"
-      style={{
-        shadowColor: '#1E5B8C',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
-        elevation: 4,
-      }}
-      accessibilityLabel="Edit"
-    >
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 000-1.42l-2.34-2.34a1.003 1.003 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
-          fill="#FFFFFF"
-        />
-      </Svg>
-    </Pressable>
-  );
-}
+type QuickActionScreen =
+  | 'viewBills'
+  | 'waterSchedule'
+  | 'tickets'
+  | 'notifications'
+  | null;
 
 export default function Dashboard({ activeTab = 'dashboard', onTabPress }: DashboardProps) {
   const insets = useSafeAreaInsets();
@@ -61,6 +43,19 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
   if (quickActionScreen === 'waterSchedule') {
     return (
       <WaterScheduleScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
+
+  if (quickActionScreen === 'tickets') {
+    return (
+      <TicketsScreen
         activeTab={activeTab}
         onTabPress={(tab) => {
           setQuickActionScreen(null);
@@ -126,37 +121,67 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
           <QuickActions
             onViewBills={() => setQuickActionScreen('viewBills')}
             onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
+            onTickets={() => setQuickActionScreen('tickets')}
             onNotifications={() => setQuickActionScreen('notifications')}
           />
 
-          <View>
-            <Text className="mb-3 text-base font-bold text-slate-800">Service Announcements</Text>
-            <View
-              className="overflow-hidden rounded-2xl bg-white"
-              style={{
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.06,
-                shadowRadius: 4,
-                elevation: 2,
-              }}
-            >
-              <View className="flex-row">
-                <View className="w-1.5 bg-brand" />
-                <View className="flex-1 px-4 py-4">
-                  <Text className="text-sm text-slate-400">February 5, 2026</Text>
-                  <Text className="mt-1 text-base font-bold text-slate-800">
-                    Scheduled Water Interruption
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
+          <AnnouncementsPreview onViewAll={() => onTabPress?.('announcements')} />
         </View>
       </ScrollView>
 
-      <EditFab />
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
+    </View>
+  );
+}
+
+function formatDateShort(iso: string): string {
+  const date = new Date(iso);
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
+  const { announcements, loading } = useAnnouncements({ audience: 'residents', limit: 2 });
+  const latest = announcements[0];
+
+  return (
+    <View>
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-base font-bold text-slate-800">Service Announcements</Text>
+        {announcements.length > 0 && (
+          <Pressable onPress={onViewAll} className="active:opacity-70" accessibilityRole="button">
+            <Text className="text-sm font-semibold text-brand">View all</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View
+        className="overflow-hidden rounded-2xl bg-white"
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.06,
+          shadowRadius: 4,
+          elevation: 2,
+        }}
+      >
+        {loading ? (
+          <View className="px-4 py-5">
+            <Text className="text-sm text-slate-400">Loading announcements…</Text>
+          </View>
+        ) : latest ? (
+          <View className="flex-row">
+            <View className="w-1.5 bg-brand" />
+            <View className="flex-1 px-4 py-4">
+              <Text className="text-sm text-slate-400">{formatDateShort(latest.created_at)}</Text>
+              <Text className="mt-1 text-base font-bold text-slate-800">{latest.title}</Text>
+            </View>
+          </View>
+        ) : (
+          <View className="px-4 py-5">
+            <Text className="text-sm text-slate-400">No announcements right now.</Text>
+          </View>
+        )}
+      </View>
     </View>
   );
 }

@@ -23,7 +23,7 @@ function AppContent() {
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigate={setActivePage} />;
       case 'residents':
         return <Residents />;
       case 'meter-readings':

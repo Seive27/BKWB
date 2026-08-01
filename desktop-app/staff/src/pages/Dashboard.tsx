@@ -8,10 +8,13 @@ import {
   dashboardStats,
   monthlyRevenue,
   recentMeterReadings,
-  latestAnnouncements,
 } from '../data/mockData';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onNavigate?: (route: string) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="p-8">
@@ -68,7 +71,7 @@ const Dashboard: React.FC = () => {
             <MeterReadingsTable readings={recentMeterReadings} />
           </div>
           <div className="xl:col-span-1">
-            <AnnouncementsPanel announcements={latestAnnouncements} />
+            <AnnouncementsPanel onNavigate={onNavigate} />
           </div>
         </div>
       </div>

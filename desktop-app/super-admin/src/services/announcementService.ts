@@ -97,7 +97,7 @@ export async function getAnnouncements(
   let query = supabase
     .from('announcements')
     .select(SELECT_FIELDS)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (options.limit) {
@@ -208,8 +208,11 @@ export async function deleteAnnouncement(id: string): Promise<void> {
 export function subscribeToAnnouncements(
   callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Announcement | null) => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, so use a unique name per
+  // call to avoid "cannot add callbacks after subscribe()" when multiple
+  // components subscribe at once.
   const channel = supabase
-    .channel('announcements-changes')
+    .channel(`announcements-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'announcements' },

@@ -1,0 +1,3 @@
+project_id = "bkwb"
+[functions.create-user]
+verify_jwt = true

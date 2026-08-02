@@ -16,6 +16,8 @@ import {
   BarChart as ChartIcon,
 } from 'lucide-react';
 import logo from '../../assets/logo.jpg';
+import { useAuth } from '../../hooks/useAuth';
+import { useNotifications } from '../../hooks/useNotifications';
 
 interface SidebarProps {
   activePage: string;
@@ -29,6 +31,15 @@ interface MenuGroup {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout }) => {
+  // Live unread notification count for the sidebar badge.
+  const { unreadCount } = useNotifications({ limit: 50 });
+
+  // Logged-in admin from the auth context.
+  const { user, profile } = useAuth();
+  const firstName = profile?.first_name ?? user?.profile?.first_name ?? '';
+  const lastName = profile?.last_name ?? user?.profile?.last_name ?? '';
+  const adminName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'Super Admin';
+
   const menuGroups: MenuGroup[] = [
     {
       title: 'Overview',
@@ -77,7 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
           />
           <div>
             <h1 className="text-lg font-bold text-gray-900">BKWB</h1>
-            <p className="text-xs text-gray-500">Super Admin</p>
+            <p className="text-xs text-gray-500">{adminName}</p>
           </div>
         </div>
       </div>
@@ -111,7 +122,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
                     `}
                   >
                     <Icon className="w-5 h-5 flex-shrink-0" />
-                    <span className="text-sm font-medium truncate">{item.label}</span>
+                    <span className="text-sm font-medium truncate flex-1">{item.label}</span>
+                    {item.id === 'notifications' && unreadCount > 0 && (
+                      <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-semibold">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}

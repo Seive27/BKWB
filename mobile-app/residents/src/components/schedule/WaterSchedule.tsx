@@ -1,53 +1,32 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { useAnnouncements } from '@/hooks/useAnnouncements';
+import type { Announcement } from '@/types/announcements';
+
 type ScheduleStatus = 'available' | 'interruption-pink' | 'interruption-amber';
 
-type DaySchedule = {
-  id: string;
-  day: string;
-  time: string;
-  location: string;
-  status: ScheduleStatus;
-};
+/** Categories that make up the water schedule feed. */
+const SCHEDULE_CATEGORIES = ['schedule', 'interruption', 'maintenance'] as const;
 
-const WEEKDAY_SCHEDULE: DaySchedule[] = [
-  {
-    id: 'mon',
-    day: 'Monday',
-    time: 'Full Day',
-    location: 'Zone 1 & Zone 2',
-    status: 'interruption-pink',
-  },
-  {
-    id: 'tue',
-    day: 'Tuesday',
-    time: '8:00 AM - 12:00 PM',
-    location: 'All Zones',
-    status: 'available',
-  },
-  {
-    id: 'wed',
-    day: 'Wednesday',
-    time: 'Full Day',
-    location: 'All Zones',
-    status: 'available',
-  },
-  {
-    id: 'thu',
-    day: 'Thursday',
-    time: '8:00 AM - 12:00 PM',
-    location: 'Upper Kalunasan (Zone 4)',
-    status: 'interruption-amber',
-  },
-  {
-    id: 'fri',
-    day: 'Friday',
-    time: 'Full Day',
-    location: 'All Zones',
-    status: 'available',
-  },
-];
+function toStatus(announcement: Announcement): ScheduleStatus {
+  if (announcement.category === 'schedule') return 'available';
+  if (announcement.category === 'maintenance') return 'interruption-amber';
+  // interruption + emergency
+  return 'interruption-pink';
+}
+
+function formatScheduleDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function formatScheduleTime(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `Posted ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${time}`;
+}
 
 function LocationIcon() {
   return (
@@ -117,7 +96,7 @@ function StatusBadge({ status }: { status: ScheduleStatus }) {
     return (
       <View className="flex-row items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1">
         <AvailableIcon />
-        <Text className="text-xs font-semibold text-brand">Available</Text>
+        <Text className="text-xs font-semibold text-brand">Schedule</Text>
       </View>
     );
   }
@@ -134,7 +113,7 @@ function StatusBadge({ status }: { status: ScheduleStatus }) {
   return (
     <View className="flex-row items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1">
       <InterruptionWarningIcon />
-      <Text className="text-xs font-semibold text-amber-700">Interruption</Text>
+      <Text className="text-xs font-semibold text-amber-700">Maintenance</Text>
     </View>
   );
 }
@@ -145,7 +124,8 @@ function accentColor(status: ScheduleStatus) {
   return 'bg-brand';
 }
 
-function DayScheduleCard({ schedule }: { schedule: DaySchedule }) {
+function AnnouncementCard({ announcement }: { announcement: Announcement }) {
+  const status = toStatus(announcement);
   return (
     <View
       className="overflow-hidden rounded-2xl bg-white"
@@ -158,19 +138,25 @@ function DayScheduleCard({ schedule }: { schedule: DaySchedule }) {
       }}
     >
       <View className="flex-row">
-        <View className={`w-1.5 ${accentColor(schedule.status)}`} />
+        <View className={`w-1.5 ${accentColor(status)}`} />
         <View className="flex-1 px-4 py-4">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-lg font-bold text-brand">{schedule.day}</Text>
-              <Text className="mt-1 text-sm text-slate-500">{schedule.time}</Text>
+              <Text className="text-lg font-bold text-brand">{announcement.title}</Text>
+              <Text className="mt-1 text-sm text-slate-500">
+                {formatScheduleDate(announcement.created_at)}
+              </Text>
             </View>
-            <StatusBadge status={schedule.status} />
+            <StatusBadge status={status} />
           </View>
+
+          {announcement.content ? (
+            <Text className="mt-2 text-sm leading-5 text-slate-600">{announcement.content}</Text>
+          ) : null}
 
           <View className="mt-3 flex-row items-center gap-1.5">
             <LocationIcon />
-            <Text className="text-sm text-slate-400">{schedule.location}</Text>
+            <Text className="text-sm text-slate-400">{formatScheduleTime(announcement.created_at)}</Text>
           </View>
         </View>
       </View>
@@ -201,21 +187,58 @@ function WeekendMaintenance() {
   return (
     <View className="overflow-hidden rounded-2xl bg-brand px-5 py-5">
       <HouseWatermark />
-      <Text className="text-lg font-bold text-white">Weekend Maintenance</Text>
+      <Text className="text-lg font-bold text-white">How to use this schedule</Text>
       <Text className="mt-2 text-sm leading-5 text-white/85">
-        Scheduled maintenance occurs every Sunday from 2:00 AM to 4:00 AM. Please store sufficient
-        water during this period.
+        This feed shows the latest water schedule, interruptions, and maintenance
+        announcements published by the Barangay. New updates appear here in real
+        time as they are posted.
       </Text>
     </View>
   );
 }
 
 export function WaterSchedule() {
+  const { announcements, loading, error } = useAnnouncements({ audience: 'residents', limit: 20 });
+  const [items, setItems] = useState<Announcement[]>([]);
+
+  // Filter to schedule-related categories, keeping the newest first.
+  useEffect(() => {
+    setItems(
+      announcements.filter((a) =>
+        (SCHEDULE_CATEGORIES as readonly string[]).includes(a.category)
+      )
+    );
+  }, [announcements]);
+
+  if (loading && items.length === 0) {
+    return (
+      <View className="rounded-2xl bg-white px-5 py-10">
+        <Text className="text-center text-sm text-slate-400">Loading schedule…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View className="rounded-2xl bg-red-50 px-5 py-10">
+        <Text className="text-center text-sm font-medium text-red-600">{error}</Text>
+      </View>
+    );
+  }
+
   return (
     <View className="gap-4">
-      {WEEKDAY_SCHEDULE.map((schedule) => (
-        <DayScheduleCard key={schedule.id} schedule={schedule} />
-      ))}
+      {items.length === 0 ? (
+        <View className="rounded-2xl bg-white px-5 py-10">
+          <Text className="text-center text-sm text-slate-400">
+            No schedule announcements posted yet. Check back soon.
+          </Text>
+        </View>
+      ) : (
+        items.map((announcement) => (
+          <AnnouncementCard key={announcement.id} announcement={announcement} />
+        ))
+      )}
       <WeekendMaintenance />
     </View>
   );

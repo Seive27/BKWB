@@ -32,7 +32,7 @@ function AppContent() {
     switch (activePage) {
       // Staff Feature Pages
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigate={setActivePage} />;
       case 'residents':
         return <Residents />;
       case 'meter-readings':
@@ -63,7 +63,7 @@ function AppContent() {
       case 'system-settings':
         return <SystemSettings />;
       default:
-        return <Dashboard />;
+        return <Dashboard onNavigate={setActivePage} />;
     }
   };
 

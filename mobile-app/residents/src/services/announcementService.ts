@@ -81,7 +81,7 @@ export async function getAnnouncements(
   let query = supabase
     .from('announcements')
     .select(SELECT_FIELDS)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .eq('is_published', true)
     // PostgREST does NOT evaluate now() inside filters — it would send the
     // literal 'now()' and Postgres fails to cast it to timestamptz. Send a
@@ -111,7 +111,7 @@ export async function getAnnouncementById(id: string): Promise<Announcement | nu
     .from('announcements')
     .select(SELECT_FIELDS)
     .eq('id', id)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .eq('is_published', true)
     .maybeSingle();
 
@@ -130,8 +130,11 @@ export async function getAnnouncementById(id: string): Promise<Announcement | nu
 export function subscribeToAnnouncements(
   callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Announcement | null) => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, so use a unique name per
+  // call to avoid "cannot add callbacks after subscribe()" when multiple
+  // components subscribe at once.
   const channel = supabase
-    .channel('announcements-changes')
+    .channel(`announcements-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'announcements' },

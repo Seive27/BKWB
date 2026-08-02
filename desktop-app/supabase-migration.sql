@@ -991,6 +991,704 @@ JOIN meter_rows mr ON mr.meter_idx = (rr.rn % mr.meter_count)
 ON CONFLICT (account_number) DO NOTHING;
 
 -- ============================================================
+-- 28. Notifications table (shared across all applications)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  type TEXT NOT NULL
+    CHECK (type IN ('announcement', 'ticket_created', 'ticket_assigned', 'ticket_status', 'ticket_resolved', 'reading_assigned', 'reading_approved', 'reading_rejected', 'billing', 'payment', 'system')),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  reference_type TEXT,
+  reference_id UUID,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  read_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 28b. Self-heal: add columns added in later migration versions.
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.profiles(id);
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS message TEXT;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS reference_type TEXT;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS reference_id UUID;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- 28c. Catch-all self-heal (same pattern as other tables).
+DO $$
+DECLARE
+  col_name TEXT;
+BEGIN
+  FOR col_name IN
+    SELECT c.column_name
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = 'notifications'
+      AND c.is_nullable = 'NO'
+      AND c.column_default IS NULL
+      AND c.column_name NOT IN ('id', 'user_id', 'type', 'title', 'message', 'reference_type', 'reference_id', 'is_read', 'read_at', 'deleted_at', 'created_at', 'updated_at')
+  LOOP
+    EXECUTE format('ALTER TABLE public.notifications ALTER COLUMN %I DROP NOT NULL', col_name);
+  END LOOP;
+END $$;
+
+-- 28d. Useful indexes for the notification center + unread badge.
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON public.notifications (user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications (created_at);
+
+-- 29. Row Level Security for notifications
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+-- Users read their own notifications; staff/super admins may monitor all.
+DROP POLICY IF EXISTS "Users can read own notifications" ON public.notifications;
+CREATE POLICY "Users can read own notifications"
+  ON public.notifications
+  FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid() AND deleted_at IS NULL);
+
+DROP POLICY IF EXISTS "Staff and admins can read all notifications" ON public.notifications;
+CREATE POLICY "Staff and admins can read all notifications"
+  ON public.notifications
+  FOR SELECT
+  TO authenticated
+  USING (public.is_staff_or_admin());
+
+-- Users can update (mark read) their own notifications; admins manage all.
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+CREATE POLICY "Users can update own notifications"
+  ON public.notifications
+  FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Staff and admins can manage notifications" ON public.notifications;
+CREATE POLICY "Staff and admins can manage notifications"
+  ON public.notifications
+  FOR ALL
+  TO authenticated
+  USING (public.is_staff_or_admin())
+  WITH CHECK (public.is_staff_or_admin());
+
+-- 30. Enable Realtime for notifications (live unread badges + feeds)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+END $$;
+
+-- ============================================================
+-- 31. Notification triggers
+-- Emit a notifications row automatically whenever a domain event
+-- occurs (announcement published, ticket lifecycle, reading
+-- lifecycle). SECURITY DEFINER so the trigger can write rows for
+-- other users regardless of RLS. No-op when a target audience is
+-- empty or the row is being soft-deleted.
+-- ============================================================
+
+-- 31a. Announcement published → notify the target audience.
+CREATE OR REPLACE FUNCTION public.notify_announcement_published()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.deleted_at IS NULL AND NEW.is_published
+     AND (TG_OP = 'INSERT' OR OLD.is_published IS DISTINCT FROM TRUE) THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    SELECT
+      p.id,
+      'announcement',
+      NEW.title,
+      LEFT(NEW.content, 500),
+      'announcement',
+      NEW.id
+    FROM public.profiles p
+    JOIN public.roles r ON r.id = p.role_id
+    WHERE p.is_active = TRUE
+      AND (
+        NEW.target_audience = 'all'
+        OR (NEW.target_audience = 'residents' AND r.name = 'resident')
+        OR (NEW.target_audience = 'meter_readers' AND r.name = 'meter_reader')
+        OR (NEW.target_audience = 'staff' AND r.name IN ('staff', 'super_admin'))
+      );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_announcement_notify ON public.announcements;
+CREATE TRIGGER on_announcement_notify
+  AFTER INSERT OR UPDATE OF is_published, deleted_at ON public.announcements
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_announcement_published();
+
+-- 31b. Ticket created → notify staff + super admins.
+CREATE OR REPLACE FUNCTION public.notify_ticket_created()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.deleted_at IS NULL THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    SELECT
+      p.id,
+      'ticket_created',
+      'New ticket: ' || NEW.ticket_number,
+      NEW.subject,
+      'ticket',
+      NEW.id
+    FROM public.profiles p
+    JOIN public.roles r ON r.id = p.role_id
+    WHERE p.is_active = TRUE AND r.name IN ('staff', 'super_admin');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_ticket_notify_created ON public.tickets;
+CREATE TRIGGER on_ticket_notify_created
+  AFTER INSERT ON public.tickets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_ticket_created();
+
+-- 31c. Ticket assigned / status updated → notify the relevant parties.
+CREATE OR REPLACE FUNCTION public.notify_ticket_updated()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- Assignment change → notify the newly assigned staff member.
+  IF NEW.deleted_at IS NULL
+     AND NEW.assigned_staff_id IS NOT NULL
+     AND NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (
+      NEW.assigned_staff_id,
+      'ticket_assigned',
+      'Ticket assigned to you: ' || NEW.ticket_number,
+      NEW.subject,
+      'ticket',
+      NEW.id
+    );
+  END IF;
+
+  -- Status change → notify the resident who owns the ticket.
+  IF NEW.deleted_at IS NULL
+     AND NEW.status IS DISTINCT FROM OLD.status THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (
+      NEW.resident_id,
+      CASE WHEN NEW.status = 'resolved' THEN 'ticket_resolved' ELSE 'ticket_status' END,
+      'Ticket ' || NEW.ticket_number || ' is now ' || NEW.status,
+      NEW.subject,
+      'ticket',
+      NEW.id
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_ticket_notify_updated ON public.tickets;
+CREATE TRIGGER on_ticket_notify_updated
+  AFTER UPDATE OF assigned_staff_id, status, deleted_at ON public.tickets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_ticket_updated();
+
+-- 31d. Meter reading assigned → notify the meter reader.
+CREATE OR REPLACE FUNCTION public.notify_reading_assigned()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.deleted_at IS NULL
+     AND NEW.status = 'assigned'
+     AND NEW.meter_reader_id IS NOT NULL THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (
+      NEW.meter_reader_id,
+      'reading_assigned',
+      'New meter reading assigned',
+      'A meter reading has been assigned to you for review and submission.',
+      'meter_reading',
+      NEW.id
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_reading_notify_assigned ON public.meter_readings;
+CREATE TRIGGER on_reading_notify_assigned
+  AFTER INSERT ON public.meter_readings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_reading_assigned();
+
+-- 31e. Meter reading approved/rejected → notify the meter reader + resident.
+CREATE OR REPLACE FUNCTION public.notify_reading_reviewed()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_status TEXT;
+  v_title TEXT;
+  v_message TEXT;
+BEGIN
+  IF NEW.deleted_at IS NULL AND NEW.status IN ('approved', 'rejected') THEN
+    IF NEW.status = 'approved' THEN
+      v_status := 'reading_approved';
+      v_title := 'Meter reading approved';
+      v_message := 'Your submitted meter reading has been approved.';
+    ELSE
+      v_status := 'reading_rejected';
+      v_title := 'Meter reading rejected';
+      v_message := COALESCE(NEW.rejection_reason, 'Your submitted meter reading has been rejected.');
+    END IF;
+
+    -- Notify the meter reader who submitted it.
+    IF NEW.meter_reader_id IS NOT NULL THEN
+      INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+      VALUES (NEW.meter_reader_id, v_status, v_title, v_message, 'meter_reading', NEW.id);
+    END IF;
+
+    -- Notify the resident whose account the reading belongs to.
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (NEW.resident_id, v_status, v_title, v_message, 'meter_reading', NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_reading_notify_reviewed ON public.meter_readings;
+CREATE TRIGGER on_reading_notify_reviewed
+  AFTER UPDATE OF status, deleted_at ON public.meter_readings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_reading_reviewed();
+
+-- ============================================================
+-- 32. Audit logs table (centralized, immutable)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id),
+  role_name TEXT,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  description TEXT,
+  old_value JSONB,
+  new_value JSONB,
+  ip_address TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 32b. Self-heal: add columns added in later migration versions.
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.profiles(id);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS role_name TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS module TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS action TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS target_type TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS target_id TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS old_value JSONB;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS new_value JSONB;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS ip_address TEXT;
+
+-- 32c. Catch-all self-heal.
+DO $$
+DECLARE
+  col_name TEXT;
+BEGIN
+  FOR col_name IN
+    SELECT c.column_name
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = 'audit_logs'
+      AND c.is_nullable = 'NO'
+      AND c.column_default IS NULL
+      AND c.column_name NOT IN ('id', 'user_id', 'role_name', 'module', 'action', 'target_type', 'target_id', 'description', 'old_value', 'new_value', 'ip_address', 'created_at')
+  LOOP
+    EXECUTE format('ALTER TABLE public.audit_logs ALTER COLUMN %I DROP NOT NULL', col_name);
+  END LOOP;
+END $$;
+
+-- 32d. Useful indexes for searching + filtering.
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON public.audit_logs (module);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs (action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs (user_id);
+
+-- 33. Row Level Security for audit logs
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Only staff/super admins may read audit logs.
+DROP POLICY IF EXISTS "Staff and admins can read audit logs" ON public.audit_logs;
+CREATE POLICY "Staff and admins can read audit logs"
+  ON public.audit_logs
+  FOR SELECT
+  TO authenticated
+  USING (public.is_staff_or_admin());
+
+-- Authenticated users may record entries (login/logout from the app layer).
+DROP POLICY IF EXISTS "Authenticated users can write audit logs" ON public.audit_logs;
+CREATE POLICY "Authenticated users can write audit logs"
+  ON public.audit_logs
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (TRUE);
+
+-- 34. Enable Realtime for audit logs (live console feed)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'audit_logs'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+  END IF;
+END $$;
+
+-- ============================================================
+-- 35. Audit triggers
+-- Automatically capture domain actions into audit_logs.
+-- ============================================================
+
+-- Helper: read the current user's role name (NULL when anonymous/system).
+CREATE OR REPLACE FUNCTION public.current_user_role_name()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT r.name
+  FROM public.profiles p
+  JOIN public.roles r ON r.id = p.role_id
+  WHERE p.id = auth.uid();
+$$;
+
+-- 35a. Announcements audit
+CREATE OR REPLACE FUNCTION public.audit_announcements()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, new_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'announcements', 'create', 'announcement', NEW.id::text, 'Created announcement: ' || NEW.title, to_jsonb(NEW));
+  ELSIF TG_OP = 'UPDATE' AND NEW IS DISTINCT FROM OLD THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value, new_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'announcements', 'update', 'announcement', NEW.id::text, 'Updated announcement: ' || NEW.title, to_jsonb(OLD), to_jsonb(NEW));
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'announcements', 'delete', 'announcement', OLD.id::text, 'Deleted announcement: ' || OLD.title, to_jsonb(OLD));
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_announcement_audit ON public.announcements;
+CREATE TRIGGER on_announcement_audit
+  AFTER INSERT OR UPDATE OR DELETE ON public.announcements
+  FOR EACH ROW
+  EXECUTE FUNCTION public.audit_announcements();
+
+-- 35b. Tickets audit
+CREATE OR REPLACE FUNCTION public.audit_tickets()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_desc TEXT;
+  v_action TEXT := 'update';
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_action := 'create';
+    v_desc := 'Created ticket ' || NEW.ticket_number;
+  ELSIF NEW IS DISTINCT FROM OLD THEN
+    IF NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id AND NEW.assigned_staff_id IS NOT NULL THEN
+      v_action := 'assign';
+      v_desc := 'Assigned ticket ' || NEW.ticket_number;
+    ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+      IF NEW.status = 'resolved' THEN v_action := 'resolve'; END IF;
+      IF NEW.status = 'closed' THEN v_action := 'close'; END IF;
+      v_desc := 'Ticket ' || NEW.ticket_number || ' status changed from ' || OLD.status || ' to ' || NEW.status;
+    ELSE
+      v_desc := 'Updated ticket ' || NEW.ticket_number;
+    END IF;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND NEW IS NOT DISTINCT FROM OLD THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value, new_value)
+  VALUES (
+    auth.uid(),
+    public.current_user_role_name(),
+    'tickets',
+    v_action,
+    'ticket',
+    COALESCE(NEW.id, OLD.id)::text,
+    v_desc,
+    CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) ELSE NULL END,
+    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END
+  );
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_ticket_audit ON public.tickets;
+CREATE TRIGGER on_ticket_audit
+  AFTER INSERT OR UPDATE ON public.tickets
+  FOR EACH ROW
+  EXECUTE FUNCTION public.audit_tickets();
+
+-- 35c. Meter readings audit (assignment / submission / approval / rejection)
+CREATE OR REPLACE FUNCTION public.audit_meter_readings()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_action TEXT;
+  v_desc TEXT;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_action := 'assign';
+    v_desc := 'Assigned a meter reading';
+  ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
+    v_action := NEW.status;
+    v_desc := 'Meter reading status changed from ' || OLD.status || ' to ' || NEW.status;
+  ELSE
+    v_action := 'update';
+    v_desc := 'Updated meter reading';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND NEW IS NOT DISTINCT FROM OLD THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value, new_value)
+  VALUES (
+    auth.uid(),
+    public.current_user_role_name(),
+    'meter_readings',
+    v_action,
+    'meter_reading',
+    COALESCE(NEW.id, OLD.id)::text,
+    v_desc,
+    CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) ELSE NULL END,
+    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END
+  );
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_meter_reading_audit ON public.meter_readings;
+CREATE TRIGGER on_meter_reading_audit
+  AFTER INSERT OR UPDATE ON public.meter_readings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.audit_meter_readings();
+
+-- 35d. Profiles audit (resident/user create/update/delete)
+CREATE OR REPLACE FUNCTION public.audit_profiles()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_first TEXT;
+  v_last TEXT;
+  v_name TEXT;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_first := OLD.first_name;
+    v_last := OLD.last_name;
+  ELSE
+    v_first := NEW.first_name;
+    v_last := NEW.last_name;
+  END IF;
+  v_name := trim(COALESCE(v_first, '') || ' ' || COALESCE(v_last, ''));
+
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, new_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'residents', 'create', 'profile', NEW.id::text, 'Created profile: ' || v_name, to_jsonb(NEW));
+  ELSIF TG_OP = 'UPDATE' AND NEW IS DISTINCT FROM OLD THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value, new_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'residents', 'update', 'profile', NEW.id::text, 'Updated profile: ' || v_name, to_jsonb(OLD), to_jsonb(NEW));
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value)
+    VALUES (auth.uid(), public.current_user_role_name(), 'residents', 'delete', 'profile', OLD.id::text, 'Deleted profile: ' || v_name, to_jsonb(OLD));
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_profile_audit ON public.profiles;
+CREATE TRIGGER on_profile_audit
+  AFTER INSERT OR UPDATE OR DELETE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.audit_profiles();
+
+-- ============================================================
+-- 36. System settings table (flexible key-value configuration)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.system_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key TEXT NOT NULL UNIQUE,
+  value JSONB NOT NULL DEFAULT '""'::jsonb,
+  category TEXT NOT NULL DEFAULT 'general',
+  label TEXT,
+  description TEXT,
+  is_public BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by UUID REFERENCES public.profiles(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 36b. Self-heal: add columns added in later migration versions.
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS key TEXT;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS value JSONB NOT NULL DEFAULT '""'::jsonb;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general';
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS label TEXT;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES public.profiles(id);
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- 36c. Self-heal: ensure the unique constraint exists (ON CONFLICT (key)).
+CREATE UNIQUE INDEX IF NOT EXISTS system_settings_key_key ON public.system_settings (key);
+
+-- 36d. Catch-all self-heal.
+DO $$
+DECLARE
+  col_name TEXT;
+BEGIN
+  FOR col_name IN
+    SELECT c.column_name
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = 'system_settings'
+      AND c.is_nullable = 'NO'
+      AND c.column_default IS NULL
+      AND c.column_name NOT IN ('id', 'key', 'value', 'category', 'label', 'description', 'is_public', 'updated_by', 'created_at', 'updated_at')
+  LOOP
+    EXECUTE format('ALTER TABLE public.system_settings ALTER COLUMN %I DROP NOT NULL', col_name);
+  END LOOP;
+END $$;
+
+-- 37. Row Level Security for system settings
+ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
+
+-- Everyone can read public settings (mobile apps need the barangay name etc.).
+DROP POLICY IF EXISTS "Anyone can read public system settings" ON public.system_settings;
+CREATE POLICY "Anyone can read public system settings"
+  ON public.system_settings
+  FOR SELECT
+  TO authenticated
+  USING (is_public = TRUE);
+
+-- Staff/super admins can read and manage all settings.
+DROP POLICY IF EXISTS "Staff and admins can manage system settings" ON public.system_settings;
+CREATE POLICY "Staff and admins can manage system settings"
+  ON public.system_settings
+  FOR ALL
+  TO authenticated
+  USING (public.is_staff_or_admin())
+  WITH CHECK (public.is_staff_or_admin());
+
+-- 38. Enable Realtime for system settings
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'system_settings'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.system_settings;
+  END IF;
+END $$;
+
+-- 39. System settings audit (configuration changes)
+CREATE OR REPLACE FUNCTION public.audit_system_settings()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW IS DISTINCT FROM OLD THEN
+    INSERT INTO public.audit_logs (user_id, role_name, module, action, target_type, target_id, description, old_value, new_value)
+    VALUES (
+      auth.uid(),
+      public.current_user_role_name(),
+      'system_settings',
+      'update',
+      'system_setting',
+      NEW.key,
+      'Changed system setting: ' || NEW.key,
+      jsonb_build_object(NEW.key, OLD.value),
+      jsonb_build_object(NEW.key, NEW.value)
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_system_setting_audit ON public.system_settings;
+CREATE TRIGGER on_system_setting_audit
+  AFTER UPDATE ON public.system_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.audit_system_settings();
+
+-- 40. Seed default system settings (idempotent)
+INSERT INTO public.system_settings (key, value, category, label, description, is_public) VALUES
+  ('general.barangay_name', '"Barangay Kalunasan"', 'general', 'Barangay Name', 'Official name of the barangay shown across all apps.', TRUE),
+  ('general.office_address', '""', 'general', 'Office Address', 'Physical address of the water office.', TRUE),
+  ('general.contact_number', '""', 'general', 'Contact Number', 'Public contact number for inquiries.', TRUE),
+  ('general.office_email', '""', 'general', 'Office Email', 'Official email address of the water office.', TRUE),
+  ('general.barangay_logo', '""', 'general', 'Barangay Logo URL', 'URL of the logo used in reports and public pages.', TRUE),
+  ('system.default_announcement_publish', 'true', 'system', 'Publish announcements by default', 'New announcements start as published.', FALSE),
+  ('system.notification_email_dispatch', 'false', 'system', 'Email notification dispatch', 'Future: send notifications by email as well as in-app.', FALSE),
+  ('security.password_min_length', '8', 'security', 'Minimum password length', 'Placeholder for future password policy enforcement.', FALSE),
+  ('security.session_timeout_minutes', '30', 'security', 'Session timeout (minutes)', 'Placeholder for future session timeout enforcement.', FALSE),
+  ('billing.water_rate', '0', 'billing', 'Water rate (per cubic meter)', 'Placeholder for the upcoming billing module.', FALSE),
+  ('billing.penalty_rate', '0', 'billing', 'Penalty rate (%)', 'Placeholder for the upcoming billing module.', FALSE),
+  ('billing.grace_period_days', '0', 'billing', 'Grace period (days)', 'Placeholder for the upcoming billing module.', FALSE)
+ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
 -- AFTER RUNNING: Assign roles to your users
 -- ============================================================
 -- 1. Go to Authentication > Users in Supabase dashboard

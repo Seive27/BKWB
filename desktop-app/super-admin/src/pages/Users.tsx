@@ -1,161 +1,125 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Search,
   Plus,
   Filter,
   MoreVertical,
   Circle,
-  TrendingUp,
   Users as UsersIcon,
-  Clock,
   Key,
   ChevronDown,
+  RefreshCw,
+  UserCheck,
+  AlertCircle,
 } from 'lucide-react';
 import AddUserModal, { UserFormData } from '../components/modals/AddUserModal';
-
-interface User {
-  id: string;
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  email: string;
-  role: string;
-  status: 'active' | 'away' | 'offline';
-  lastActive: string;
-  cellNumber?: string;
-  dateOfBirth?: string;
-}
-
-const mockUsers: User[] = [
-  {
-    id: '1',
-    firstName: 'Admin',
-    middleName: '',
-    lastName: 'Ouan',
-    email: 'admin.ouan@bkwb.gov.ph',
-    role: 'Super Admin',
-    status: 'active',
-    lastActive: '2 mins ago',
-  },
-  {
-    id: '2',
-    firstName: 'Juan',
-    middleName: 'Santos',
-    lastName: 'Dela Cruz',
-    email: 'juan.delacruz@bkwb.gov.ph',
-    role: 'Staff',
-    status: 'active',
-    lastActive: '10 mins ago',
-  },
-  {
-    id: '3',
-    firstName: 'Maria',
-    middleName: '',
-    lastName: 'Santos',
-    email: 'maria.santos@bkwb.gov.ph',
-    role: 'Staff',
-    status: 'active',
-    lastActive: '30 mins ago',
-  },
-  {
-    id: '4',
-    firstName: 'Ricardo',
-    middleName: 'M.',
-    lastName: 'Sanchez',
-    email: 'ricardo.s@bkwb.gov.ph',
-    role: 'Meter Reader',
-    status: 'active',
-    lastActive: '45 mins ago',
-  },
-  {
-    id: '5',
-    firstName: 'Ana',
-    middleName: '',
-    lastName: 'Batungbakal',
-    email: 'ana.b@bkwb.gov.ph',
-    role: 'Meter Reader',
-    status: 'away',
-    lastActive: '2 hours ago',
-  },
-  {
-    id: '6',
-    firstName: 'Elena',
-    middleName: 'R.',
-    lastName: 'Rodriguez',
-    email: 'elena.r@resident.bkwb.ph',
-    role: 'Resident',
-    status: 'active',
-    lastActive: '5 mins ago',
-  },
-  {
-    id: '7',
-    firstName: 'Pedro',
-    middleName: '',
-    lastName: 'Gonzales',
-    email: 'pedro.g@resident.bkwb.ph',
-    role: 'Resident',
-    status: 'offline',
-    lastActive: '1 day ago',
-  },
-  {
-    id: '8',
-    firstName: 'Mark Jayson',
-    middleName: 'M.',
-    lastName: 'Sy',
-    email: 'mark.sy@resident.bkwb.ph',
-    role: 'Resident',
-    status: 'active',
-    lastActive: '1 hour ago',
-  },
-  {
-    id: '9',
-    firstName: 'Victoria',
-    middleName: '',
-    lastName: 'Blanco',
-    email: 'victoria.b@resident.bkwb.ph',
-    role: 'Resident',
-    status: 'offline',
-    lastActive: '3 days ago',
-  },
-  {
-    id: '10',
-    firstName: 'Ricardo',
-    middleName: '',
-    lastName: 'Go',
-    email: 'ricardo.go@resident.bkwb.ph',
-    role: 'Resident',
-    status: 'active',
-    lastActive: '20 mins ago',
-  },
-];
+import {
+  getUsers,
+  createUser,
+  type ManagedUser,
+} from '../services/userService';
+import type { Role } from '../types';
 
 const ROLE_FILTERS = ['All Roles', 'Super Admin', 'Staff', 'Meter Reader', 'Resident'] as const;
+
+function getInitials(firstName: string, lastName: string): string {
+  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+}
+
+function formatLastActive(createdAt: string): string {
+  return new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 const Users: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('All Roles');
   const [showRoleFilter, setShowRoleFilter] = useState(false);
-  const [users] = useState(mockUsers);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const totalUsers = 1284;
-  const activeNow = 432;
-  const pendingInvitations = 18;
-  const accessLogs24h = 3200;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getUsers();
+      setUsers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load users.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const roleCounts = useCallback(() => {
+    const counts: Record<string, number> = {
+      'Super Admin': 0,
+      Staff: 0,
+      'Meter Reader': 0,
+      Resident: 0,
+    };
+    users.forEach((u) => {
+      if (counts[u.roleLabel] !== undefined) counts[u.roleLabel] += 1;
+    });
+    return counts;
+  }, [users]);
+
+  const totalUsers = users.length;
+  const activeNow = users.filter((u) => u.isActive).length;
+  const counts = roleCounts();
 
   const filteredUsers = users.filter((user) => {
-    const fullName = `${user.firstName} ${user.middleName} ${user.lastName}`.toLowerCase();
+    const fullName = `${user.firstName} ${user.middleName ?? ''} ${user.lastName}`.toLowerCase();
     const matchesSearch =
       fullName.includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.role.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'All Roles' || user.role === roleFilter;
+      user.roleLabel.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = roleFilter === 'All Roles' || user.roleLabel === roleFilter;
     return matchesSearch && matchesRole;
   });
 
-  const handleAddUser = (userData: UserFormData) => {
-    console.log('Adding new user:', userData);
-    alert(`User ${userData.firstName} ${userData.lastName} created successfully!\n\nTemporary Password: ${userData.password}`);
+  const handleAddUser = async (userData: UserFormData) => {
+    setCreating(true);
+    setNotice(null);
+    try {
+      const roleMap: Record<string, Role['name']> = {
+        Resident: 'resident',
+        'Meter Reader': 'meter_reader',
+        Staff: 'staff',
+        'Super Admin': 'super_admin',
+      };
+      const role = roleMap[userData.role] ?? 'resident';
+      const result = await createUser({
+        email: userData.emailAddress,
+        password: userData.password,
+        firstName: userData.firstName,
+        middleName: userData.middleName,
+        lastName: userData.lastName,
+        phone: userData.cellNumber,
+        role,
+      });
+      setNotice({
+        type: 'success',
+        message: `User ${userData.firstName} ${userData.lastName} created successfully.`,
+      });
+      setShowAddModal(false);
+      await load();
+      console.log('Created user:', result);
+    } catch (err) {
+      setNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to create user.',
+      });
+    } finally {
+      setCreating(false);
+    }
   };
 
   const getRoleColor = (role: string) => {
@@ -167,33 +131,19 @@ const Users: React.FC = () => {
     return 'text-gray-600 bg-gray-50';
   };
 
-  const getStatusIndicator = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Circle className="w-2 h-2 fill-green-500 text-green-500" />;
-      case 'away':
-        return <Circle className="w-2 h-2 fill-yellow-500 text-yellow-500" />;
-      case 'offline':
-        return <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />;
-      default:
-        return <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />;
-    }
-  };
-
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-  };
-
-  const getRoleCount = (role: string) => {
-    if (role === 'All Roles') return users.length;
-    return users.filter((u) => u.role === role).length;
+  const getStatusIndicator = (isActive: boolean) => {
+    return isActive ? (
+      <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+    ) : (
+      <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />
+    );
   };
 
   const roleStats = [
-    { label: 'Super Admin', count: getRoleCount('Super Admin'), color: 'bg-purple-500' },
-    { label: 'Staff', count: getRoleCount('Staff'), color: 'bg-green-500' },
-    { label: 'Meter Reader', count: getRoleCount('Meter Reader'), color: 'bg-indigo-500' },
-    { label: 'Resident', count: getRoleCount('Resident'), color: 'bg-gray-500' },
+    { label: 'Super Admin', count: counts['Super Admin'], color: 'bg-purple-500' },
+    { label: 'Staff', count: counts.Staff, color: 'bg-green-500' },
+    { label: 'Meter Reader', count: counts['Meter Reader'], color: 'bg-indigo-500' },
+    { label: 'Resident', count: counts.Resident, color: 'bg-gray-500' },
   ];
 
   return (
@@ -207,6 +157,21 @@ const Users: React.FC = () => {
           </p>
         </div>
 
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
+        )}
+        {notice && (
+          <div
+            className={`mb-6 border rounded-lg px-4 py-3 text-sm ${
+              notice.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}
+          >
+            {notice.message}
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -214,37 +179,33 @@ const Users: React.FC = () => {
               <span className="text-xs text-gray-600 uppercase font-medium">Total Users</span>
               <UsersIcon className="w-4 h-4 text-gray-400" />
             </div>
-            <div className="flex items-end space-x-2">
-              <h3 className="text-3xl font-bold text-gray-900">{totalUsers.toLocaleString()}</h3>
-              <div className="flex items-center space-x-1 text-green-600 mb-1">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs font-semibold">+19%</span>
-              </div>
-            </div>
+            <h3 className="text-3xl font-bold text-gray-900">{totalUsers.toLocaleString()}</h3>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Active Now</span>
-              <Circle className="w-4 h-4 text-green-500 fill-green-500" />
+              <span className="text-xs text-gray-600 uppercase font-medium">Active Users</span>
+              <UserCheck className="w-4 h-4 text-green-500" />
             </div>
-            <h3 className="text-3xl font-bold text-gray-900">{activeNow}</h3>
+            <h3 className="text-3xl font-bold text-gray-900">{activeNow.toLocaleString()}</h3>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Pending Invitations</span>
-              <Clock className="w-4 h-4 text-gray-400" />
+              <span className="text-xs text-gray-600 uppercase font-medium">Residents</span>
+              <UsersIcon className="w-4 h-4 text-gray-400" />
             </div>
-            <h3 className="text-3xl font-bold text-gray-900">{pendingInvitations}</h3>
+            <h3 className="text-3xl font-bold text-gray-900">{counts.Resident.toLocaleString()}</h3>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Access Logs (24H)</span>
+              <span className="text-xs text-gray-600 uppercase font-medium">Staff + Admins</span>
               <Key className="w-4 h-4 text-gray-400" />
             </div>
-            <h3 className="text-3xl font-bold text-gray-900">{(accessLogs24h / 1000).toFixed(1)}k</h3>
+            <h3 className="text-3xl font-bold text-gray-900">
+              {(counts.Staff + counts['Super Admin']).toLocaleString()}
+            </h3>
           </div>
         </div>
 
@@ -276,7 +237,7 @@ const Users: React.FC = () => {
                     className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   />
                 </div>
-                
+
                 {/* Role Filter Dropdown */}
                 <div className="relative">
                   <button
@@ -304,7 +265,7 @@ const Users: React.FC = () => {
                         >
                           {role}
                           {role !== 'All Roles' && (
-                            <span className="float-right text-xs text-gray-400">({getRoleCount(role)})</span>
+                            <span className="float-right text-xs text-gray-400">({counts[role] ?? 0})</span>
                           )}
                         </button>
                       ))}
@@ -313,7 +274,10 @@ const Users: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => {
+                  setNotice(null);
+                  setShowAddModal(true);
+                }}
                 className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors ml-3"
               >
                 <Plus className="w-4 h-4" />
@@ -330,14 +294,24 @@ const Users: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Role</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Last Active</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredUsers.length === 0 ? (
+                {loading ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center">
+                      <div className="flex items-center justify-center space-x-2 text-gray-400">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Loading users…</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                       <p className="text-sm text-gray-500">No users found matching your filters.</p>
                     </td>
                   </tr>
@@ -360,17 +334,21 @@ const Users: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 text-xs font-medium rounded-full ${getRoleColor(user.role)}`}>
-                          {user.role}
+                        <span className={`px-3 py-1 text-xs font-medium rounded-full ${getRoleColor(user.roleLabel)}`}>
+                          {user.roleLabel}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          {getStatusIndicator(user.status)}
-                          <span className="text-sm text-gray-900 capitalize">{user.status}</span>
+                          {getStatusIndicator(user.isActive)}
+                          <span className="text-sm text-gray-900 capitalize">
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{user.lastActive}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {formatLastActive(user.createdAt)}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                           <MoreVertical className="w-4 h-4 text-gray-600" />
@@ -383,18 +361,18 @@ const Users: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination */}
+          {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-            <div className="text-sm text-gray-600">Showing 1 to 10 of 1,284 users</div>
-            <div className="flex items-center space-x-2">
-              <button className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">Previous</button>
-              <button className="px-3 py-1 text-sm bg-primary-600 text-white rounded">1</button>
-              <button className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">2</button>
-              <button className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">3</button>
-              <span className="px-2 text-gray-500">...</span>
-              <button className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">128</button>
-              <button className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">Next</button>
+            <div className="text-sm text-gray-600">
+              Showing {filteredUsers.length} of {totalUsers.toLocaleString()} users
             </div>
+            <button
+              onClick={load}
+              className="flex items-center space-x-2 px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
       </div>
@@ -404,6 +382,7 @@ const Users: React.FC = () => {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddUser}
+        submitting={creating}
       />
     </div>
   );

@@ -85,7 +85,7 @@ export async function getTickets(
   let query = supabase
     .from('tickets')
     .select(TICKET_SELECT)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (options.limit) {
@@ -368,8 +368,11 @@ export async function deleteTicket(id: string): Promise<void> {
 export function subscribeToTickets(
   callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Ticket | null) => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, so use a unique name per
+  // call to avoid "cannot add callbacks after subscribe()" when multiple
+  // components subscribe at once.
   const channel = supabase
-    .channel('tickets-changes')
+    .channel(`tickets-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'tickets' },
@@ -394,8 +397,10 @@ export function subscribeToTicket(
   ticketId: string,
   callback: () => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, so use a unique name per
+  // call to avoid "cannot add callbacks after subscribe()".
   const channel = supabase
-    .channel(`ticket-${ticketId}`)
+    .channel(`ticket-${ticketId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'tickets', filter: `id=eq.${ticketId}` },

@@ -9,7 +9,6 @@ import React, {
 import {
   login as authLogin,
   logout as authLogout,
-  getCurrentUser,
 } from '../services/authService';
 import type { AuthUser, Profile, Role } from '../types';
 
@@ -44,40 +43,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   const [showLogin, setShowLogin] = useState(true);
   const [isClosing, setIsClosing] = useState(false);
 
-  // ── Session restore on mount ──
-
+  // ── Mount behavior ──
+  // Desktop apps always require an explicit login on launch. The persisted
+  // Supabase session is intentionally NOT auto-restored so the operator is
+  // always presented with the login screen when the app starts.
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const existingUser = await getCurrentUser();
-        if (cancelled) return;
-
-        if (existingUser) {
-          if (existingUser.role !== allowedRole) {
-            await authLogout();
-            if (!cancelled) {
-              setIsLoading(false);
-              setShowLogin(true);
-            }
-            return;
-          }
-
-          setUser(existingUser);
-          setProfile(existingUser.profile);
-          setIsAuthenticated(true);
-          setShowLogin(false);
-        }
-      } catch {
-        // Session invalid
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [allowedRole]);
+    setShowLogin(true);
+    setIsLoading(false);
+  }, []);
 
   // ── Login ──
 

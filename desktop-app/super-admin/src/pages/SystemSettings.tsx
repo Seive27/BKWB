@@ -1,374 +1,240 @@
-import React, { useState } from 'react';
-import { Shield, Key, Radio, Plus, Edit } from 'lucide-react';
-import BroadcastNowModal from '../components/modals/BroadcastNowModal';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Building2,
+  Cpu,
+  Shield,
+  Wallet,
+  CheckCircle,
+  AlertTriangle,
+  Save,
+  RotateCcw,
+  Settings as SettingsIcon,
+} from 'lucide-react';
+import type { SystemSetting } from '../types';
+import { SYSTEM_SETTING_CATEGORIES, SYSTEM_SETTING_CATEGORY_LABELS } from '../types';
+import { useSystemSettings } from '../hooks/useSystemSettings';
+import { saveSystemSettings } from '../services/systemSettingsService';
 
-interface Role {
-  id: string;
-  name: string;
-  users: number;
-  scope: 'GLOBAL' | 'REGIONAL' | 'READ-ONLY';
-  color: string;
+const CATEGORY_ICONS: Record<string, React.FC<{ className?: string }>> = {
+  general: Building2,
+  system: Cpu,
+  security: Shield,
+  billing: Wallet,
+};
+
+/** Infer the input type from the current JSON-decoded value. */
+function valueKind(value: unknown): 'text' | 'number' | 'boolean' {
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return 'number';
+  return 'text';
 }
 
 const SystemSettings: React.FC = () => {
-  const [isMfaEnabled, setIsMfaEnabled] = useState(true);
-  const [minPasswordLength, setMinPasswordLength] = useState('12-characters');
-  const [expirationCycle, setExpirationCycle] = useState('90-days');
-  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
-  
-  // System Broadcast Settings
-  const [broadcastMessage, setBroadcastMessage] = useState('');
-  const [dashboardBanner, setDashboardBanner] = useState(true);
-  const [inAppNotification, setInAppNotification] = useState(false);
-  const [emailDispatch, setEmailDispatch] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string>('general');
+  const [drafts, setDrafts] = useState<Record<string, unknown>>({});
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Roles & Permissions
-  const [roles, _setRoles] = useState<Role[]>([
-    { id: '1', name: 'Super Admin', users: 12, scope: 'GLOBAL', color: 'blue' },
-    { id: '2', name: 'System Editor', users: 45, scope: 'REGIONAL', color: 'green' },
-    { id: '3', name: 'Audit Only', users: 8, scope: 'READ-ONLY', color: 'orange' },
-  ]);
+  const { settings, loading, error } = useSystemSettings();
 
-  const getScopeColor = (scope: string) => {
-    switch (scope) {
-      case 'GLOBAL':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'REGIONAL':
-        return 'bg-green-50 text-green-700 border-green-200';
-      case 'READ-ONLY':
-        return 'bg-orange-50 text-orange-700 border-orange-200';
-      default:
-        return 'bg-gray-50 text-gray-700 border-gray-200';
+  // Reset drafts whenever the source settings change (initial load, realtime).
+  useEffect(() => {
+    setDrafts((prev) => {
+      const next: Record<string, unknown> = {};
+      settings.forEach((s) => {
+        next[s.key] = prev[s.key] !== undefined ? prev[s.key] : s.value;
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.map((s) => s.key + ':' + JSON.stringify(s.value)).join('|')]);
+
+  const settingsByCategory = useMemo(() => {
+    const map: Record<string, SystemSetting[]> = {};
+    SYSTEM_SETTING_CATEGORIES.forEach((c) => (map[c] = []));
+    settings.forEach((s) => {
+      if (!map[s.category]) map[s.category] = [];
+      map[s.category].push(s);
+    });
+    return map;
+  }, [settings]);
+
+  const activeSettings = settingsByCategory[activeCategory] ?? [];
+
+  const dirtyEntries = useMemo(() => {
+    return settings
+      .filter((s) => drafts[s.key] !== undefined && drafts[s.key] !== s.value)
+      .map((s) => ({ key: s.key, value: drafts[s.key] }));
+  }, [settings, drafts]);
+
+  const setDraft = (key: string, value: unknown) => {
+    setDrafts((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    if (dirtyEntries.length === 0) return;
+    setSaving(true);
+    try {
+      await saveSystemSettings(dirtyEntries);
+      setToast({ type: 'success', message: 'Settings saved successfully.' });
+      window.setTimeout(() => setToast(null), 3500);
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save settings.' });
+      window.setTimeout(() => setToast(null), 3500);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const getRoleDotColor = (color: string) => {
-    switch (color) {
-      case 'blue':
-        return 'bg-blue-500';
-      case 'green':
-        return 'bg-green-500';
-      case 'orange':
-        return 'bg-orange-500';
-      default:
-        return 'bg-gray-500';
+  const handleDiscard = () => {
+    const next: Record<string, unknown> = {};
+    settings.forEach((s) => (next[s.key] = s.value));
+    setDrafts(next);
+  };
+
+  const renderField = (setting: SystemSetting) => {
+    const value = drafts[setting.key] ?? setting.value;
+    const kind = valueKind(setting.value);
+
+    if (kind === 'boolean') {
+      return (
+        <button
+          onClick={() => setDraft(setting.key, !value)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${value ? 'bg-blue-600' : 'bg-gray-300'}`}
+          role="switch"
+          aria-checked={!!value}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      );
     }
+
+    if (kind === 'number') {
+      return (
+        <input
+          type="number"
+          value={String(value)}
+          onChange={(e) => setDraft(setting.key, Number(e.target.value))}
+          className="w-40 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={String(value ?? '')}
+        onChange={(e) => setDraft(setting.key, e.target.value)}
+        placeholder="—"
+        className="w-full max-w-md px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    );
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-6">
-        <div className="flex items-center justify-between">
+    <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="p-8">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">System Settings</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Manage global configurations, security protocols, and administrative controls.
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">System Settings</h1>
+            <p className="text-sm text-gray-600">Manage global configuration using a flexible key-value store.</p>
           </div>
           <div className="flex items-center space-x-3">
-            <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              Discard Changes
+            <button
+              onClick={handleDiscard}
+              disabled={dirtyEntries.length === 0}
+              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Discard Changes</span>
             </button>
-            <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-              Save Configuration
+            <button
+              onClick={handleSave}
+              disabled={dirtyEntries.length === 0 || saving}
+              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {saving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+              <span>{saving ? 'Saving…' : dirtyEntries.length > 0 ? 'Save (' + dirtyEntries.length + ')' : 'Save Configuration'}</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto px-8 py-6">
-        <div className="grid grid-cols-2 gap-6 max-w-7xl">
-          {/* Left Column */}
-          <div className="space-y-6">
-            {/* Security Settings Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
-                    <Shield className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <h2 className="text-base font-semibold text-gray-900">Security Settings</h2>
-                </div>
-                <span className="px-2 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded">
-                  SECURE
-                </span>
-              </div>
-
-              <div className="p-6 space-y-6">
-                {/* Multi-Factor Authentication */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900 mb-1">
-                      Multi-Factor Authentication (MFA)
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      Enforce MFA for all administrative accounts during login.
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setIsMfaEnabled(!isMfaEnabled)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      isMfaEnabled ? 'bg-blue-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        isMfaEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Data Encryption at Rest */}
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900 mb-1">
-                      Data Encryption at Rest
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      AES-256 bit encryption for all database volumes.
-                    </div>
-                  </div>
-                  <span className="flex items-center px-2 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded">
-                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
-                    Enabled
-                  </span>
-                </div>
-
-                {/* Password Policy */}
-                <div className="pt-4 border-t border-gray-100">
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-3">
-                    Password Policy
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-2">
-                        Minimum Length
-                      </label>
-                      <select
-                        value={minPasswordLength}
-                        onChange={(e) => setMinPasswordLength(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="8-characters">8 Characters</option>
-                        <option value="10-characters">10 Characters</option>
-                        <option value="12-characters">12 Characters</option>
-                        <option value="16-characters">16 Characters</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-2">
-                        Expiration Cycle
-                      </label>
-                      <select
-                        value={expirationCycle}
-                        onChange={(e) => setExpirationCycle(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="30-days">30 Days</option>
-                        <option value="60-days">60 Days</option>
-                        <option value="90-days">90 Days</option>
-                        <option value="never">Never</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Roles & Permissions Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
-                    <Key className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <h2 className="text-base font-semibold text-gray-900">
-                    Roles & Permissions (RBAC)
-                  </h2>
-                </div>
-                <button className="flex items-center space-x-1 text-sm font-medium text-blue-600 hover:text-blue-700">
-                  <Plus className="w-4 h-4" />
-                  <span>New Role</span>
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                        Role Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                        Users
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                        Scope
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {roles.map((role) => (
-                      <tr key={role.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-2">
-                            <span className={`w-2 h-2 rounded-full ${getRoleDotColor(role.color)}`}></span>
-                            <span className="text-sm font-medium text-gray-900">{role.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-gray-700">{role.users} Users</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-medium border rounded ${getScopeColor(
-                              role.scope
-                            )}`}
-                          >
-                            {role.scope}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <button className="p-1 text-gray-400 hover:text-gray-600">
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* System Broadcast Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
-                    <Radio className="w-4 h-4 text-orange-600" />
-                  </div>
-                  <h2 className="text-base font-semibold text-gray-900">System Broadcast</h2>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-4">
-                {/* Global Announcement */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">
-                    Global Announcement
-                  </label>
-                  <textarea
-                    value={broadcastMessage}
-                    onChange={(e) => setBroadcastMessage(e.target.value)}
-                    placeholder="Type a message to show on all user dashboards..."
-                    rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  />
-                </div>
-
-                {/* Channels */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-3">
-                    Channels
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={dashboardBanner}
-                        onChange={(e) => setDashboardBanner(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Dashboard Banner</span>
-                    </label>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={inAppNotification}
-                        onChange={(e) => setInAppNotification(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">In-App Notification</span>
-                    </label>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={emailDispatch}
-                        onChange={(e) => setEmailDispatch(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Email Dispatch</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Broadcast Button */}
-                <button
-                  onClick={() => setIsBroadcastModalOpen(true)}
-                  className="w-full py-3 text-sm font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors mt-4"
-                >
-                  Broadcast Now
-                </button>
-              </div>
-            </div>
-
-            {/* Live Audit Feed */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <h2 className="text-base font-semibold text-gray-900">LIVE AUDIT FEED</h2>
-                  </div>
-                </div>
-                <button className="text-xs font-medium text-blue-600 hover:text-blue-700">
-                  Cloud Stream Active
-                </button>
-              </div>
-
-              <div className="p-6">
-                <div className="space-y-3">
-                  <div className="flex items-start space-x-3 text-xs text-gray-600">
-                    <span className="text-gray-400">14:32:11</span>
-                    <span>User "admin_quan" modified system settings</span>
-                  </div>
-                  <div className="flex items-start space-x-3 text-xs text-gray-600">
-                    <span className="text-gray-400">14:31:45</span>
-                    <span>Security policy updated: MFA enabled</span>
-                  </div>
-                  <div className="flex items-start space-x-3 text-xs text-gray-600">
-                    <span className="text-gray-400">14:30:22</span>
-                    <span>New role created: "System Editor"</span>
-                  </div>
-                  <div className="flex items-start space-x-3 text-xs text-gray-600">
-                    <span className="text-gray-400">14:29:18</span>
-                    <span>Broadcast sent to 2,482 users</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Category Tabs */}
+        <div className="mb-6 flex items-center space-x-2 border-b border-gray-200">
+          {SYSTEM_SETTING_CATEGORIES.map((cat) => {
+            const Icon = CATEGORY_ICONS[cat] ?? SettingsIcon;
+            const dirtyCount = settings.filter((s) => s.category === cat && drafts[s.key] !== undefined && drafts[s.key] !== s.value).length;
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  activeCategory === cat
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{SYSTEM_SETTING_CATEGORY_LABELS[cat]}</span>
+                {dirtyCount > 0 && (
+                  <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold">{dirtyCount}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {loading && settings.length === 0 ? (
+          <div className="py-20 text-center">
+            <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <SettingsIcon className="w-7 h-7 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-900">Loading settings…</p>
+          </div>
+        ) : activeSettings.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 px-6 py-12 text-center">
+            <p className="text-sm font-medium text-gray-900">No settings in this category yet</p>
+            <p className="text-xs text-gray-500 mt-1">Add new keys to the system_settings table to extend configuration.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+            {activeSettings.map((setting) => {
+              const isDirty = drafts[setting.key] !== undefined && drafts[setting.key] !== setting.value;
+              const publicLabel = setting.label ?? setting.key.split('.').pop();
+              return (
+                <div key={setting.key} className={`px-6 py-4 flex items-center justify-between gap-6 ${isDirty ? 'bg-blue-50/40' : ''}`}>
+                  <div className="min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm font-semibold text-gray-900">{publicLabel}</p>
+                      {isDirty && <span className="text-[10px] font-semibold text-blue-600 uppercase">Unsaved</span>}
+                    </div>
+                    {setting.description && (
+                      <p className="text-xs text-gray-500 mt-0.5">{setting.description}</p>
+                    )}
+                    <p className="text-[10px] text-gray-400 mt-1 font-mono">{setting.key}</p>
+                  </div>
+                  <div className="flex-shrink-0">{renderField(setting)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Broadcast Now Modal */}
-      <BroadcastNowModal
-        isOpen={isBroadcastModalOpen}
-        onClose={() => setIsBroadcastModalOpen(false)}
-        message={broadcastMessage}
-        dashboardBanner={dashboardBanner}
-        inAppNotification={inAppNotification}
-        emailDispatch={emailDispatch}
-      />
+      {toast && (
+        <div className={`fixed bottom-6 right-6 flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 };

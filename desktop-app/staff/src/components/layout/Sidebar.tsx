@@ -10,9 +10,11 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  MessageSquare,
 } from 'lucide-react';
 import logo from '../../assets/logo.jpg';
 import LogoutModal from '../modals/LogoutModal';
+import { useNotifications } from '../../hooks/useNotifications';
 
 interface SidebarProps {
   activePage: string;
@@ -22,6 +24,9 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // Live unread notification count for the sidebar badge.
+  const { unreadCount } = useNotifications({ limit: 50 });
 
   const handleLogoutClick = () => {
     setShowLogoutModal(true);
@@ -53,6 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'announcements', label: 'Announcements', icon: Megaphone },
     { id: 'ticket-management', label: 'Ticket Management', icon: TicketCheck },
+    { id: 'notifications', label: 'Notifications', icon: MessageSquare },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
   ];
 
@@ -94,7 +100,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, onLogout })
               `}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-sm font-medium">{item.label}</span>
+              <span className="text-sm font-medium flex-1">{item.label}</span>
+              {item.id === 'notifications' && unreadCount > 0 && (
+                <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-semibold">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
           );
         })}

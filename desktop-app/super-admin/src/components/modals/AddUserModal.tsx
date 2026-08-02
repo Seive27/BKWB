@@ -5,6 +5,8 @@ interface AddUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (userData: UserFormData) => void;
+  /** When true, the Create button shows a spinner and ignores clicks. */
+  submitting?: boolean;
 }
 
 export interface UserFormData {
@@ -18,7 +20,7 @@ export interface UserFormData {
   password: string;
 }
 
-const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }) => {
+const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, submitting = false }) => {
   const [formData, setFormData] = useState<UserFormData>({
     firstName: '',
     middleName: '',
@@ -96,6 +98,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
   };
 
   const handleSubmit = () => {
+    if (submitting) return;
     if (validateForm()) {
       onSubmit({
         ...formData,
@@ -407,9 +410,10 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
           </button>
           <button
             onClick={handleSubmit}
-            className="px-5 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+            disabled={submitting}
+            className="px-5 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Create User
+            {submitting ? 'Creating…' : 'Create User'}
           </button>
         </div>
       </div>

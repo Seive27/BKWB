@@ -23,6 +23,17 @@ export default function Login({ onLogin }: LoginProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
+  // Single login path for both the button and the keyboard submit action so
+  // the app is never marked logged-in without a real Supabase session.
+  const handleLogin = async () => {
+    try {
+      await login(username, password);
+      onLogin?.();
+    } catch (error) {
+      Alert.alert('Login failed', error instanceof Error ? error.message : 'An unexpected error occurred.');
+    }
+  };
+
   return (
     <View className="flex-1 bg-white" style={{ paddingTop: insets.top }}>
       <StatusBar style="dark" />
@@ -81,19 +92,12 @@ export default function Login({ onLogin }: LoginProps) {
               autoCorrect={false}
               autoComplete="password"
               returnKeyType="done"
-              onSubmitEditing={onLogin}
+              onSubmitEditing={handleLogin}
             />
           </View>
 
           <Pressable
-            onPress={async () => {
-              try {
-                await login(username, password);
-                onLogin?.();
-              } catch (error) {
-                Alert.alert('Login failed', error instanceof Error ? error.message : 'An unexpected error occurred.');
-              }
-            }}
+            onPress={handleLogin}
             className="mt-5 items-center justify-center rounded-md bg-[#3581A7] py-3.5 active:opacity-85"
             accessibilityRole="button"
             accessibilityLabel="Login"

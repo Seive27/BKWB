@@ -456,3 +456,166 @@ export interface AuthUser {
   role: Role['name'];
   profile: Profile;
 }
+
+// ── Notifications Types ──
+// Mirrors the Supabase `notifications` table.
+export type NotificationType =
+  | 'announcement'
+  | 'ticket_created'
+  | 'ticket_assigned'
+  | 'ticket_status'
+  | 'ticket_resolved'
+  | 'reading_assigned'
+  | 'reading_approved'
+  | 'reading_rejected'
+  | 'billing'
+  | 'payment'
+  | 'system';
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  is_read: boolean;
+  read_at: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  /** Joined profiles row for the recipient (super-admin monitoring view). */
+  recipient?: { id: string; first_name: string; last_name: string } | null;
+}
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  announcement: 'Announcement',
+  ticket_created: 'Ticket Created',
+  ticket_assigned: 'Ticket Assigned',
+  ticket_status: 'Ticket Updated',
+  ticket_resolved: 'Ticket Resolved',
+  reading_assigned: 'Reading Assigned',
+  reading_approved: 'Reading Approved',
+  reading_rejected: 'Reading Rejected',
+  billing: 'Billing',
+  payment: 'Payment',
+  system: 'System',
+};
+
+// ── Audit Log Types ──
+// Mirrors the Supabase `audit_logs` table.
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  role_name: string | null;
+  module: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  description: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
+  /** Joined profiles row (from user_id) for display. */
+  user?: { id: string; first_name: string; last_name: string } | null;
+}
+
+export interface AuditLogQueryOptions {
+  module?: string | null;
+  action?: string | null;
+  search?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+  orderDirection?: 'asc' | 'desc';
+}
+
+export const AUDIT_MODULES = [
+  'auth',
+  'announcements',
+  'tickets',
+  'meter_readings',
+  'residents',
+  'system_settings',
+] as const;
+
+export const AUDIT_ACTIONS = [
+  'login',
+  'logout',
+  'create',
+  'update',
+  'delete',
+  'assign',
+  'resolve',
+  'close',
+  'approved',
+  'rejected',
+  'submitted',
+] as const;
+
+// ── System Settings Types ──
+// Mirrors the Supabase `system_settings` table (flexible key-value model).
+export interface SystemSetting {
+  id: string;
+  key: string;
+  /** JSON-decoded value (string | number | boolean). */
+  value: unknown;
+  category: string;
+  label: string | null;
+  description: string | null;
+  is_public: boolean;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const SYSTEM_SETTING_CATEGORIES = ['general', 'system', 'security', 'billing'] as const;
+
+export const SYSTEM_SETTING_CATEGORY_LABELS: Record<string, string> = {
+  general: 'General',
+  system: 'System',
+  security: 'Security',
+  billing: 'Billing (Future)',
+};
+
+// ── Analytics Types ──
+export interface TicketStatusCount {
+  open: number;
+  assigned: number;
+  in_progress: number;
+  resolved: number;
+  closed: number;
+}
+
+export interface ReadingStatusCount {
+  assigned: number;
+  pending_review: number;
+  approved: number;
+  rejected: number;
+  billed: number;
+}
+
+export interface AnalyticsSummary {
+  totalResidents: number;
+  totalStaff: number;
+  totalMeterReaders: number;
+  totalAnnouncements: number;
+  activeStaff: number;
+  tickets: TicketStatusCount;
+  readings: ReadingStatusCount;
+}
+
+/** One point on a time-series chart (label + value). */
+export interface TrendPoint {
+  label: string;
+  value: number;
+}
+
+export interface AnalyticsData {
+  summary: AnalyticsSummary;
+  ticketTrends: TrendPoint[];
+  readingCompletionTrends: TrendPoint[];
+  announcementActivity: TrendPoint[];
+  residentGrowth: TrendPoint[];
+}

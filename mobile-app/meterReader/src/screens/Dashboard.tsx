@@ -7,6 +7,7 @@ import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 import { useAssignments } from '@/hooks/useAssignments';
+import { useNotifications } from '@/hooks/useNotifications';
 import { useReadingHistory } from '@/hooks/useReadingHistory';
 import { getCurrentReaderProfile } from '@/services/meterReadingService';
 
@@ -15,6 +16,8 @@ type DashboardProps = {
   onTabPress?: (tab: NavTab) => void;
   /** Open the full announcements screen. */
   onOpenAnnouncements?: () => void;
+  /** Open the notifications screen. */
+  onOpenNotifications?: () => void;
 };
 
 const cardShadow = {
@@ -52,6 +55,7 @@ export default function Dashboard({
   activeTab = 'dashboard',
   onTabPress,
   onOpenAnnouncements,
+  onOpenNotifications,
 }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
@@ -112,9 +116,10 @@ export default function Dashboard({
               {refreshing ? 'Syncing…' : 'Live'}
             </Text>
           </View>
-          <View className="flex-row items-center gap-1.5">
+          <View className="flex-row items-center gap-2">
             <Text className="text-base font-bold text-navy">{todayLabel}</Text>
             <CloudStatusIcon />
+            <NotificationBell onPress={onOpenNotifications} />
           </View>
         </View>
 
@@ -238,5 +243,28 @@ export default function Dashboard({
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
     </View>
+  );
+}
+
+/** Header bell with a live unread badge that opens the notifications screen. */
+function NotificationBell({ onPress }: { onPress?: () => void }) {
+  const { unreadCount } = useNotifications({ limit: 20 });
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="relative h-9 w-9 items-center justify-center rounded-full bg-white active:opacity-70"
+      accessibilityRole="button"
+      accessibilityLabel={"Notifications" + (unreadCount > 0 ? ', ' + unreadCount + ' unread' : '')}
+    >
+      <Text className="text-lg leading-none text-navy">🔔</Text>
+      {unreadCount > 0 ? (
+        <View className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5">
+          <Text className="text-center text-[10px] font-bold text-white">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }

@@ -1,58 +1,34 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import {
+  getCurrentProfile,
+  updateProfile,
+  changePassword,
+  signOut,
+  type FullProfile,
+} from '@/services/authService';
 
 type ProfileProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
 };
 
-type ProfileFields = {
-  accountNumber: string;
-  fullName: string;
-  address: string;
-  contactNumber: string;
-  email: string;
-  zone: string;
-  status: 'Active' | 'Inactive';
-};
-
-const INITIAL_PROFILE: ProfileFields = {
-  accountNumber: 'KLN-2024-1234',
-  fullName: 'Juan Dela Cruz',
-  address: 'Purok 3, Barangay Kalunasan',
-  contactNumber: '+63 912 345 6789',
-  email: 'juandelacruz@email.com',
-  zone: 'Zone 2',
-  status: 'Active',
-};
-
-const EDITABLE_KEYS = ['fullName', 'address', 'contactNumber', 'email'] as const;
-type EditableKey = (typeof EDITABLE_KEYS)[number];
-
-function getInitials(name: string) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
+function getInitials(firstName: string, lastName: string) {
+  return `${firstName.charAt(0) ?? ''}${lastName.charAt(0) ?? ''}`.toUpperCase() || 'R';
 }
 
 function InfoRow({
   label,
   value,
-  isEditing,
-  onChangeText,
   isLast,
   isStatus,
 }: {
   label: string;
   value: string;
-  isEditing?: boolean;
-  onChangeText?: (text: string) => void;
   isLast?: boolean;
   isStatus?: boolean;
 }) {
@@ -67,15 +43,6 @@ function InfoRow({
         <View className="rounded-full bg-emerald-500 px-3 py-1">
           <Text className="text-xs font-semibold text-white">{value}</Text>
         </View>
-      ) : isEditing && onChangeText ? (
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          className="max-w-[58%] text-right text-sm font-semibold text-slate-800"
-          style={{ padding: 0 }}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
       ) : (
         <Text className="max-w-[58%] text-right text-sm font-semibold text-slate-800">{value}</Text>
       )}
@@ -87,39 +54,116 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
 
+  const [profile, setProfile] = useState<FullProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Editable fields
+  const [phone, setPhone] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const [profile, setProfile] = useState<ProfileFields>(INITIAL_PROFILE);
-  const [draft, setDraft] = useState<ProfileFields>(INITIAL_PROFILE);
+  const [saving, setSaving] = useState(false);
 
-  const displayed = isEditing ? draft : profile;
+  // Password fields
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
-  const updateDraft = (key: EditableKey, value: string) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getCurrentProfile();
+      setProfile(data);
+      setPhone(data?.phone ?? '');
+      setAvatarUrl(data?.avatar_url ?? '');
+    } catch (err) {
+      Alert.alert(
+        'Profile Error',
+        err instanceof Error ? err.message : 'Failed to load your profile.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const fullName = profile
+    ? [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim()
+    : '';
+
+  const handleSaveProfile = async () => {
+    setSaving(true);
+    try {
+      await updateProfile({ phone, avatar_url: avatarUrl });
+      setProfile((prev) => (prev ? { ...prev, phone, avatar_url: avatarUrl || null } : prev));
+      setIsEditing(false);
+      Alert.alert('Profile Updated', 'Your profile has been updated.');
+    } catch (err) {
+      Alert.alert('Update Failed', err instanceof Error ? err.message : 'Could not save your profile.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const startEditing = () => {
-    setDraft(profile);
-    setIsEditing(true);
+  const handleChangePassword = async () => {
+    if (newPassword.length < 8) {
+      Alert.alert('Invalid Password', 'New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'New password and confirmation do not match.');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await changePassword(newPassword);
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordForm(false);
+      Alert.alert('Password Updated', 'Your password has been changed.');
+    } catch (err) {
+      Alert.alert('Update Failed', err instanceof Error ? err.message : 'Could not change your password.');
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
-  const cancelEditing = () => {
-    setDraft(profile);
-    setIsEditing(false);
-  };
-
-  const saveEditing = () => {
-    setProfile(draft);
-    setIsEditing(false);
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => {
+          signOut().catch(() => {});
+        },
+      },
+    ]);
   };
 
   return (
     <View className="flex-1 bg-slate-50">
       <View className="items-center bg-brand px-5 pb-8" style={{ paddingTop: insets.top + 24 }}>
-        <View className="h-24 w-24 items-center justify-center rounded-full bg-white">
-          <Text className="text-3xl font-bold text-brand">{getInitials(displayed.fullName)}</Text>
-        </View>
-        <Text className="mt-4 text-2xl font-bold text-white">{displayed.fullName}</Text>
-        <Text className="mt-1 text-base text-white/80">{displayed.email}</Text>
+        {avatarUrl ? (
+          <View className="h-24 w-24 overflow-hidden rounded-full bg-white">
+            <Image
+              source={{ uri: avatarUrl }}
+              style={{ width: 96, height: 96 }}
+              contentFit="cover"
+            />
+          </View>
+        ) : (
+          <View className="h-24 w-24 items-center justify-center rounded-full bg-white">
+            <Text className="text-3xl font-bold text-brand">
+              {getInitials(profile?.first_name ?? '', profile?.last_name ?? '')}
+            </Text>
+          </View>
+        )}
+        <Text className="mt-4 text-2xl font-bold text-white">{fullName || 'Resident'}</Text>
+        <Text className="mt-1 text-base text-white/80">{profile?.email ?? ''}</Text>
       </View>
 
       <ScrollView
@@ -129,64 +173,143 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
         keyboardShouldPersistTaps="handled"
       >
         <View className="px-4 pt-5">
-          <Text className="mb-3 text-base font-bold text-slate-800">Account Information</Text>
+          {loading ? (
+            <Text className="py-10 text-center text-sm text-slate-400">Loading profile…</Text>
+          ) : (
+            <>
+              <Text className="mb-3 text-base font-bold text-slate-800">Account Information</Text>
 
-          <View
-            className="overflow-hidden rounded-2xl bg-white"
-            style={{
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
-          >
-            <InfoRow label="Account Number" value={displayed.accountNumber} />
-            <InfoRow
-              label="Full Name"
-              value={displayed.fullName}
-              isEditing={isEditing}
-              onChangeText={(text) => updateDraft('fullName', text)}
-            />
-            <InfoRow
-              label="Address"
-              value={displayed.address}
-              isEditing={isEditing}
-              onChangeText={(text) => updateDraft('address', text)}
-            />
-            <InfoRow
-              label="Contact Number"
-              value={displayed.contactNumber}
-              isEditing={isEditing}
-              onChangeText={(text) => updateDraft('contactNumber', text)}
-            />
-            <InfoRow
-              label="Email"
-              value={displayed.email}
-              isEditing={isEditing}
-              onChangeText={(text) => updateDraft('email', text)}
-            />
-            <InfoRow label="Zone" value={displayed.zone} />
-            <InfoRow label="Account Status" value={displayed.status} isStatus isLast />
-          </View>
+              <View
+                className="overflow-hidden rounded-2xl bg-white"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
+              >
+                <InfoRow label="Account Number" value={profile?.account_number ?? '—'} />
+                <InfoRow label="Full Name" value={fullName || '—'} />
+                <InfoRow label="Service Address" value={profile?.service_address ?? '—'} />
+                <InfoRow label="Email" value={profile?.email ?? '—'} />
+                <InfoRow label="Account Status" value={profile?.is_active ? 'Active' : 'Inactive'} isStatus isLast />
+              </View>
 
-          <Pressable
-            onPress={isEditing ? saveEditing : startEditing}
-            className="mt-5 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
-          >
-            <Text className="text-base font-semibold text-white">
-              {isEditing ? 'Save' : 'Edit Profile'}
-            </Text>
-          </Pressable>
+              {/* Edit Profile */}
+              <Text className="mb-3 mt-6 text-base font-bold text-slate-800">Edit Profile</Text>
+              <View
+                className="overflow-hidden rounded-2xl bg-white"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
+              >
+                <View className="border-b border-slate-100 px-4 py-3.5">
+                  <Text className="text-sm text-slate-400">Profile Picture URL</Text>
+                  <TextInput
+                    value={avatarUrl}
+                    onChangeText={setAvatarUrl}
+                    placeholder="https://…/photo.jpg"
+                    placeholderTextColor="#9CA3AF"
+                    className="mt-1 text-sm font-semibold text-slate-800"
+                    style={{ padding: 0 }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <View className="px-4 py-3.5">
+                  <Text className="text-sm text-slate-400">Contact Number</Text>
+                  <TextInput
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+63 9XX XXX XXXX"
+                    placeholderTextColor="#9CA3AF"
+                    className="mt-1 text-sm font-semibold text-slate-800"
+                    style={{ padding: 0 }}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
 
-          {isEditing ? (
-            <Pressable
-              onPress={cancelEditing}
-              className="mt-3 items-center rounded-xl border border-slate-200 bg-white py-3.5 active:bg-slate-50"
-            >
-              <Text className="text-base font-semibold text-slate-600">Cancel</Text>
-            </Pressable>
-          ) : null}
+              <Pressable
+                onPress={isEditing ? handleSaveProfile : () => setIsEditing(true)}
+                disabled={saving}
+                className="mt-5 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark disabled:opacity-60"
+              >
+                <Text className="text-base font-semibold text-white">
+                  {saving ? 'Saving…' : isEditing ? 'Save Profile' : 'Edit Profile'}
+                </Text>
+              </Pressable>
+
+              {/* Password */}
+              <Text className="mb-3 mt-6 text-base font-bold text-slate-800">Security</Text>
+              <View
+                className="overflow-hidden rounded-2xl bg-white"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
+              >
+                <Pressable
+                  onPress={() => setShowPasswordForm((v) => !v)}
+                  className="px-4 py-3.5 active:bg-slate-50"
+                >
+                  <Text className="text-sm font-semibold text-brand">
+                    {showPasswordForm ? 'Hide Password Form' : 'Change Password'}
+                  </Text>
+                </Pressable>
+
+                {showPasswordForm && (
+                  <View className="border-t border-slate-100 px-4 py-3.5">
+                    <Text className="text-sm text-slate-400">New Password</Text>
+                    <TextInput
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholder="Min. 8 characters"
+                      placeholderTextColor="#9CA3AF"
+                      secureTextEntry
+                      className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                      autoCapitalize="none"
+                    />
+                    <Text className="mt-3 text-sm text-slate-400">Confirm Password</Text>
+                    <TextInput
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor="#9CA3AF"
+                      secureTextEntry
+                      className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                      autoCapitalize="none"
+                    />
+                    <Pressable
+                      onPress={handleChangePassword}
+                      disabled={savingPassword}
+                      className="mt-3 items-center rounded-lg bg-brand py-3 active:bg-brand-dark disabled:opacity-60"
+                    >
+                      <Text className="text-sm font-semibold text-white">
+                        {savingPassword ? 'Updating…' : 'Update Password'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+
+              {/* Logout */}
+              <Pressable
+                onPress={handleLogout}
+                className="mt-6 items-center rounded-xl border border-red-200 bg-red-50 py-3.5 active:bg-red-100"
+              >
+                <Text className="text-base font-semibold text-red-600">Sign Out</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </ScrollView>
 

@@ -78,3 +78,101 @@ export async function login(username: string, password: string): Promise<AuthUse
     role: profile.role.name,
   };
 }
+
+/** The current user's full profile row (with role). */
+export interface FullProfile {
+  id: string;
+  email: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  phone: string | null;
+  avatar_url: string | null;
+  is_active: boolean;
+  role_name: string;
+}
+
+export async function getCurrentProfile(): Promise<FullProfile | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(
+      'id, email, first_name, middle_name, last_name, phone, avatar_url, is_active, role:roles(name)'
+    )
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[mobile-auth] profile load failed:', error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const row = data as unknown as {
+    id: string;
+    email: string;
+    first_name: string;
+    middle_name: string | null;
+    last_name: string;
+    phone: string | null;
+    avatar_url: string | null;
+    is_active: boolean;
+    role?: { name: string } | null;
+  };
+  return {
+    id: row.id,
+    email: row.email,
+    first_name: row.first_name,
+    middle_name: row.middle_name,
+    last_name: row.last_name,
+    phone: row.phone,
+    avatar_url: row.avatar_url,
+    is_active: row.is_active,
+    role_name: row.role?.name ?? 'meter_reader',
+  };
+}
+
+/** Update editable profile fields (names, phone, avatar). */
+export async function updateProfile(input: {
+  first_name?: string;
+  middle_name?: string | null;
+  last_name?: string;
+  phone?: string | null;
+  avatar_url?: string | null;
+}): Promise<void> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error('You must be logged in to update your profile.');
+
+  const patch: Record<string, string | null> = {};
+  if (input.first_name !== undefined) patch.first_name = input.first_name.trim();
+  if (input.middle_name !== undefined) patch.middle_name = input.middle_name?.trim() || null;
+  if (input.last_name !== undefined) patch.last_name = input.last_name.trim();
+  if (input.phone !== undefined) patch.phone = input.phone?.trim() || null;
+  if (input.avatar_url !== undefined) patch.avatar_url = input.avatar_url?.trim() || null;
+
+  const { error } = await supabase.from('profiles').update(patch).eq('id', userId);
+  if (error) throw new Error(error.message || 'Failed to update profile.');
+}
+
+/** Change the current user's password (min 8 characters). */
+export async function changePassword(newPassword: string): Promise<void> {
+  if (newPassword.length < 8) {
+    throw new Error('New password must be at least 8 characters.');
+  }
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message || 'Failed to update password.');
+}
+
+/** Sign the current user out. The app shell reacts via onAuthStateChange. */
+export async function signOut(): Promise<void> {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw new Error(error.message || 'Failed to sign out.');
+}

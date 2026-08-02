@@ -79,7 +79,7 @@ export async function getAssignedReadings(): Promise<MeterReading[]> {
     .select(READING_SELECT)
     .eq('meter_reader_id', userId)
     .eq('status', 'assigned')
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('assignment_date', { ascending: true })
     .order('created_at', { ascending: true });
 
@@ -99,7 +99,7 @@ export async function getReadingHistory(): Promise<MeterReading[]> {
     .select(READING_SELECT)
     .eq('meter_reader_id', userId)
     .neq('status', 'assigned')
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('reading_date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -186,8 +186,12 @@ export async function submitReading(
 export function subscribeToMeterReadings(
   callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: MeterReading | null) => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, and components can mount
+  // multiple subscriptions at once (e.g. the dashboard's assignments + history
+  // hooks). Using a unique name per call avoids "cannot add callbacks after
+  // subscribe()".
   const channel = supabase
-    .channel('meter-readings-changes')
+    .channel(`meter-readings-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'meter_readings' },

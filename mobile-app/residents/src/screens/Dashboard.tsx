@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Image } from 'expo-image';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { QuickActions } from '@/components/ui/QuickActions';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
+import { useNotifications } from '@/hooks/useNotifications';
+import { getCurrentProfile } from '@/services/authService';
 import NotificationsScreen from '@/screens/Notifications';
 import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
@@ -26,6 +29,16 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
+  const [residentName, setResidentName] = useState('Resident');
+
+  // Greet the resident by their real first name from the profiles table.
+  useEffect(() => {
+    getCurrentProfile()
+      .then((profile) => {
+        if (profile?.first_name) setResidentName(profile.first_name);
+      })
+      .catch(() => {});
+  }, []);
 
   if (quickActionScreen === 'viewBills') {
     return (
@@ -82,8 +95,13 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
   return (
     <View className="flex-1 bg-slate-50">
       <View className="bg-brand px-5 pb-6" style={{ paddingTop: insets.top + 16 }}>
-        <Text className="text-2xl font-bold text-white">Barangay Kalunasan</Text>
-        <Text className="mt-1 text-base text-white/80">Good day, Resident</Text>
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1">
+            <Text className="text-2xl font-bold text-white">Barangay Kalunasan</Text>
+            <Text className="mt-1 text-base text-white/80">Good day, {residentName}</Text>
+          </View>
+          <NotificationBell onPress={() => setQuickActionScreen('notifications')} />
+        </View>
       </View>
 
       <ScrollView
@@ -137,6 +155,33 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
 function formatDateShort(iso: string): string {
   const date = new Date(iso);
   return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+/** Header bell with a live unread badge that opens the notifications screen. */
+function NotificationBell({ onPress }: { onPress?: () => void }) {
+  const { unreadCount } = useNotifications({ limit: 20 });
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="relative h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
+      accessibilityRole="button"
+      accessibilityLabel={"Notifications" + (unreadCount > 0 ? ', ' + unreadCount + ' unread' : '')}
+    >
+      <Image
+        source={require('../../assets/QuickActionsIcon/Notifications.svg')}
+        style={{ width: 22, height: 22 }}
+        contentFit="contain"
+      />
+      {unreadCount > 0 ? (
+        <View className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5">
+          <Text className="text-center text-[10px] font-bold text-white">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
 }
 
 function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {

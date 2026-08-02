@@ -86,7 +86,7 @@ export async function getMeterReadings(
   let query = supabase
     .from('meter_readings')
     .select(READING_SELECT)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('assignment_date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -192,7 +192,7 @@ async function getPreviousReading(accountId: string): Promise<number> {
     .select('current_reading')
     .eq('account_id', accountId)
     .in('status', ['approved', 'billed'])
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .order('reading_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(1)
@@ -311,8 +311,11 @@ export async function rejectReading(
 export function subscribeToMeterReadings(
   callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: MeterReading | null) => void
 ): () => void {
+  // Supabase channels are singletons keyed by name, and components can mount
+  // multiple subscriptions at once. Using a unique name per call avoids
+  // "cannot add callbacks after subscribe()".
   const channel = supabase
-    .channel('meter-readings-changes')
+    .channel(`meter-readings-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'meter_readings' },

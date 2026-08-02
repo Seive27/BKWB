@@ -12,6 +12,7 @@ import Bills from './pages/Bills';
 import Payments from './pages/Payments';
 import Announcements from './pages/Announcements';
 import TicketManagement from './pages/Tickets';
+import Notifications from './pages/Notifications';
 import Reports from './pages/Reports';
 import ProfileSettings from './pages/ProfileSettings';
 
@@ -36,6 +37,8 @@ function AppContent() {
         return <Announcements />;
       case 'ticket-management':
         return <TicketManagement />;
+      case 'notifications':
+        return <Notifications />;
       case 'reports':
         return <Reports />;
       case 'settings':
@@ -51,7 +54,7 @@ function AppContent() {
       <div className="flex h-screen overflow-hidden">
         <Sidebar activePage={activePage} onPageChange={setActivePage} onLogout={logout} />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
+          <Header onNavigate={setActivePage} />
           {renderContent()}
         </div>
       </div>

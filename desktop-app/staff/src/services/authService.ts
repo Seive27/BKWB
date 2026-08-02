@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { Profile, AuthUser, Role } from '../types';
+import { logAuthAction } from './auditLogService';
 
 // ── Error Handling ──
 
@@ -147,6 +148,9 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     throw new Error('Your account has been deactivated. Please contact your administrator.');
   }
 
+  // Record the successful login in the audit log (best-effort).
+  logAuthAction('login', profile.id, profile.role.name).catch(() => {});
+
   return {
     id: profile.id,
     email: profile.email,
@@ -157,6 +161,15 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 
 /** Sign the current user out of Supabase */
 export async function logout(): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id ?? null;
+  const profile = userId ? await getUserProfile(userId) : null;
+
+  // Record the logout in the audit log before clearing the session.
+  if (profile) {
+    logAuthAction('logout', profile.id, profile.role.name).catch(() => {});
+  }
+
   const { error } = await supabase.auth.signOut();
   if (error) {
     throw new Error(getAuthErrorMessage(error));

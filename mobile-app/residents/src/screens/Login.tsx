@@ -22,6 +22,7 @@ export default function Login({ onLogin }: LoginProps) {
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Single login path for both the button and the keyboard submit action so
   // the app is never marked logged-in without a real Supabase session.
@@ -81,19 +82,38 @@ export default function Login({ onLogin }: LoginProps) {
               keyboardType="email-address"
               returnKeyType="next"
             />
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor="#9CA3AF"
-              className="rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="password"
-              returnKeyType="done"
-              onSubmitEditing={handleLogin}
-            />
+            <View className="relative justify-center">
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                className="rounded-md border border-[#D1D5DB] bg-white py-3.5 pl-4 pr-12 text-[15px] text-[#1E3A5F]"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="password"
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+              <Pressable
+                onPress={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 h-10 w-10 items-center justify-center active:opacity-70"
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                hitSlop={8}
+              >
+                <Image
+                  source={
+                    showPassword
+                      ? require('../../assets/LoginIcons/HidePW.svg')
+                      : require('../../assets/LoginIcons/ShowPW.svg')
+                  }
+                  style={{ width: 22, height: 18, tintColor: '#707B81' }}
+                  contentFit="contain"
+                />
+              </Pressable>
+            </View>
           </View>
 
           <Pressable

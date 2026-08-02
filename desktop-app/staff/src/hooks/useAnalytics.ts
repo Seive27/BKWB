@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AnalyticsData } from '../types';
 import { getAnalyticsData } from '../services/analyticsService';
+import { useAuth } from './useAuth';
 
 interface UseAnalyticsResult {
   data: AnalyticsData | null;
@@ -11,6 +12,7 @@ interface UseAnalyticsResult {
 
 /** Loads the analytics dashboard data for the given lookback window. */
 export function useAnalytics(days = 30): UseAnalyticsResult {
+  const { isAuthenticated } = useAuth();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +31,17 @@ export function useAnalytics(days = 30): UseAnalyticsResult {
   }, [days]);
 
   useEffect(() => {
+    // Dashboard stays mounted behind the login overlay; wait for a session
+    // so role lookups don't run anonymously and fall back to empty UUIDs.
+    if (!isAuthenticated) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+  }, [days, isAuthenticated]);
 
   const refresh = useCallback(() => load(), [load]);
 

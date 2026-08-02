@@ -1,13 +1,10 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import type {
-  ResidentOption,
-  StaffOption,
   Ticket,
   TicketDraft,
   TicketPerson,
-  TicketStatus,
   TicketTimelineEvent,
-} from '../types';
+} from '@/types/tickets';
 
 // ── Query Options ──
 
@@ -67,24 +64,63 @@ function mapRow(row: TicketRow): Ticket {
   };
 }
 
+// NOTE: internal_notes is deliberately excluded — it must never be visible to residents.
 const TICKET_SELECT =
-  '*, resident:profiles!tickets_resident_id_fkey(id, first_name, last_name), assigned_staff:profiles!tickets_assigned_staff_id_fkey(id, first_name, last_name)';
+  'id, ticket_number, resident_id, assigned_staff_id, category, subject, description, priority, status, resolution, attachment_url, created_at, updated_at, resolved_at, closed_at, deleted_at, resident:profiles!tickets_resident_id_fkey(id, first_name, last_name), assigned_staff:profiles!tickets_assigned_staff_id_fkey(id, first_name, last_name)';
 
 const TIMELINE_SELECT =
   '*, performer:profiles!ticket_timeline_performed_by_fkey(id, first_name, last_name)';
 
+/**
+ * Returns the currently authenticated user id or throws a friendly error.
+ * Prefers getSession() (local, instant) and only falls back to getUser()
+ * (network round-trip) when no cached session is present, so a transient
+ * network failure or slow init is never mistaken for "not logged in".
+ */
+async function requireUserId(): Promise<string> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const session = sessionData?.session ?? null;
+  console.log('Current session:', session);
+
+  // A cached session is enough — no need to wait on a network call.
+  if (session?.user?.id) {
+    return session.user.id;
+  }
+
+  if (sessionError) {
+    console.error('Session error:', sessionError);
+  }
+
+  // Fallback: validate/refresh against the server.
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
+  console.log('Current user:', user);
+  if (userError) {
+    console.error('getUser error:', userError);
+  }
+
+  if (user?.id) {
+    return user.id;
+  }
+
+  throw new Error('You must be logged in to manage tickets.');
+}
+
 // ── Queries ──
 
 /**
- * Fetch all non-deleted tickets (newest first) for staff/super-admin.
- * Search/status/category/priority filtering is applied by the UI.
+ * Fetch the logged-in resident's own non-deleted tickets (newest first).
+ * Search/status/category filtering is applied by the UI on the loaded list.
  */
-export async function getTickets(
+export async function getResidentTickets(
   options: TicketQueryOptions = {}
 ): Promise<Ticket[]> {
+  const userId = await requireUserId();
+
   let query = supabase
     .from('tickets')
     .select(TICKET_SELECT)
+    .eq('resident_id', userId)
     .eq('deleted_at', null)
     .order('created_at', { ascending: false });
 
@@ -137,63 +173,20 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
   return { ...mapRow(data as unknown as TicketRow), timeline };
 }
 
-/** Fetch active staff profiles for the assign-ticket picker. */
-export async function getStaffProfiles(): Promise<StaffOption[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
-    .eq('is_active', true)
-    .eq('role.name', 'staff')
-    .order('last_name');
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
-
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    first_name: row.first_name,
-    last_name: row.last_name,
-    email: row.email,
-  }));
-}
-
-/** Fetch active resident profiles for the create-ticket picker. */
-export async function getResidents(): Promise<ResidentOption[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
-    .eq('is_active', true)
-    .eq('role.name', 'resident')
-    .order('last_name');
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
-
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    first_name: row.first_name,
-    last_name: row.last_name,
-    email: row.email,
-  }));
-}
-
 // ── Mutations ──
 
 /**
- * Create a ticket on behalf of a resident (staff/super-admin flow).
- * The ticket number is generated automatically by a database trigger.
+ * Create a ticket for the logged-in resident. The ticket number is
+ * generated automatically by a database trigger (TKT-YYYY-000001).
  * Also records the initial "created" timeline event.
  */
-export async function createTicket(
-  draft: TicketDraft,
-  performedBy: string
-): Promise<Ticket> {
+export async function createTicket(draft: TicketDraft): Promise<Ticket> {
+  const userId = await requireUserId();
+
   const { data, error } = await supabase
     .from('tickets')
     .insert({
-      resident_id: draft.resident_id,
+      resident_id: userId,
       category: draft.category,
       subject: draft.subject,
       description: draft.description,
@@ -214,155 +207,22 @@ export async function createTicket(
       ticket_id: ticket.id,
       event_type: 'created',
       description: 'Ticket created',
-      performed_by: performedBy,
+      performed_by: userId,
     });
 
   if (timelineError) {
     throw new Error(getTicketErrorMessage(timelineError));
   }
 
-  return ticket;
-}
-
-/**
- * Assign a ticket to a staff member. If the ticket is still "open",
- * the status is advanced to "assigned" as part of the workflow.
- * Records an "assigned" timeline event.
- */
-export async function assignTicket(
-  id: string,
-  staffId: string,
-  performedBy: string,
-  staffName: string
-): Promise<Ticket> {
-  const { data: current, error: currentError } = await supabase
-    .from('tickets')
-    .select('status')
-    .eq('id', id)
-    .maybeSingle();
-
-  if (currentError) {
-    throw new Error(getTicketErrorMessage(currentError));
-  }
-
-  const nextStatus: TicketStatus =
-    current?.status === 'open' ? 'assigned' : (current?.status ?? 'assigned');
-
-  const { data, error } = await supabase
-    .from('tickets')
-    .update({ assigned_staff_id: staffId, status: nextStatus })
-    .eq('id', id)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
-
-  const { error: timelineError } = await supabase
-    .from('ticket_timeline')
-    .insert({
-      ticket_id: id,
-      event_type: 'assigned',
-      description: `Assigned to ${staffName}`,
-      performed_by: performedBy,
-    });
-
-  if (timelineError) {
-    throw new Error(getTicketErrorMessage(timelineError));
-  }
-
-  return mapRow(data as unknown as TicketRow);
-}
-
-/**
- * Update a ticket's status. Sets resolved_at/closed_at timestamps where
- * appropriate and records a "status_change" timeline event.
- */
-export async function updateStatus(
-  id: string,
-  status: TicketStatus,
-  performedBy: string,
-  resolution?: string
-): Promise<Ticket> {
-  const now = new Date().toISOString();
-  const updates: Record<string, unknown> = { status };
-
-  if (status === 'resolved') {
-    updates.resolved_at = now;
-    if (resolution !== undefined) {
-      updates.resolution = resolution;
-    }
-  } else if (status === 'closed') {
-    updates.closed_at = now;
-  } else if (status === 'open' || status === 'assigned' || status === 'in_progress') {
-    // Reopening/rewinding clears closure markers.
-    updates.resolved_at = null;
-    updates.closed_at = null;
-  }
-
-  const { data, error } = await supabase
-    .from('tickets')
-    .update(updates)
-    .eq('id', id)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
-
-  const { error: timelineError } = await supabase
-    .from('ticket_timeline')
-    .insert({
-      ticket_id: id,
-      event_type: 'status_change',
-      description: `Status changed to ${status.replace('_', ' ')}`,
-      performed_by: performedBy,
-    });
-
-  if (timelineError) {
-    throw new Error(getTicketErrorMessage(timelineError));
-  }
-
-  return mapRow(data as unknown as TicketRow);
-}
-
-/** Update editable staff-only fields (resolution, internal notes, etc.). */
-export async function updateTicket(
-  id: string,
-  updates: Partial<Pick<Ticket, 'resolution' | 'internal_notes' | 'priority' | 'subject'>>
-): Promise<Ticket> {
-  const { data, error } = await supabase
-    .from('tickets')
-    .update(updates)
-    .eq('id', id)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
-
-  return mapRow(data as unknown as TicketRow);
-}
-
-/** Soft-delete a ticket by setting deleted_at. */
-export async function deleteTicket(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('tickets')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id);
-
-  if (error) {
-    throw new Error(getTicketErrorMessage(error));
-  }
+  const timeline = await getTicketTimeline(ticket.id);
+  return { ...ticket, timeline };
 }
 
 // ── Realtime ──
 
 /**
  * Subscribe to insert/update/delete events on the tickets table.
+ * Realtime respects RLS, so residents only receive events for their own rows.
  * Returns an unsubscribe function.
  */
 export function subscribeToTickets(
@@ -388,7 +248,7 @@ export function subscribeToTickets(
 
 /**
  * Subscribe to changes on a single ticket and its timeline rows.
- * The callback fires whenever either changes.
+ * The callback fires whenever either changes (e.g. staff updated the status).
  */
 export function subscribeToTicket(
   ticketId: string,

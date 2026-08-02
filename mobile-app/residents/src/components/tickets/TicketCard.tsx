@@ -10,6 +10,19 @@ type TicketCardProps = {
   onPress?: (ticket: Ticket) => void;
 };
 
+const STATUS_ACCENT: Record<Ticket['status'], string> = {
+  open: 'bg-blue-400',
+  assigned: 'bg-violet-400',
+  in_progress: 'bg-amber-400',
+  resolved: 'bg-emerald-500',
+  closed: 'bg-slate-400',
+};
+
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export function TicketCard({ ticket, onPress }: TicketCardProps) {
   return (
     <Pressable
@@ -29,13 +42,13 @@ export function TicketCard({ ticket, onPress }: TicketCardProps) {
         }}
       >
         <View className="flex-row">
-          <View className={`w-1.5 ${ticket.status === 'open' ? 'bg-blue-400' : ticket.status === 'in_progress' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+          <View className={`w-1.5 ${STATUS_ACCENT[ticket.status]}`} />
           <View className="flex-1 px-4 py-4">
             <View className="mb-2 flex-row items-center justify-between">
               <Text className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                {ticket.reference}
+                {ticket.ticket_number}
               </Text>
-              <Text className="text-xs text-slate-400">{ticket.updatedAt}</Text>
+              <Text className="text-xs text-slate-400">{formatShortDate(ticket.created_at)}</Text>
             </View>
 
             <Text className="text-base font-bold text-slate-800" numberOfLines={1}>

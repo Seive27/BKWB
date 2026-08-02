@@ -1,12 +1,16 @@
 import { Pressable, ScrollView, Text } from 'react-native';
 
-export type TicketFilter = 'all' | 'open' | 'in_progress' | 'resolved';
+import type { TicketStatus } from '@/types/tickets';
+
+export type TicketFilter = 'all' | TicketStatus;
 
 const FILTERS: { id: TicketFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'open', label: 'Open' },
+  { id: 'assigned', label: 'Assigned' },
   { id: 'in_progress', label: 'In Progress' },
   { id: 'resolved', label: 'Resolved' },
+  { id: 'closed', label: 'Closed' },
 ];
 
 type TicketFilterTabsProps = {

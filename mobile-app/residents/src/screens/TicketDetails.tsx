@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,10 +7,11 @@ import { SkeletonTicketDetails } from '@/components/tickets/Skeletons';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { TicketTimeline } from '@/components/tickets/TicketTimeline';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
-import { TICKET_CATEGORY_LABELS, type Ticket } from '@/types/tickets';
+import { useTicketDetails } from '@/hooks/useTicketDetails';
+import { TICKET_CATEGORY_LABELS } from '@/types/tickets';
 
 type TicketDetailsScreenProps = {
-  ticket: Ticket;
+  ticketId: string;
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   onBack?: () => void;
@@ -34,21 +34,34 @@ function BackButton({ onPress }: { onPress?: () => void }) {
   );
 }
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function staffName(ticket: { assigned_staff?: { first_name: string; last_name: string } | null }): string {
+  const s = ticket.assigned_staff;
+  if (s) {
+    return `${s.first_name} ${s.last_name}`.trim();
+  }
+  return '';
+}
+
 export default function TicketDetailsScreen({
-  ticket,
+  ticketId,
   activeTab = 'dashboard',
   onTabPress,
   onBack,
 }: TicketDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Simulate a brief load so the details skeleton is visible.
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+  const { ticket, timeline, loading, error, refresh } = useTicketDetails(ticketId);
+  // Skeleton only on the very first load — background realtime refreshes
+  // (loading flips true while ticket already exists) must not flash it.
+  const showSkeleton = loading && !ticket;
 
   return (
     <View className="flex-1 bg-slate-50">
@@ -57,7 +70,9 @@ export default function TicketDetailsScreen({
           <BackButton onPress={onBack} />
           <View className="flex-1">
             <Text className="text-2xl font-bold text-white">Ticket Details</Text>
-            <Text className="mt-1 text-base text-white/80">{ticket.reference}</Text>
+            <Text className="mt-1 text-base text-white/80">
+              {ticket ? ticket.ticket_number : 'Loading…'}
+            </Text>
           </View>
         </View>
       </View>
@@ -68,9 +83,23 @@ export default function TicketDetailsScreen({
         showsVerticalScrollIndicator={false}
       >
         <View className="px-4 pt-5">
-          {isLoading ? (
+          {showSkeleton ? (
             <SkeletonTicketDetails />
-          ) : (
+          ) : error && !ticket ? (
+            <View className="items-center px-6 py-14">
+              <Text className="text-lg font-bold text-slate-800">Couldn't load ticket</Text>
+              <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-slate-500">
+                {error}
+              </Text>
+              <Pressable
+                onPress={refresh}
+                className="mt-6 items-center rounded-xl bg-brand px-8 py-3.5 active:bg-brand-dark"
+                accessibilityRole="button"
+              >
+                <Text className="text-base font-semibold text-white">Try Again</Text>
+              </Pressable>
+            </View>
+          ) : ticket ? (
             <View className="gap-4">
               {/* Summary card */}
               <View
@@ -98,12 +127,34 @@ export default function TicketDetailsScreen({
                   {ticket.subject}
                 </Text>
                 <Text className="mt-1 text-xs text-slate-400">
-                  Submitted {ticket.createdAt} · Updated {ticket.updatedAt}
+                  Submitted {formatDate(ticket.created_at)} · Updated {formatDate(ticket.updated_at)}
                 </Text>
 
                 <View className="mt-4 border-t border-slate-100 pt-4">
                   <Text className="text-sm leading-5 text-slate-600">{ticket.description}</Text>
                 </View>
+
+                {staffName(ticket) ? (
+                  <View className="mt-4 rounded-xl bg-violet-50 px-4 py-3">
+                    <Text className="text-xs font-semibold uppercase tracking-wide text-violet-500">
+                      Assigned Staff
+                    </Text>
+                    <Text className="mt-0.5 text-sm font-semibold text-violet-800">
+                      {staffName(ticket)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {ticket.resolution ? (
+                  <View className="mt-4 rounded-xl bg-emerald-50 px-4 py-3">
+                    <Text className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                      Resolution
+                    </Text>
+                    <Text className="mt-0.5 text-sm leading-5 text-emerald-800">
+                      {ticket.resolution}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               {/* Timeline card */}
@@ -118,16 +169,16 @@ export default function TicketDetailsScreen({
                 }}
               >
                 <Text className="mb-5 text-base font-bold text-slate-800">Request Timeline</Text>
-                <TicketTimeline events={ticket.timeline} />
+                <TicketTimeline events={timeline} />
               </View>
 
               <View className="items-center py-2">
                 <Text className="text-center text-xs leading-5 text-slate-400">
-                  You will receive a notification when staff updates this request.
+                  You will see updates here automatically when staff respond to this request.
                 </Text>
               </View>
             </View>
-          )}
+          ) : null}
         </View>
       </ScrollView>
 

@@ -1,22 +1,33 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AssignedReadingCard } from '@/components/assigned/AssignedReadingCard';
-import { FilterTabs, type AssignedFilter } from '@/components/assigned/FilterTabs';
 import { SearchBar } from '@/components/assigned/SearchBar';
 import { SyncAllButton } from '@/components/assigned/SyncAllButton';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { MOCK_ASSIGNED_READINGS } from '@/data/mockAssigned';
+import { useAssignments } from '@/hooks/useAssignments';
 import RecordReading from '@/screens/RecordReading';
-import type { AssignedReading } from '@/types/readings';
+import type { MeterReading } from '@/types/readings';
 
 type AssignedProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
 };
+
+function SkeletonCard() {
+  return (
+    <View className="mb-3 overflow-hidden rounded-[18px] bg-white p-4">
+      <View className="mb-3 h-5 w-2/3 rounded bg-slate-200" />
+      <View className="mb-2 h-3.5 w-1/3 rounded bg-slate-200" />
+      <View className="mb-2 h-3.5 w-3/4 rounded bg-slate-200" />
+      <View className="mb-2 h-3.5 w-1/2 rounded bg-slate-200" />
+      <View className="mt-3 h-12 rounded-2xl bg-slate-200" />
+    </View>
+  );
+}
 
 export default function Assigned({
   activeTab = 'assigned',
@@ -25,25 +36,29 @@ export default function Assigned({
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
 
+  const { assignments, loading, refreshing, error, refresh } = useAssignments();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<AssignedFilter>('all');
-  const [activeReading, setActiveReading] = useState<AssignedReading | null>(null);
+  const [activeReading, setActiveReading] = useState<MeterReading | null>(null);
 
   const filteredReadings = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
+    if (!query) return assignments;
 
-    return MOCK_ASSIGNED_READINGS.filter((reading) => {
-      const matchesFilter = filter === 'all' || reading.status === filter;
-      if (!matchesFilter) return false;
-      if (!query) return true;
-
+    return assignments.filter((reading) => {
+      const name = reading.resident
+        ? `${reading.resident.first_name} ${reading.resident.last_name}`.toLowerCase()
+        : '';
+      const account = (reading.account?.account_number ?? '').toLowerCase();
+      const meter = (reading.meter?.meter_number ?? '').toLowerCase();
+      const address = (reading.account?.service_address ?? '').toLowerCase();
       return (
-        reading.name.toLowerCase().includes(query) ||
-        reading.accountNo.toLowerCase().includes(query) ||
-        reading.areaRoute.toLowerCase().includes(query)
+        name.includes(query) ||
+        account.includes(query) ||
+        meter.includes(query) ||
+        address.includes(query)
       );
     });
-  }, [filter, searchQuery]);
+  }, [assignments, searchQuery]);
 
   if (activeReading) {
     return (
@@ -52,6 +67,7 @@ export default function Assigned({
         activeTab={activeTab}
         onTabPress={onTabPress}
         onBack={() => setActiveReading(null)}
+        onSubmitted={() => setActiveReading(null)}
       />
     );
   }
@@ -67,31 +83,54 @@ export default function Assigned({
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => refresh()} />
+        }
       >
         <ScreenHeader
           title="Assigned Readings"
-          left={<SyncAllButton />}
+          left={<SyncAllButton onPress={() => refresh()} />}
           right={<CloudStatusIcon />}
         />
 
         <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
-        <FilterTabs value={filter} onChange={setFilter} />
 
-        {filteredReadings.length === 0 ? (
-          <View className="mt-10 items-center px-6">
-            <Text className="text-center text-[15px] text-navy-muted">
-              No assigned readings match your search.
+        {loading ? (
+          <View>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </View>
+        ) : error ? (
+          <View className="mt-10 items-center rounded-[18px] bg-white px-6 py-10">
+            <Text className="text-base font-bold text-navy">Unable to load readings</Text>
+            <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-navy-soft">
+              {error}
             </Text>
             <Pressable
-              onPress={() => {
-                setSearchQuery('');
-                setFilter('all'); 
-              }}
-              className="mt-3"
+              onPress={() => refresh()}
+              className="mt-5 items-center rounded-xl bg-brand px-8 py-3 active:opacity-85"
               accessibilityRole="button"
             >
-              <Text className="text-[14px] font-semibold text-brand">Clear filters</Text>
+              <Text className="text-base font-semibold text-white">Try Again</Text>
             </Pressable>
+          </View>
+        ) : filteredReadings.length === 0 ? (
+          <View className="mt-10 items-center px-6">
+            <Text className="text-center text-[15px] text-navy-muted">
+              {searchQuery.trim()
+                ? 'No assigned readings match your search.'
+                : 'You have no assigned readings right now.'}
+            </Text>
+            {searchQuery.trim() ? (
+              <Pressable
+                onPress={() => setSearchQuery('')}
+                className="mt-3"
+                accessibilityRole="button"
+              >
+                <Text className="text-[14px] font-semibold text-brand">Clear search</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           filteredReadings.map((reading) => (

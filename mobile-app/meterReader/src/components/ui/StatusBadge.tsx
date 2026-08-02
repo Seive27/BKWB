@@ -1,33 +1,42 @@
 import { Text, View } from 'react-native';
 
-import type { ReadingStatus } from '@/types/readings';
+import { METER_READING_STATUS_LABELS, type MeterReadingStatus } from '@/types/readings';
 
 type StatusBadgeProps = {
-  status: ReadingStatus;
+  status: MeterReadingStatus;
 };
 
-const styles: Record<
-  ReadingStatus,
-  { label: string; container: string; text: string }
-> = {
-  pending: {
-    label: 'Pending',
+const styles: Record<MeterReadingStatus, { container: string; text: string }> = {
+  assigned: {
+    container: 'bg-slate-100',
+    text: 'text-navy-soft',
+  },
+  pending_review: {
     container: 'bg-pending-soft',
     text: 'text-pending',
   },
-  completed: {
-    label: 'Completed',
+  approved: {
     container: 'bg-completed-soft',
     text: 'text-sync-text',
+  },
+  rejected: {
+    container: 'bg-alert-soft',
+    text: 'text-alert',
+  },
+  billed: {
+    container: 'bg-brand-soft',
+    text: 'text-brand',
   },
 };
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const style = styles[status];
+  const style = styles[status] ?? styles.assigned;
 
   return (
     <View className={`rounded-full px-2.5 py-1 ${style.container}`}>
-      <Text className={`text-[11px] font-semibold ${style.text}`}>{style.label}</Text>
+      <Text className={`text-[11px] font-semibold ${style.text}`}>
+        {METER_READING_STATUS_LABELS[status] ?? status}
+      </Text>
     </View>
   );
 }

@@ -11,11 +11,11 @@ import {
 } from '@/types/tickets';
 
 const CATEGORIES: TicketCategory[] = [
-  'water',
+  'water_supply',
   'billing',
-  'meter',
-  'account',
   'plumbing',
+  'water_quality',
+  'meter_concern',
   'other',
 ];
 
@@ -27,6 +27,8 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
 
 type TicketFormProps = {
   onSubmit?: (draft: TicketDraft) => void;
+  /** Disables the submit button while a submission is in flight. */
+  submitting?: boolean;
 };
 
 function FieldLabel({ children }: { children: string }) {
@@ -56,14 +58,18 @@ function Chip({
   );
 }
 
-export function TicketForm({ onSubmit }: TicketFormProps) {
+export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
   const [category, setCategory] = useState<TicketCategory | null>(null);
   const [priority, setPriority] = useState<TicketPriority>('medium');
   const [subject, setSubject] = useState<string | null>(null);
   const [description, setDescription] = useState('');
 
   const canSubmit =
-    category !== null && subject !== null && subject.trim().length > 0 && description.trim().length > 0;
+    !submitting &&
+    category !== null &&
+    subject !== null &&
+    subject.trim().length > 0 &&
+    description.trim().length > 0;
 
   const handleSubmit = () => {
     if (!canSubmit || category === null || subject === null) {
@@ -154,7 +160,9 @@ export function TicketForm({ onSubmit }: TicketFormProps) {
         accessibilityRole="button"
         accessibilityState={{ disabled: !canSubmit }}
       >
-        <Text className="text-base font-semibold text-white">Submit Ticket</Text>
+        <Text className="text-base font-semibold text-white">
+          {submitting ? 'Submitting…' : 'Submit Ticket'}
+        </Text>
       </Pressable>
     </View>
   );

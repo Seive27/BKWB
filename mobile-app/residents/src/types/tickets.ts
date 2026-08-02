@@ -1,56 +1,84 @@
 /**
  * Ticket domain types for the resident service request feature.
- *
- * These types mirror the future Supabase schema (tickets + ticket_timeline)
- * so the UI can be wired to the backend with minimal changes later.
+ * Mirrors the Supabase `tickets` and `ticket_timeline` tables.
  */
 
-export type TicketStatus = 'open' | 'in_progress' | 'resolved';
+export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
 
 export type TicketPriority = 'low' | 'medium' | 'high';
 
-export type TicketCategory = 'water' | 'billing' | 'meter' | 'account' | 'plumbing' | 'other';
+export type TicketCategory =
+  | 'water_supply'
+  | 'billing'
+  | 'plumbing'
+  | 'water_quality'
+  | 'meter_concern'
+  | 'other';
 
-export type TicketEventType = 'submitted' | 'staff_reply' | 'status_change' | 'resolved';
+export type TicketTimelineEventType = 'created' | 'assigned' | 'status_change';
 
-export type TicketTimelineEvent = {
+/** A person joined from the profiles table (resident or staff). */
+export interface TicketPerson {
   id: string;
-  type: TicketEventType;
-  title: string;
-  /** Optional message body. For staff replies this is the reply text. */
-  description?: string;
-  /** Who created the event: the resident ("You") or staff ("BKWB Staff"). */
-  author: string;
-  timestamp: string;
-};
+  first_name: string;
+  last_name: string;
+}
 
-export type Ticket = {
+/** One row of the ticket_timeline table. */
+export interface TicketTimelineEvent {
   id: string;
-  /** Human-readable reference, e.g. "TKT-2026-0102". */
-  reference: string;
-  subject: string;
+  ticket_id: string;
+  event_type: TicketTimelineEventType;
+  description: string | null;
+  performed_by: string | null;
+  created_at: string;
+  /** Joined profiles row (from performed_by) for display. */
+  performer?: TicketPerson | null;
+}
+
+/** A row of the tickets table, with joined person + optional timeline. */
+export interface Ticket {
+  id: string;
+  /** Human-readable reference, e.g. "TKT-2026-000001" (DB-generated). */
+  ticket_number: string;
+  resident_id: string;
+  assigned_staff_id: string | null;
   category: TicketCategory;
+  subject: string;
+  description: string;
+  priority: TicketPriority;
   status: TicketStatus;
-  priority: TicketPriority;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  /** Chronological history shown in the timeline. */
-  timeline: TicketTimelineEvent[];
-};
+  resolution: string | null;
+  /** Staff-only; never fetched by the resident client. */
+  internal_notes?: string | null;
+  attachment_url: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  closed_at: string | null;
+  deleted_at: string | null;
+  /** Joined profiles row for the resident. */
+  resident?: TicketPerson | null;
+  /** Joined profiles row for the assigned staff member. */
+  assigned_staff?: TicketPerson | null;
+  /** Chronological history (ticket_timeline rows). */
+  timeline?: TicketTimelineEvent[];
+}
 
-/** Data captured by the create-ticket form. */
-export type TicketDraft = {
-  subject: string;
+/** Data captured by the create-ticket form (resident version). */
+export interface TicketDraft {
   category: TicketCategory;
-  priority: TicketPriority;
+  subject: string;
   description: string;
-};
+  priority: TicketPriority;
+}
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   open: 'Open',
+  assigned: 'Assigned',
   in_progress: 'In Progress',
   resolved: 'Resolved',
+  closed: 'Closed',
 };
 
 export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
@@ -60,11 +88,11 @@ export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
 };
 
 export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
-  water: 'Water Supply',
+  water_supply: 'Water Supply',
   billing: 'Billing',
-  meter: 'Meter',
-  account: 'Account',
   plumbing: 'Plumbing',
+  water_quality: 'Water Quality',
+  meter_concern: 'Meter Concern',
   other: 'Other',
 };
 
@@ -73,7 +101,7 @@ export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
  * Keeps ticket data consistent for staff reporting and filtering.
  */
 export const TICKET_SUBJECTS: Record<TicketCategory, string[]> = {
-  water: [
+  water_supply: [
     'No Water Supply',
     'Low Water Pressure',
     'Intermittent Water Supply',
@@ -87,23 +115,23 @@ export const TICKET_SUBJECTS: Record<TicketCategory, string[]> = {
     'Payment Verification',
     'Outstanding Balance',
   ],
-  meter: [
-    'Faulty Water Meter',
-    'Meter Reading Concern',
-    'Request Meter Inspection',
-    'Meter Replacement',
-  ],
-  account: [
-    'Update Personal Information',
-    'Change Contact Number',
-    'Account Ownership Transfer',
-    'Account Inquiry',
-  ],
   plumbing: [
     'Water Leak',
     'Broken Pipe',
     'Service Connection Issue',
     'Plumbing Inspection',
+  ],
+  water_quality: [
+    'Discolored Water',
+    'Unusual Odor or Taste',
+    'Contamination Concern',
+    'Water Quality Test Request',
+  ],
+  meter_concern: [
+    'Faulty Water Meter',
+    'Meter Reading Concern',
+    'Request Meter Inspection',
+    'Meter Replacement',
   ],
   other: ['General Inquiry', 'Other Concern'],
 };

@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [showLogin, setShowLogin] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
   // ── Session restore on mount ──
@@ -75,7 +75,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
             // Session restored with wrong role — silently sign out
             await authLogout();
             if (!cancelled) {
-              setIsLoading(false);
+              setIsAuthenticated(false);
+              setUser(null);
+              setProfile(null);
               setShowLogin(true);
             }
             return;
@@ -85,9 +87,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
           setProfile(existingUser.profile);
           setIsAuthenticated(true);
           setShowLogin(false);
+        } else {
+          setShowLogin(true);
         }
       } catch {
-        // Session invalid — show login
+        if (!cancelled) setShowLogin(true);
       } finally {
         if (!cancelled) setIsLoading(false);
       }

@@ -1,23 +1,28 @@
 import { Pressable, Text, View } from 'react-native';
 
-import type { ReadingStatus } from '@/types/readings';
+import {
+  METER_READING_STATUS_LABELS,
+  type MeterReadingStatus,
+} from '@/types/readings';
 
-export type AssignedFilter = 'all' | ReadingStatus;
+export type ReadingFilter = 'all' | MeterReadingStatus;
 
 type FilterTabsProps = {
-  value: AssignedFilter;
-  onChange: (filter: AssignedFilter) => void;
+  value: ReadingFilter;
+  onChange: (filter: ReadingFilter) => void;
 };
 
-const FILTERS: { key: AssignedFilter; label: string }[] = [
+const FILTERS: { key: ReadingFilter; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'rejected', label: 'Rejected' },
+  { key: 'billed', label: 'Billed' },
 ];
 
 export function FilterTabs({ value, onChange }: FilterTabsProps) {
   return (
-    <View className="mb-4 flex-row gap-2">
+    <View className="mb-4 flex-row flex-wrap gap-2">
       {FILTERS.map(({ key, label }) => {
         const isActive = value === key;
         return (

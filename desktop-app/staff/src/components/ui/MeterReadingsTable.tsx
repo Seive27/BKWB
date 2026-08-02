@@ -1,46 +1,44 @@
 import React from 'react';
 import { Search } from 'lucide-react';
-import { MeterReading } from '../../types';
+import {
+  MeterReading,
+  MeterReadingStatus,
+  METER_READING_STATUS_LABELS,
+} from '../../types';
 
 interface MeterReadingsTableProps {
   readings: MeterReading[];
 }
 
+function fullName(person?: { first_name: string; last_name: string } | null): string {
+  if (!person) return 'Unknown resident';
+  return `${person.first_name} ${person.last_name}`.trim();
+}
+
+function formatNumber(value: number | null): string {
+  if (value === null || value === undefined) return '—';
+  return value.toLocaleString('en-US');
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const statusStyles: Record<MeterReadingStatus, { bg: string; text: string }> = {
+  assigned: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  pending_review: { bg: 'bg-amber-100', text: 'text-amber-700' },
+  approved: { bg: 'bg-green-100', text: 'text-green-700' },
+  rejected: { bg: 'bg-red-100', text: 'text-red-700' },
+  billed: { bg: 'bg-purple-100', text: 'text-purple-700' },
+};
+
 const MeterReadingsTable: React.FC<MeterReadingsTableProps> = ({ readings }) => {
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'normal':
-        return 'bg-green-100 text-green-700';
-      case 'high':
-        return 'bg-red-100 text-red-700';
-      case 'low':
-        return 'bg-blue-100 text-blue-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'normal':
-        return 'NORMAL';
-      case 'high':
-        return 'HIGH';
-      case 'low':
-        return 'LOW';
-      default:
-        return status.toUpperCase();
-    }
-  };
-
   return (
     <div className="bg-white rounded-xl border border-gray-200">
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Recent Meter Readings</h2>
-          <button className="text-sm font-medium text-primary-600 hover:text-primary-700">
-            View All
-          </button>
         </div>
         <div className="mt-4 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -60,10 +58,7 @@ const MeterReadingsTable: React.FC<MeterReadingsTableProps> = ({ readings }) => 
                 Resident
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Meter ID
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Current Reading
+                Meter
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                 Consumption
@@ -72,47 +67,47 @@ const MeterReadingsTable: React.FC<MeterReadingsTableProps> = ({ readings }) => 
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Date
+                Assigned
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {readings.map((reading) => (
-              <tr
-                key={reading.id}
-                className="hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 bg-gray-200 rounded-full mr-3"></div>
-                    <span className="text-sm font-medium text-gray-900">
-                      {reading.residentName}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {reading.meterId}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {reading.currentReading.toLocaleString()} m³
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {reading.consumption} m³
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span
-                    className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                      reading.status
-                    )}`}
-                  >
-                    {getStatusText(reading.status)}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {reading.date}
+            {readings.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-400">
+                  No meter readings yet. Assign a reading to get started.
                 </td>
               </tr>
-            ))}
+            ) : (
+              readings.map((reading) => {
+                const s = statusStyles[reading.status];
+                return (
+                  <tr key={reading.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900">
+                        {fullName(reading.resident)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {reading.meter?.meter_number ?? '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {formatNumber(reading.consumption)} m³
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-3 py-1 text-xs font-semibold rounded-full ${s.bg} ${s.text}`}
+                      >
+                        {METER_READING_STATUS_LABELS[reading.status]}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {formatDate(reading.assignment_date)}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

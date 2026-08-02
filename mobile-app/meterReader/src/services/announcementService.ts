@@ -29,6 +29,9 @@ export function getAnnouncementErrorMessage(error: {
   if (msg.includes('network') || msg.includes('fetch')) {
     return 'Network unavailable. Please check your connection and try again.';
   }
+  // Surface the real error so the root cause is never hidden during development.
+  console.log('Supabase announcement error:', error);
+  console.log(JSON.stringify(error, null, 2));
   return error.message || 'An unexpected error occurred. Please try again.';
 }
 
@@ -80,7 +83,10 @@ export async function getAnnouncements(
     .select(SELECT_FIELDS)
     .eq('deleted_at', null)
     .eq('is_published', true)
-    .or('expires_at.is.null,expires_at.gt.now()')
+    // PostgREST does NOT evaluate now() inside filters — it would send the
+    // literal 'now()' and Postgres fails to cast it to timestamptz. Send a
+    // real ISO timestamp computed on the client instead.
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('created_at', { ascending: false });
 
   if (options.audience && options.audience !== 'all') {

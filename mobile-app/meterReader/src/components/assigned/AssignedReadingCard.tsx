@@ -3,11 +3,11 @@ import { Text, View } from 'react-native';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { cardShadow } from '@/components/ui/cardShadow';
-import type { AssignedReading } from '@/types/readings';
+import type { MeterReading } from '@/types/readings';
 
 type AssignedReadingCardProps = {
-  reading: AssignedReading;
-  onStartReading?: (reading: AssignedReading) => void;
+  reading: MeterReading;
+  onStartReading?: (reading: MeterReading) => void;
 };
 
 function MetaRow({ icon, text }: { icon: string; text: string }) {
@@ -21,51 +21,52 @@ function MetaRow({ icon, text }: { icon: string; text: string }) {
   );
 }
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function AssignedReadingCard({
   reading,
   onStartReading,
 }: AssignedReadingCardProps) {
-  const isPending = reading.status === 'pending';
-  const accentClass = isPending ? 'bg-pending' : 'bg-[#7EB8D4]';
+  const residentName = reading.resident
+    ? `${reading.resident.first_name} ${reading.resident.last_name}`.trim()
+    : 'Unknown Resident';
+  const accountNumber = reading.account?.account_number ?? '—';
+  const meterNumber = reading.meter?.meter_number ?? '—';
+  const address = reading.account?.service_address ?? 'No address on file';
 
   return (
     <View
       className="mb-3 overflow-hidden rounded-[18px] bg-white"
       style={cardShadow}
     >
-      <View className={`absolute bottom-0 left-0 top-0 w-1 ${accentClass}`} />
+      <View className="absolute bottom-0 left-0 top-0 w-1 bg-[#7EB8D4]" />
 
       <View className="px-4 pb-4 pt-4 pl-5">
         <View className="mb-2 flex-row items-start justify-between gap-2">
           <Text className="flex-1 text-[17px] font-bold text-navy" numberOfLines={1}>
-            {reading.name}
+            {residentName}
           </Text>
           <StatusBadge status={reading.status} />
         </View>
 
-        <Text className="mb-2 text-[13px] text-navy-muted"># {reading.accountNo}</Text>
+        <Text className="mb-2 text-[13px] text-navy-muted"># {accountNumber}</Text>
 
-        <MetaRow icon="📍" text={`Area/Route: ${reading.areaRoute}`} />
-        <MetaRow icon="🕒" text={`Last reading: ${reading.lastReadingDate}`} />
+        <MetaRow icon="🔢" text={`Meter: ${meterNumber}`} />
+        <MetaRow icon="📍" text={address} />
+        <MetaRow icon="🕒" text={`Assigned: ${formatDate(reading.assignment_date)}`} />
 
         <View className="mt-3">
-          {isPending ? (
-            <PrimaryButton
-              label="Start Reading"
-              onPress={() => onStartReading?.(reading)}
-              icon={<Text className="text-sm text-white">▶</Text>}
-            />
-          ) : (
-            <PrimaryButton
-              label="Reading Completed"
-              disabled
-              icon={
-                <View className="h-5 w-5 items-center justify-center rounded-full border border-navy-soft">
-                  <Text className="text-[10px] font-bold text-navy-soft">✓</Text>
-                </View>
-              }
-            />
-          )}
+          <PrimaryButton
+            label="Start Reading"
+            onPress={() => onStartReading?.(reading)}
+            icon={<Text className="text-sm text-white">▶</Text>}
+          />
         </View>
       </View>
     </View>

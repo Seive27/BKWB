@@ -4,8 +4,10 @@ import { TICKET_STATUS_LABELS, type TicketStatus } from '@/types/tickets';
 
 const STATUS_STYLES: Record<TicketStatus, { container: string; text: string }> = {
   open: { container: 'bg-blue-100', text: 'text-blue-700' },
+  assigned: { container: 'bg-violet-100', text: 'text-violet-700' },
   in_progress: { container: 'bg-amber-100', text: 'text-amber-700' },
   resolved: { container: 'bg-emerald-100', text: 'text-emerald-700' },
+  closed: { container: 'bg-slate-200', text: 'text-slate-600' },
 };
 
 type StatusBadgeProps = {

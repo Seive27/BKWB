@@ -4,17 +4,16 @@ import StatCard from '../components/common/StatCard';
 import RevenueChart from '../components/ui/RevenueChart';
 import MeterReadingsTable from '../components/ui/MeterReadingsTable';
 import AnnouncementsPanel from '../components/ui/AnnouncementsPanel';
-import {
-  dashboardStats,
-  monthlyRevenue,
-  recentMeterReadings,
-} from '../data/mockData';
+import { useMeterReadings } from '../hooks/useMeterReadings';
+import { dashboardStats, monthlyRevenue } from '../data/mockData';
 
 interface DashboardProps {
   onNavigate?: (route: string) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  const { readings: recentMeterReadings } = useMeterReadings({ limit: 5 });
+
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="p-8">

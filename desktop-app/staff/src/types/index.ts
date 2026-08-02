@@ -6,16 +6,90 @@ export interface Resident {
   status: 'active' | 'inactive';
 }
 
+// ── Meter Reading Types ──
+// Mirrors the Supabase `meters`, `resident_accounts` and `meter_readings` tables.
+export type MeterReadingStatus =
+  | 'assigned'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'billed';
+
+export interface Meter {
+  id: string;
+  meter_number: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResidentAccount {
+  id: string;
+  resident_id: string;
+  account_number: string;
+  meter_id: string | null;
+  service_address: string | null;
+  connection_status: 'active' | 'inactive' | 'disconnected';
+  created_at: string;
+  updated_at: string;
+  resident?: TicketPerson | null;
+  meter?: Meter | null;
+}
+
+/** A meter reader option used in the assign-reading picker. */
+export interface MeterReaderOption {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 export interface MeterReading {
   id: string;
-  residentName: string;
-  meterId: string;
-  currentReading: number;
-  previousReading: number;
-  consumption: number;
-  status: 'normal' | 'high' | 'low';
-  date: string;
+  account_id: string;
+  resident_id: string;
+  meter_id: string | null;
+  meter_reader_id: string | null;
+  assigned_by: string | null;
+  assignment_date: string;
+  reading_date: string | null;
+  previous_reading: number;
+  current_reading: number | null;
+  consumption: number | null;
+  status: MeterReadingStatus;
+  remarks: string | null;
+  photo_url: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined profiles row for the resident. */
+  resident?: TicketPerson | null;
+  /** Joined resident_accounts row (account number + address). */
+  account?: {
+    id: string;
+    account_number: string;
+    service_address: string | null;
+  } | null;
+  /** Joined meters row. */
+  meter?: Meter | null;
+  /** Joined profiles row for the assigned meter reader. */
+  meter_reader?: TicketPerson | null;
+  /** Joined profiles row for the staff who assigned it. */
+  assigner?: TicketPerson | null;
+  /** Joined profiles row for the staff who reviewed it. */
+  reviewer?: TicketPerson | null;
 }
+
+export const METER_READING_STATUS_LABELS: Record<MeterReadingStatus, string> = {
+  assigned: 'Assigned',
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  billed: 'Billed',
+};
 
 export interface Bill {
   id: string;
@@ -127,42 +201,150 @@ export interface Conversation {
 
 export type MessageCategory = 'billing' | 'complaint' | 'inquiry' | 'payment' | 'technical';
 
-// Ticket Management Types
-export type TicketCategory = 'billing' | 'payment' | 'meter-reading' | 'water-service' | 'leak-report' | 'general-inquiry';
-export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketStatus = 'pending' | 'in-progress' | 'resolved' | 'closed';
+// ── Ticket Management Types ──
+// Mirrors the Supabase `tickets` + `ticket_timeline` tables.
+export type TicketCategory =
+  | 'water_supply'
+  | 'billing'
+  | 'plumbing'
+  | 'water_quality'
+  | 'meter_concern'
+  | 'other';
+export type TicketPriority = 'low' | 'medium' | 'high';
+export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
 
-export interface TicketActivity {
+export type TicketTimelineEventType = 'created' | 'assigned' | 'status_change';
+
+/** A person joined from the profiles table (resident or staff). */
+export interface TicketPerson {
   id: string;
-  type: 'submitted' | 'staff-reply' | 'resident-reply' | 'image' | 'status-change' | 'priority-change' | 'assignment';
-  userId: string;
-  userName: string;
-  userRole: 'resident' | 'staff';
-  message: string;
-  imageUrl?: string;
-  timestamp: string;
+  first_name: string;
+  last_name: string;
+}
+
+/** One row of the ticket_timeline table. */
+export interface TicketTimelineEvent {
+  id: string;
+  ticket_id: string;
+  event_type: TicketTimelineEventType;
+  description: string | null;
+  performed_by: string | null;
+  created_at: string;
+  /** Joined profiles row (from performed_by) for display. */
+  performer?: TicketPerson | null;
 }
 
 export interface Ticket {
   id: string;
-  ticketNumber: string;
-  residentId: string;
-  residentName: string;
-  residentInitials: string;
-  accountNo: string;
-  residentContact: string;
-  residentAddress: string;
+  /** Human-readable reference, e.g. "TKT-2026-000001" (DB-generated). */
+  ticket_number: string;
+  resident_id: string;
+  assigned_staff_id: string | null;
   category: TicketCategory;
   subject: string;
   description: string;
   priority: TicketPriority;
   status: TicketStatus;
-  assignedStaff: string | null;
-  attachments: { name: string; url: string }[];
-  activities: TicketActivity[];
-  dateCreated: string;
-  dateUpdated: string;
+  resolution: string | null;
+  internal_notes: string | null;
+  attachment_url: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  closed_at: string | null;
+  deleted_at: string | null;
+  /** Joined profiles row for the resident. */
+  resident?: TicketPerson | null;
+  /** Joined profiles row for the assigned staff member. */
+  assigned_staff?: TicketPerson | null;
+  /** Chronological history (ticket_timeline rows). */
+  timeline?: TicketTimelineEvent[];
 }
+
+/** Data captured by the staff/super-admin create-ticket form (resident picker). */
+export interface TicketDraft {
+  resident_id: string;
+  category: TicketCategory;
+  subject: string;
+  description: string;
+  priority: TicketPriority;
+}
+
+/** A staff member option used in the assign-ticket picker. */
+export interface StaffOption {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+/** A resident option used in the create-ticket picker. */
+export interface ResidentOption {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
+  open: 'Open',
+  assigned: 'Assigned',
+  in_progress: 'In Progress',
+  resolved: 'Resolved',
+  closed: 'Closed',
+};
+
+export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
+  water_supply: 'Water Supply',
+  billing: 'Billing',
+  plumbing: 'Plumbing',
+  water_quality: 'Water Quality',
+  meter_concern: 'Meter Concern',
+  other: 'Other',
+};
+
+/** Standardized subjects offered per category in the create-ticket form. */
+export const TICKET_SUBJECTS: Record<TicketCategory, string[]> = {
+  water_supply: [
+    'No Water Supply',
+    'Low Water Pressure',
+    'Intermittent Water Supply',
+    'Dirty Water',
+    'Water Supply Inquiry',
+  ],
+  billing: [
+    'Incorrect Bill',
+    'Billing Inquiry',
+    'Missing Payment',
+    'Payment Verification',
+    'Outstanding Balance',
+  ],
+  plumbing: [
+    'Water Leak',
+    'Broken Pipe',
+    'Service Connection Issue',
+    'Plumbing Inspection',
+  ],
+  water_quality: [
+    'Discolored Water',
+    'Unusual Odor or Taste',
+    'Contamination Concern',
+    'Water Quality Test Request',
+  ],
+  meter_concern: [
+    'Faulty Water Meter',
+    'Meter Reading Concern',
+    'Request Meter Inspection',
+    'Meter Replacement',
+  ],
+  other: ['General Inquiry', 'Other Concern'],
+};
 
 export interface StaffProfile {
   id: string;

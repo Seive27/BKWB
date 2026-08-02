@@ -34,7 +34,25 @@ export function getAnnouncementErrorMessage(error: {
   if (msg.includes('rate limit')) {
     return 'Too many requests. Please wait a moment and try again.';
   }
+  // Surface the real error so the root cause is never hidden during development.
+  console.log('Supabase announcement error:', error);
+  console.log(JSON.stringify(error, null, 2));
   return error.message || 'An unexpected error occurred. Please try again.';
+}
+
+/**
+ * Coerce a form-provided expiration date into SQL NULL or a valid ISO string.
+ * Empty/null/invalid values become JavaScript `null` — never the string
+ * `"null"` — so Postgres receives a proper NULL for the TIMESTAMPTZ column.
+ */
+function toNullableTimestamp(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    console.warn('[announcements] Ignoring invalid expires_at:', value);
+    return null;
+  }
+  return parsed.toISOString();
 }
 
 interface AnnouncementRow {
@@ -88,7 +106,10 @@ export async function getAnnouncements(
 
   if (options.publishedOnly || options.audience) {
     query = query.eq('is_published', true);
-    query = query.or('expires_at.is.null,expires_at.gt.now()');
+    // PostgREST does NOT evaluate now() inside filters — it would send the
+    // literal 'now()' and Postgres fails to cast it to timestamptz. Send a
+    // real ISO timestamp computed on the client instead.
+    query = query.or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
   }
 
   if (options.audience && options.audience !== 'all') {
@@ -121,18 +142,20 @@ export async function createAnnouncement(
   draft: AnnouncementDraft,
   createdBy: string
 ): Promise<Announcement> {
+  const payload = {
+    title: draft.title,
+    content: draft.content,
+    category: draft.category,
+    priority: draft.priority,
+    target_audience: draft.target_audience,
+    is_published: draft.is_published,
+    expires_at: toNullableTimestamp(draft.expires_at),
+    created_by: createdBy,
+  };
+  console.log('Announcement payload:', payload);
   const { data, error } = await supabase
     .from('announcements')
-    .insert({
-      title: draft.title,
-      content: draft.content,
-      category: draft.category,
-      priority: draft.priority,
-      target_audience: draft.target_audience,
-      is_published: draft.is_published,
-      expires_at: draft.expires_at,
-      created_by: createdBy,
-    })
+    .insert(payload)
     .select(SELECT_FIELDS)
     .single();
 
@@ -147,17 +170,19 @@ export async function updateAnnouncement(
   id: string,
   draft: AnnouncementDraft
 ): Promise<Announcement> {
+  const payload = {
+    title: draft.title,
+    content: draft.content,
+    category: draft.category,
+    priority: draft.priority,
+    target_audience: draft.target_audience,
+    is_published: draft.is_published,
+    expires_at: toNullableTimestamp(draft.expires_at),
+  };
+  console.log('Announcement payload:', payload);
   const { data, error } = await supabase
     .from('announcements')
-    .update({
-      title: draft.title,
-      content: draft.content,
-      category: draft.category,
-      priority: draft.priority,
-      target_audience: draft.target_audience,
-      is_published: draft.is_published,
-      expires_at: draft.expires_at,
-    })
+    .update(payload)
     .eq('id', id)
     .select(SELECT_FIELDS)
     .single();

@@ -1,23 +1,25 @@
 import { Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import type { TicketEventType, TicketTimelineEvent } from '@/types/tickets';
+import type { TicketTimelineEvent, TicketTimelineEventType } from '@/types/tickets';
 
-const DOT_COLORS: Record<TicketEventType, string> = {
-  submitted: '#1E5B8C',
-  staff_reply: '#F59E0B',
-  status_change: '#3B82F6',
-  resolved: '#10B981',
+const DOT_COLORS: Record<TicketTimelineEventType, string> = {
+  created: '#1E5B8C',
+  assigned: '#7C3AED',
+  status_change: '#F59E0B',
 };
 
-const TEXT_COLORS: Record<TicketEventType, string> = {
-  submitted: 'text-slate-800',
-  staff_reply: 'text-slate-800',
-  status_change: 'text-slate-800',
-  resolved: 'text-emerald-700',
-};
+/** Resolved/Closed transitions get a distinct emerald dot. */
+function dotColor(event: TicketTimelineEvent): string {
+  if (event.event_type === 'status_change') {
+    const desc = event.description?.toLowerCase() ?? '';
+    if (desc.includes('resolved')) return '#10B981';
+    if (desc.includes('closed')) return '#94A3B8';
+  }
+  return DOT_COLORS[event.event_type];
+}
 
-function ResolvedCheck() {
+function CheckIcon() {
   return (
     <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
       <Path
@@ -31,16 +33,16 @@ function ResolvedCheck() {
   );
 }
 
-function TimelineDot({ type }: { type: TicketEventType }) {
-  const color = DOT_COLORS[type];
+function TimelineDot({ event }: { event: TicketTimelineEvent }) {
+  const color = dotColor(event);
 
-  if (type === 'resolved') {
+  if (event.event_type === 'status_change' && (event.description?.toLowerCase().includes('resolved') ?? false)) {
     return (
       <View
         className="h-6 w-6 items-center justify-center rounded-full"
         style={{ backgroundColor: color }}
       >
-        <ResolvedCheck />
+        <CheckIcon />
       </View>
     );
   }
@@ -52,15 +54,53 @@ function TimelineDot({ type }: { type: TicketEventType }) {
   );
 }
 
+function formatTimestamp(iso: string): string {
+  const date = new Date(iso);
+  const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const timeLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${dateLabel} · ${timeLabel}`;
+}
+
+function eventTitle(event: TicketTimelineEvent): string {
+  switch (event.event_type) {
+    case 'created':
+      return 'Request Submitted';
+    case 'assigned':
+      return 'Ticket Assigned';
+    case 'status_change': {
+      const desc = event.description?.toLowerCase() ?? '';
+      if (desc.includes('resolved')) return 'Ticket Resolved';
+      if (desc.includes('closed')) return 'Ticket Closed';
+      return 'Status Updated';
+    }
+  }
+}
+
+function eventAuthor(event: TicketTimelineEvent): string {
+  const performer = event.performer;
+  if (performer) {
+    return `${performer.first_name} ${performer.last_name}`.trim() || 'BKWB Staff';
+  }
+  return 'BKWB Staff';
+}
+
 type TicketTimelineProps = {
   events: TicketTimelineEvent[];
 };
 
 /**
  * Chronological ticket history rendered as dots with connecting lines.
- * This is an event log (submitted / staff replied / resolved), not a chat.
+ * Backed by the ticket_timeline table (created / assigned / status_change).
  */
 export function TicketTimeline({ events }: TicketTimelineProps) {
+  if (events.length === 0) {
+    return (
+      <View className="py-4">
+        <Text className="text-sm text-slate-400">No activity recorded yet.</Text>
+      </View>
+    );
+  }
+
   return (
     <View>
       {events.map((event, index) => {
@@ -71,20 +111,22 @@ export function TicketTimeline({ events }: TicketTimelineProps) {
             {/* Dot column with connecting line below each dot (except the last) */}
             <View className="w-8 items-center">
               <View className="h-6 items-center justify-center">
-                <TimelineDot type={event.type} />
+                <TimelineDot event={event} />
               </View>
               {!isLast ? <View className="w-0.5 flex-1 bg-slate-200" /> : null}
             </View>
 
             {/* Event content */}
             <View className={`flex-1 pl-3 ${isLast ? 'pb-0' : 'pb-6'}`}>
-              <Text className={`text-sm font-bold ${TEXT_COLORS[event.type]}`}>
-                {event.title}
+              <Text className="text-sm font-bold text-slate-800">
+                {eventTitle(event)}
               </Text>
               <View className="mt-0.5 flex-row items-center gap-1.5">
-                <Text className="text-xs font-semibold text-brand">{event.author}</Text>
+                <Text className="text-xs font-semibold text-brand">
+                  {eventAuthor(event)}
+                </Text>
                 <View className="h-0.5 w-0.5 rounded-full bg-slate-300" />
-                <Text className="text-xs text-slate-400">{event.timestamp}</Text>
+                <Text className="text-xs text-slate-400">{formatTimestamp(event.created_at)}</Text>
               </View>
               {event.description ? (
                 <View className="mt-2 rounded-xl bg-slate-50 px-3 py-2.5">

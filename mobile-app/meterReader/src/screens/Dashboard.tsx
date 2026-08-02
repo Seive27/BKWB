@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,24 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
+import { useAssignments } from '@/hooks/useAssignments';
+import { useReadingHistory } from '@/hooks/useReadingHistory';
+import { getCurrentReaderProfile } from '@/services/meterReadingService';
 
 type DashboardProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   /** Open the full announcements screen. */
   onOpenAnnouncements?: () => void;
-};
-
-const MOCK = {
-  readerName: 'Juan',
-  greeting: 'Good Morning',
-  lastSynced: '2 mins ago',
-  dateLabel: 'Aug 24, 2024',
-  routeName: 'Barangay San Jose South Sector',
-  totalAssigned: 42,
-  readingsCompleted: 18,
-  pendingReadings: 24,
-  routeProgress: 43,
 };
 
 const cardShadow = {
@@ -32,6 +24,13 @@ const cardShadow = {
   shadowRadius: 8,
   elevation: 2,
 };
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good Morning';
+  if (hour < 18) return 'Good Afternoon';
+  return 'Good Evening';
+}
 
 function CompletedIcon() {
   return (
@@ -57,6 +56,40 @@ export default function Dashboard({
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
 
+  const { assignments, refreshing, refresh } = useAssignments();
+  const { readings: history } = useReadingHistory();
+
+  const [readerName, setReaderName] = useState('Reader');
+
+  useEffect(() => {
+    let active = true;
+    getCurrentReaderProfile().then((profile) => {
+      if (active && profile?.first_name) {
+        setReaderName(profile.first_name);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const totalAssigned = assignments.length;
+  const readingsCompleted = history.filter(
+    (r) => r.status === 'approved' || r.status === 'billed',
+  ).length;
+  const pendingReview = history.filter((r) => r.status === 'pending_review').length;
+  const pendingReadings = assignments.length + pendingReview;
+  const routeProgress =
+    totalAssigned + readingsCompleted > 0
+      ? Math.round((readingsCompleted / (totalAssigned + readingsCompleted)) * 100)
+      : 0;
+
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   return (
     <View className="flex-1 bg-surface">
       <ScrollView
@@ -76,24 +109,29 @@ export default function Dashboard({
               contentFit="contain"
             />
             <Text className="text-xs text-navy-soft">
-              Last synced: {MOCK.lastSynced}
+              {refreshing ? 'Syncing…' : 'Live'}
             </Text>
           </View>
           <View className="flex-row items-center gap-1.5">
-            <Text className="text-base font-bold text-navy">{MOCK.dateLabel}</Text>
+            <Text className="text-base font-bold text-navy">{todayLabel}</Text>
             <CloudStatusIcon />
           </View>
         </View>
 
         <Text className="mb-3.5 text-[28px] font-bold text-navy">
-          {MOCK.greeting}, {MOCK.readerName}
+          {getGreeting()}, {readerName}
         </Text>
         <Text className="mb-1 text-[11px] font-semibold tracking-wider text-navy-soft">
           ASSIGNED ROUTE
         </Text>
-        <Text className="mb-5 text-[15px] text-navy-muted">{MOCK.routeName}</Text>
+        <Text className="mb-5 text-[15px] text-navy-muted">
+          {totalAssigned > 0
+            ? `${totalAssigned} assigned reading${totalAssigned === 1 ? '' : 's'} to complete`
+            : 'No active assignments'}
+        </Text>
 
         <Pressable
+          onPress={() => onTabPress?.('assigned')}
           className="mb-3 flex-row items-center justify-center gap-2.5 rounded-2xl bg-brand py-4 active:opacity-85"
           accessibilityRole="button"
           accessibilityLabel="Start Reading"
@@ -107,16 +145,17 @@ export default function Dashboard({
         </Pressable>
 
         <Pressable
+          onPress={() => refresh()}
           className="mb-5 flex-row items-center justify-center gap-2.5 rounded-2xl bg-sync py-4 active:opacity-85"
           accessibilityRole="button"
-          accessibilityLabel="Sync All Data"
+          accessibilityLabel="Refresh Assignments"
         >
           <Image
             source={require('../../assets/icons/synch.png')}
             style={{ width: 20, height: 20, tintColor: '#1A4A6A' }}
             contentFit="contain"
           />
-          <Text className="text-base font-semibold text-sync-text">Sync All Data</Text>
+          <Text className="text-base font-semibold text-sync-text">Refresh</Text>
         </Pressable>
 
         <View className="mb-3 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
@@ -126,7 +165,7 @@ export default function Dashboard({
                 TOTAL ASSIGNED
               </Text>
               <Text className="text-[40px] font-bold leading-[46px] text-navy">
-                {MOCK.totalAssigned}
+                {totalAssigned}
               </Text>
             </View>
             <Image
@@ -137,7 +176,7 @@ export default function Dashboard({
           </View>
           <View className="mt-2.5 flex-row items-center gap-2">
             <View className="h-2 w-2 rounded-full bg-[#3B82C4]" />
-            <Text className="text-[13px] text-navy-muted">Residents on route</Text>
+            <Text className="text-[13px] text-navy-muted">Readings to complete</Text>
           </View>
         </View>
 
@@ -145,24 +184,24 @@ export default function Dashboard({
           <View className="flex-1 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
             <View className="mb-2 flex-row items-start justify-between">
               <Text className="mr-1.5 flex-1 text-[11px] font-semibold tracking-wide text-navy-muted">
-                READINGS COMPLETED
+                APPROVED
               </Text>
               <CompletedIcon />
             </View>
             <Text className="text-[36px] font-bold text-navy">
-              {MOCK.readingsCompleted}
+              {readingsCompleted}
             </Text>
           </View>
 
           <View className="flex-1 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
             <View className="mb-2 flex-row items-start justify-between">
               <Text className="mr-1.5 flex-1 text-[11px] font-semibold tracking-wide text-navy-muted">
-                PENDING READINGS
+                PENDING
               </Text>
               <PendingIcon />
             </View>
             <Text className="text-[36px] font-bold text-pending">
-              {MOCK.pendingReadings}
+              {pendingReadings}
             </Text>
           </View>
         </View>
@@ -170,12 +209,12 @@ export default function Dashboard({
         <View className="gap-2.5">
           <View className="flex-row items-center justify-between">
             <Text className="text-[15px] font-semibold text-navy">Route Progress</Text>
-            <Text className="text-[15px] font-bold text-navy">{MOCK.routeProgress}%</Text>
+            <Text className="text-[15px] font-bold text-navy">{routeProgress}%</Text>
           </View>
           <View className="h-2.5 overflow-hidden rounded-full bg-slate-200">
             <View
               className="h-full rounded-full bg-brand"
-              style={{ width: `${MOCK.routeProgress}%` }}
+              style={{ width: `${routeProgress}%` }}
             />
           </View>
         </View>

@@ -1,17 +1,19 @@
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TicketForm } from '@/components/tickets/TicketForm';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import { createTicket } from '@/services/ticketService';
 import type { Ticket, TicketDraft } from '@/types/tickets';
 
 type CreateTicketScreenProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   onBack?: () => void;
-  onCreate?: (ticket: Ticket) => void;
-  initialReference?: string;
+  /** Called with the created ticket (including its DB-generated number). */
+  onCreated?: (ticket: Ticket) => void;
 };
 
 function BackButton({ onPress }: { onPress?: () => void }) {
@@ -35,47 +37,32 @@ export default function CreateTicketScreen({
   activeTab = 'dashboard',
   onTabPress,
   onBack,
-  onCreate,
-  initialReference = 'TKT-2026-0001',
+  onCreated,
 }: CreateTicketScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (draft: TicketDraft) => {
-    const now = new Date();
-    const dateLabel = now.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    const timeLabel = now.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
-    const ticket: Ticket = {
-      id: `tkt-${Date.now()}`,
-      reference: initialReference,
-      subject: draft.subject,
-      category: draft.category,
-      status: 'open',
-      priority: draft.priority,
-      description: draft.description,
-      createdAt: dateLabel,
-      updatedAt: dateLabel,
-      timeline: [
-        {
-          id: `tkt-${Date.now()}-e1`,
-          type: 'submitted',
-          title: 'Request Submitted',
-          author: 'You',
-          timestamp: `${dateLabel} · ${timeLabel}`,
-          description: draft.description,
-        },
-      ],
-    };
-
-    onCreate?.(ticket);
+  const handleSubmit = async (draft: TicketDraft) => {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const ticket = await createTicket(draft);
+      Alert.alert(
+        'Ticket Submitted',
+        `Your ticket ${ticket.ticket_number} has been received. Staff will update you on its progress.`,
+        [{ text: 'View Ticket', onPress: () => onCreated?.(ticket) }]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Submission failed',
+        error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -97,7 +84,7 @@ export default function CreateTicketScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View className="px-4 pt-5">
-          <TicketForm onSubmit={handleSubmit} />
+          <TicketForm onSubmit={handleSubmit} submitting={submitting} />
         </View>
       </ScrollView>
 

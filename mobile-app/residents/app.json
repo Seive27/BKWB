@@ -28,6 +28,14 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Residents to access your photos to update your profile picture.",
+          "cameraPermission": "Allow Residents to use your camera to take a profile selfie.",
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

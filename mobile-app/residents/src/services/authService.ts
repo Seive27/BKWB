@@ -169,6 +169,35 @@ export async function updateProfile(input: {
   if (error) throw new Error(error.message || 'Failed to update profile.');
 }
 
+/** Upload a local image as the user's avatar and return its public URL. */
+export async function uploadAvatar(localUri: string): Promise<string> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error('You must be logged in to update your profile picture.');
+
+  const response = await fetch(localUri);
+  if (!response.ok) throw new Error('Could not read the selected image.');
+  const arrayBuffer = await response.arrayBuffer();
+
+  const extMatch = localUri.split('?')[0]?.match(/\.(\w+)$/);
+  const ext = (extMatch?.[1] ?? 'jpg').toLowerCase();
+  const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  const path = `${userId}/avatar.${ext === 'jpeg' ? 'jpg' : ext}`;
+
+  const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, {
+    upsert: true,
+    contentType,
+  });
+  if (uploadError) throw new Error(uploadError.message || 'Failed to upload profile picture.');
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+  const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+  await updateProfile({ avatar_url: publicUrl });
+  return publicUrl;
+}
+
 /** Change the current user's password (min 8 characters). */
 export async function changePassword(newPassword: string): Promise<void> {
   if (newPassword.length < 8) {

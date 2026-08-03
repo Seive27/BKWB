@@ -94,8 +94,11 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
   const meterReaderRoleId = roleMap.get('meter_reader') ?? '';
   const adminRoleId = roleMap.get('super_admin') ?? '';
 
-  const countActiveProfiles = (roleId: string) =>
-    countRows('profiles', (q) => q.eq('role_id', roleId).eq('is_active', true));
+  // Skip the query when a role is missing — Postgres rejects .eq('role_id', '') as an invalid UUID.
+  const countActiveProfiles = (roleId: string) => {
+    if (!roleId) return Promise.resolve(0);
+    return countRows('profiles', (q) => q.eq('role_id', roleId).eq('is_active', true));
+  };
 
   const [totalResidents, activeStaff, totalMeterReaders] = await Promise.all([
     countActiveProfiles(residentRoleId),
@@ -195,7 +198,11 @@ export async function getAnnouncementActivity(days = 30): Promise<TrendPoint[]> 
 /** Cumulative resident growth over the last `days` days (running total). */
 export async function getResidentGrowth(days = 90): Promise<TrendPoint[]> {
   const roleMap = await getRoleIdMap();
-  const residentRoleId = roleMap.get('resident') ?? '';
+  const residentRoleId = roleMap.get('resident');
+  // Avoid .eq('role_id', '') which Postgres rejects as invalid UUID syntax.
+  if (!residentRoleId) {
+    return dayBuckets(days).map((b) => ({ label: b.label, value: 0 }));
+  }
   const rows = await fetchCreatedAt('profiles', daysAgoIso(days), (q) =>
     q.eq('role_id', residentRoleId)
   );

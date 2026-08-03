@@ -101,6 +101,21 @@ export interface Bill {
   billingPeriod: string;
 }
 
+/** Extra line item on a bill (e.g. maintenance fee, connection fee). */
+export interface BillingComponent {
+  id: string;
+  category: string;
+  /** Price in Philippine pesos. */
+  price: number;
+}
+
+/** Full bills pricing config used by the Configure Bills CMS. */
+export interface BillingConfig {
+  /** Water rate in ₱ per cubic meter. */
+  waterRate: number;
+  components: BillingComponent[];
+}
+
 export interface Payment {
   id: string;
   billId: string;

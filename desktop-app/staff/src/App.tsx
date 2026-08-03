@@ -48,10 +48,19 @@ function AppContent() {
     }
   };
 
+  const lockBackdrop = showLogin && !isClosing;
+
   return (
     <>
-      {/* Dashboard — always mounted, obscured by overlay when locked */}
-      <div className="flex h-screen overflow-hidden">
+      {/* Blur the shell itself — Tauri/WKWebView often ignores backdrop-filter */}
+      <div
+        className={`
+          flex h-screen overflow-hidden
+          transition-[filter] duration-300 ease-out
+          ${lockBackdrop ? 'blur-md' : 'blur-none'}
+        `}
+        aria-hidden={lockBackdrop}
+      >
         <Sidebar activePage={activePage} onPageChange={setActivePage} onLogout={logout} />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header onNavigate={setActivePage} />

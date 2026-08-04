@@ -55,7 +55,7 @@ export function CurrentBill() {
         </Pressable>
       </View>
 
-      <View className="overflow-hidden rounded-2xl bg-sky-50">
+      <View className="overflow-hidden rounded-2xl border border-slate-200 shadow-md bg-sky-50">
         <View className="flex-row">
           <View className="w-1.5 bg-brand" />
           <View className="flex-1 px-4 py-4">

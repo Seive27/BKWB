@@ -4,6 +4,7 @@ import { type NavTab } from '@/components/ui/Navbar';
 import { supabase } from '@/lib/supabase';
 import Announcements from '@/screens/Announcements';
 import Bills from '@/screens/Bills';
+import ChatBot from '@/screens/ChatBot';
 import Dashboard from '@/screens/Dashboard';
 import Login from '@/screens/Login';
 import Profile from '@/screens/Profile';
@@ -12,6 +13,7 @@ export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [showChatBot, setShowChatBot] = useState(false);
 
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
@@ -49,17 +51,45 @@ export default function HomeScreen() {
     return <Login onLogin={() => setIsLoggedIn(true)} />;
   }
 
+  if (showChatBot) {
+    return <ChatBot onBack={() => setShowChatBot(false)} />;
+  }
+
   if (activeTab === 'dashboard') {
-    return <Dashboard activeTab={activeTab} onTabPress={setActiveTab} />;
+    return (
+      <Dashboard
+        activeTab={activeTab}
+        onTabPress={setActiveTab}
+        onOpenChatBot={() => setShowChatBot(true)}
+      />
+    );
   }
 
   if (activeTab === 'bills') {
-    return <Bills activeTab={activeTab} onTabPress={setActiveTab} />;
+    return (
+      <Bills
+        activeTab={activeTab}
+        onTabPress={setActiveTab}
+        onOpenChatBot={() => setShowChatBot(true)}
+      />
+    );
   }
 
   if (activeTab === 'announcements') {
-    return <Announcements activeTab={activeTab} onTabPress={setActiveTab} />;
+    return (
+      <Announcements
+        activeTab={activeTab}
+        onTabPress={setActiveTab}
+        onOpenChatBot={() => setShowChatBot(true)}
+      />
+    );
   }
 
-  return <Profile activeTab={activeTab} onTabPress={setActiveTab} />;
+  return (
+    <Profile
+      activeTab={activeTab}
+      onTabPress={setActiveTab}
+      onOpenChatBot={() => setShowChatBot(true)}
+    />
+  );
 }

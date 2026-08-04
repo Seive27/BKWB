@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { QuickActions } from '@/components/ui/QuickActions';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -16,6 +17,7 @@ import WaterScheduleScreen from '@/screens/WaterSchedule';
 type DashboardProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
+  onOpenChatBot?: () => void;
 };
 
 type QuickActionScreen =
@@ -25,7 +27,11 @@ type QuickActionScreen =
   | 'notifications'
   | null;
 
-export default function Dashboard({ activeTab = 'dashboard', onTabPress }: DashboardProps) {
+export default function Dashboard({
+  activeTab = 'dashboard',
+  onTabPress,
+  onOpenChatBot,
+}: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
@@ -147,6 +153,7 @@ export default function Dashboard({ activeTab = 'dashboard', onTabPress }: Dashb
         </View>
       </ScrollView>
 
+      <ChatBotFab onPress={onOpenChatBot} />
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
     </View>
   );

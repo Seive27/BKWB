@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { getPasswordValidationError } from '@/lib/password';
@@ -19,6 +20,7 @@ import {
 type ProfileProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
+  onOpenChatBot?: () => void;
 };
 
 function getInitials(firstName: string, lastName: string) {
@@ -94,7 +96,11 @@ function EditableField({
   );
 }
 
-export default function Profile({ activeTab = 'profile', onTabPress }: ProfileProps) {
+export default function Profile({
+  activeTab = 'profile',
+  onTabPress,
+  onOpenChatBot,
+}: ProfileProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
 
@@ -479,6 +485,7 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
         </View>
       </ScrollView>
 
+      <ChatBotFab onPress={onOpenChatBot} />
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
     </View>
   );

@@ -7,16 +7,19 @@ import {
   type AnnouncementFilter,
 } from '@/components/announcements/AnnouncementFilterTabs';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
+import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 
 type AnnouncementsProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
+  onOpenChatBot?: () => void;
 };
 
 export default function Announcements({
   activeTab = 'announcements',
   onTabPress,
+  onOpenChatBot,
 }: AnnouncementsProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
@@ -41,6 +44,7 @@ export default function Announcements({
         </View>
       </ScrollView>
 
+      <ChatBotFab onPress={onOpenChatBot} />
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
     </View>
   );

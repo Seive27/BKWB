@@ -5,9 +5,11 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
+import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
 import { cardShadow } from '@/components/ui/cardShadow';
+import { getPasswordValidationError } from '@/lib/password';
 import {
   getCurrentProfile,
   updateProfile,
@@ -105,6 +107,7 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
 
@@ -239,14 +242,16 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
   };
 
   const handleChangePassword = async () => {
-    if (newPassword.length < 8) {
-      Alert.alert('Invalid Password', 'New password must be at least 8 characters.');
+    const validationError = getPasswordValidationError(newPassword);
+    if (validationError) {
+      setPasswordError(validationError);
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'New password and confirmation do not match.');
+      setPasswordError('New password and confirmation do not match.');
       return;
     }
+    setPasswordError('');
     setSavingPassword(true);
     try {
       await changePassword(newPassword);
@@ -388,7 +393,10 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
               <Text className="mb-3 mt-6 text-base font-bold text-navy">Security</Text>
               <View className="overflow-hidden rounded-2xl bg-white" style={cardShadow}>
                 <Pressable
-                  onPress={() => setShowPasswordForm((v) => !v)}
+                  onPress={() => {
+                    setShowPasswordForm((v) => !v);
+                    setPasswordError('');
+                  }}
                   className="px-4 py-3.5 active:bg-slate-50"
                 >
                   <Text className="text-sm font-semibold text-brand">
@@ -401,23 +409,33 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
                     <Text className="text-sm text-navy-soft">New Password</Text>
                     <TextInput
                       value={newPassword}
-                      onChangeText={setNewPassword}
-                      placeholder="Min. 8 characters"
+                      onChangeText={(text) => {
+                        setNewPassword(text);
+                        if (passwordError) setPasswordError('');
+                      }}
+                      placeholder="Enter password"
                       placeholderTextColor="#9CA3AF"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-navy"
                       autoCapitalize="none"
                     />
+                    <PasswordStrengthHint password={newPassword} />
                     <Text className="mt-3 text-sm text-navy-soft">Confirm Password</Text>
                     <TextInput
                       value={confirmPassword}
-                      onChangeText={setConfirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        if (passwordError) setPasswordError('');
+                      }}
                       placeholder="Re-enter new password"
                       placeholderTextColor="#9CA3AF"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-navy"
                       autoCapitalize="none"
                     />
+                    {passwordError ? (
+                      <Text className="mt-2 text-xs text-red-600">{passwordError}</Text>
+                    ) : null}
                     <View className="mt-3">
                       <PrimaryButton
                         label={savingPassword ? 'Updating…' : 'Update Password'}

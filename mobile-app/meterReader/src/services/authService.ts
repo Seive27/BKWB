@@ -1,3 +1,4 @@
+import { getPasswordValidationError } from '@/lib/password';
 import { supabase } from '@/lib/supabase';
 
 export interface AuthUser {
@@ -191,10 +192,11 @@ export async function uploadAvatar(localUri: string): Promise<string> {
   return publicUrl;
 }
 
-/** Change the current user's password (min 8 characters). */
+/** Change the current user's password (strength rules enforced). */
 export async function changePassword(newPassword: string): Promise<void> {
-  if (newPassword.length < 8) {
-    throw new Error('New password must be at least 8 characters.');
+  const validationError = getPasswordValidationError(newPassword);
+  if (validationError) {
+    throw new Error(validationError);
   }
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message || 'Failed to update password.');

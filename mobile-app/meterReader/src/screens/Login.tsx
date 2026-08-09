@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -12,17 +14,142 @@ import {
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { login } from '@/services/authService';
+import { login, requestPasswordReset } from '@/services/authService';
 
 type LoginProps = {
   onLogin?: () => void;
 };
+
+/** Forgot-password modal: email → reset link (never reveals whether the
+ *  account exists, for privacy/security). */
+function ForgotPasswordModal({
+  visible,
+  onClose,
+  initialEmail,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initialEmail: string;
+}) {
+  const [email, setEmail] = useState(initialEmail);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSend = async () => {
+    setError('');
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    setSending(true);
+    try {
+      await requestPasswordReset(trimmed);
+      setSent(true);
+    } catch (err) {
+      // Generic message either way — do not leak whether the email exists.
+      console.warn('[forgot-password] reset request failed:', err);
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleClose = () => {
+    setSent(false);
+    setError('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        className="flex-1 items-center justify-center bg-black/50 px-6"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View className="w-full max-w-sm rounded-2xl bg-white p-6">
+          {sent ? (
+            <>
+              <Text className="text-center text-lg font-bold text-[#1E3A5F]">
+                Check your inbox
+              </Text>
+              <Text className="mt-3 text-center text-sm leading-5 text-[#707B81]">
+                If an account exists for {email.trim()}, a password reset link has
+                been sent. Open it to set a new password, then sign in.
+              </Text>
+              <Pressable
+                onPress={handleClose}
+                className="mt-6 items-center rounded-md bg-[#3581A7] py-3 active:opacity-85"
+                accessibilityRole="button"
+              >
+                <Text className="text-base font-semibold text-white">Done</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text className="text-center text-lg font-bold text-[#1E3A5F]">
+                Reset your password
+              </Text>
+              <Text className="mt-2 text-center text-sm leading-5 text-[#707B81]">
+                Enter the email linked to your account and we'll send you a
+                secure reset link.
+              </Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email address"
+                placeholderTextColor="#9CA3AF"
+                className="mt-5 rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                keyboardType="email-address"
+                returnKeyType="send"
+                onSubmitEditing={handleSend}
+              />
+              {error ? (
+                <Text className="mt-2 text-xs text-red-500">{error}</Text>
+              ) : null}
+              <Pressable
+                onPress={handleSend}
+                disabled={sending}
+                className="mt-5 items-center rounded-md bg-[#3581A7] py-3.5 active:opacity-85 disabled:opacity-60"
+                accessibilityRole="button"
+              >
+                {sending ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text className="text-base font-semibold text-white">
+                    Send Reset Link
+                  </Text>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={handleClose}
+                className="mt-3 items-center py-1 active:opacity-70"
+                accessibilityRole="button"
+              >
+                <Text className="text-sm text-[#6497B1]">Back to Login</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
 export default function Login({ onLogin }: LoginProps) {
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   // Single login path for both the button and the keyboard submit action so
   // the app is never marked logged-in without a real Supabase session.
@@ -126,7 +253,9 @@ export default function Login({ onLogin }: LoginProps) {
           </Pressable>
 
           <Pressable
-            onPress={() => {}}
+            onPress={() => {
+              setShowForgot(true);
+            }}
             className="mt-5 items-center py-1 active:opacity-70"
             accessibilityRole="link"
             accessibilityLabel="Forgot Password"
@@ -135,6 +264,12 @@ export default function Login({ onLogin }: LoginProps) {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ForgotPasswordModal
+        visible={showForgot}
+        onClose={() => setShowForgot(false)}
+        initialEmail={username}
+      />
     </View>
   );
 }

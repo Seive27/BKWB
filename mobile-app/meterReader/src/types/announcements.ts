@@ -31,6 +31,8 @@ export interface Announcement {
   created_by: string | null;
   is_published: boolean;
   expires_at: string | null;
+  /** Future publish time — hidden until reached. */
+  scheduled_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;

@@ -141,6 +141,8 @@ export interface Announcement {
   created_by: string | null;
   is_published: boolean;
   expires_at: string | null;
+  /** Future publish time — hidden from audiences until reached. */
+  scheduled_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -157,6 +159,7 @@ export interface AnnouncementDraft {
   target_audience: AnnouncementAudience;
   is_published: boolean;
   expires_at: string | null;
+  scheduled_at: string | null;
 }
 
 export interface MonthlyRevenue {

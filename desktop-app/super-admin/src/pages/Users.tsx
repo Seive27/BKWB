@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Search,
   Plus,
@@ -12,7 +12,7 @@ import {
   UserCheck,
   AlertCircle,
 } from 'lucide-react';
-import AddUserModal, { UserFormData } from '../components/modals/AddUserModal';
+import AddUserModal, { UserFormData, UserCreatedInfo } from '../components/modals/AddUserModal';
 import {
   getUsers,
   createUser,
@@ -39,7 +39,12 @@ const Users: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  /** Error from the last create attempt — shown inside the Add User modal. */
+  const [createError, setCreateError] = useState<string | null>(null);
+  /** Credentials of the last successfully created user — drives the success view. */
+  const [createdUser, setCreatedUser] = useState<UserCreatedInfo | null>(null);
+  /** Monotonic id of the latest create request — used to ignore stale in-flight results. */
+  const addUserRequestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,8 +91,9 @@ const Users: React.FC = () => {
   });
 
   const handleAddUser = async (userData: UserFormData) => {
+    const requestId = ++addUserRequestRef.current;
     setCreating(true);
-    setNotice(null);
+    setCreateError(null);
     try {
       const roleMap: Record<string, Role['name']> = {
         Resident: 'resident',
@@ -96,30 +102,43 @@ const Users: React.FC = () => {
         'Super Admin': 'super_admin',
       };
       const role = roleMap[userData.role] ?? 'resident';
-      const result = await createUser({
+      await createUser({
         email: userData.emailAddress,
         password: userData.password,
         firstName: userData.firstName,
         middleName: userData.middleName,
         lastName: userData.lastName,
         phone: userData.cellNumber,
+        dateOfBirth: userData.dateOfBirth,
         role,
       });
-      setNotice({
-        type: 'success',
-        message: `User ${userData.firstName} ${userData.lastName} created successfully.`,
+      // Ignore the result if the modal was closed/reopened while this request
+      // was in flight — otherwise stale credentials could appear in a new session.
+      if (addUserRequestRef.current !== requestId) return;
+      // The password shown here is EXACTLY the one sent to the edge function
+      // (auto-generated for Resident/Meter Reader, manual for Staff/Super Admin).
+      setCreatedUser({
+        fullName: `${userData.firstName} ${userData.lastName}`.trim(),
+        email: userData.emailAddress,
+        role: userData.role,
+        password: userData.password,
       });
-      setShowAddModal(false);
       await load();
-      console.log('Created user:', result);
     } catch (err) {
-      setNotice({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to create user.',
-      });
+      if (addUserRequestRef.current !== requestId) return;
+      setCreateError(err instanceof Error ? err.message : 'Failed to create user.');
     } finally {
-      setCreating(false);
+      if (addUserRequestRef.current === requestId) setCreating(false);
     }
+  };
+
+  /** Close the modal, drop stale credentials/errors, and invalidate in-flight requests. */
+  const handleCloseAddUser = () => {
+    addUserRequestRef.current++;
+    setShowAddModal(false);
+    setCreatedUser(null);
+    setCreateError(null);
+    setCreating(false);
   };
 
   const getRoleColor = (role: string) => {
@@ -159,17 +178,6 @@ const Users: React.FC = () => {
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
-        )}
-        {notice && (
-          <div
-            className={`mb-6 border rounded-lg px-4 py-3 text-sm ${
-              notice.type === 'success'
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : 'bg-red-50 border-red-200 text-red-700'
-            }`}
-          >
-            {notice.message}
-          </div>
         )}
 
         {/* Stats Cards */}
@@ -275,7 +283,8 @@ const Users: React.FC = () => {
               </div>
               <button
                 onClick={() => {
-                  setNotice(null);
+                  setCreatedUser(null);
+                  setCreateError(null);
                   setShowAddModal(true);
                 }}
                 className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors ml-3"
@@ -380,9 +389,11 @@ const Users: React.FC = () => {
       {/* Add User Modal */}
       <AddUserModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={handleCloseAddUser}
         onSubmit={handleAddUser}
         submitting={creating}
+        error={createError}
+        createdUser={createdUser}
       />
     </div>
   );

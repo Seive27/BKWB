@@ -84,24 +84,59 @@ function formatDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** Local datetime string (yyyy-MM-ddTHH:mm) for <input type="datetime-local">. */
+function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Earliest selectable moment for datetime-local inputs (now, rounded to minute). */
+function minDateTimeLocal(): string {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export type AnnouncementStatus = 'published' | 'draft' | 'scheduled' | 'expired';
+
 function isExpired(a: Announcement): boolean {
   return !!a.expires_at && new Date(a.expires_at).getTime() < Date.now();
 }
 
-function getStatus(a: Announcement): 'published' | 'draft' | 'expired' {
+function getStatus(a: Announcement): AnnouncementStatus {
   if (isExpired(a)) return 'expired';
+  // A published announcement with a future publish time is still scheduled.
+  if (a.is_published && !!a.scheduled_at && new Date(a.scheduled_at).getTime() > Date.now()) {
+    return 'scheduled';
+  }
   return a.is_published ? 'published' : 'draft';
 }
 
-const STATUS_LABELS: Record<'published' | 'draft' | 'expired', string> = {
+const STATUS_LABELS: Record<AnnouncementStatus, string> = {
   published: 'Published',
   draft: 'Draft',
+  scheduled: 'Scheduled',
   expired: 'Expired',
 };
 
-const STATUS_BADGES: Record<'published' | 'draft' | 'expired', string> = {
+const STATUS_BADGES: Record<AnnouncementStatus, string> = {
   published: 'bg-green-100 text-green-700',
   draft: 'bg-gray-100 text-gray-600',
+  scheduled: 'bg-blue-100 text-blue-700',
   expired: 'bg-yellow-100 text-yellow-700',
 };
 
@@ -144,6 +179,7 @@ const emptyDraft = (): AnnouncementDraft => ({
   target_audience: 'all',
   is_published: true,
   expires_at: null,
+  scheduled_at: null,
 });
 
 function AnnouncementFormModal({ initial, onClose, onSaved, onError }: AnnouncementFormModalProps) {
@@ -158,6 +194,7 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
           target_audience: initial.target_audience,
           is_published: initial.is_published,
           expires_at: initial.expires_at,
+          scheduled_at: initial.scheduled_at,
         }
       : emptyDraft()
   );
@@ -182,6 +219,18 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
     if (draft.expires_at && new Date(draft.expires_at).getTime() <= Date.now()) {
       errors.expires_at = 'Expiration must be in the future.';
     }
+    // A past schedule time is only an error on create — when editing an
+    // announcement whose schedule already fired, the value is simply cleared.
+    if (!initial && draft.scheduled_at && new Date(draft.scheduled_at).getTime() <= Date.now()) {
+      errors.scheduled_at = 'Schedule time must be in the future.';
+    }
+    if (
+      draft.expires_at &&
+      draft.scheduled_at &&
+      new Date(draft.expires_at).getTime() <= new Date(draft.scheduled_at).getTime()
+    ) {
+      errors.expires_at = 'Expiration must be after the scheduled publish time.';
+    }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -195,6 +244,11 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
         title: draft.title.trim(),
         content: draft.content.trim(),
         expires_at: draft.expires_at || null,
+        // Clear a schedule time that already fired (the announcement is live).
+        scheduled_at:
+          draft.scheduled_at && new Date(draft.scheduled_at).getTime() > Date.now()
+            ? draft.scheduled_at
+            : null,
       };
       if (initial) {
         await updateAnnouncement(initial.id, payload);
@@ -312,21 +366,45 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
             )}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
-              Expiration Date <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="datetime-local"
-              value={draft.expires_at ? draft.expires_at.slice(0, 16) : ''}
-              onChange={(e) =>
-                set('expires_at', e.target.value ? new Date(e.target.value).toISOString() : null)
-              }
-              className={inputClass(!!fieldErrors.expires_at)}
-            />
-            {fieldErrors.expires_at && (
-              <p className="mt-1 text-xs text-red-500">{fieldErrors.expires_at}</p>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
+                Expiration Date <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="datetime-local"
+                min={minDateTimeLocal()}
+                value={toLocalInputValue(draft.expires_at)}
+                onChange={(e) =>
+                  set('expires_at', e.target.value ? new Date(e.target.value).toISOString() : null)
+                }
+                className={inputClass(!!fieldErrors.expires_at)}
+              />
+              {fieldErrors.expires_at && (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.expires_at}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
+                Publish At <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="datetime-local"
+                min={minDateTimeLocal()}
+                value={toLocalInputValue(draft.scheduled_at)}
+                onChange={(e) =>
+                  set('scheduled_at', e.target.value ? new Date(e.target.value).toISOString() : null)
+                }
+                className={inputClass(!!fieldErrors.scheduled_at)}
+              />
+              {fieldErrors.scheduled_at ? (
+                <p className="mt-1 text-xs text-red-500">{fieldErrors.scheduled_at}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400">
+                  Leave empty to publish immediately. Past dates are disabled.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-2">
@@ -337,7 +415,11 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
               </p>
             </div>
             <button
-              onClick={() => set('is_published', !draft.is_published)}
+              onClick={() => {
+                set('is_published', !draft.is_published);
+                // Publishing now conflicts with a future schedule time.
+                if (!draft.is_published) set('scheduled_at', null);
+              }}
               className={`relative w-11 h-6 rounded-full transition-colors ${draft.is_published ? 'bg-primary-600' : 'bg-gray-300'}`}
             >
               <span
@@ -346,6 +428,14 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
                 }`}
               />
             </button>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            <p className="text-xs text-blue-700 leading-5">
+              <strong>Tip:</strong> to schedule an announcement for a future time, set a future
+              <em> Publish At</em> date above and keep <em>Publish Immediately</em> on. It will stay
+              hidden from residents and staff until the scheduled time, then become visible automatically.
+            </p>
           </div>
         </div>
 
@@ -489,8 +579,12 @@ function ViewAnnouncementModal({ announcement, onClose }: { announcement: Announ
               <p className="text-gray-700 font-medium">{formatDate(announcement.created_at)}</p>
             </div>
             <div>
+              <p className="text-xs text-gray-400 uppercase mb-1">Publishes</p>
+              <p className="text-gray-700 font-medium">{formatDateTime(announcement.scheduled_at)}</p>
+            </div>
+            <div>
               <p className="text-xs text-gray-400 uppercase mb-1">Expires</p>
-              <p className="text-gray-700 font-medium">{formatDate(announcement.expires_at)}</p>
+              <p className="text-gray-700 font-medium">{formatDateTime(announcement.expires_at)}</p>
             </div>
           </div>
         </div>
@@ -507,7 +601,7 @@ const Announcements: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | AnnouncementCategory>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | AnnouncementPriority>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft' | 'expired'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | AnnouncementStatus>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
@@ -542,8 +636,9 @@ const Announcements: React.FC = () => {
   const stats = useMemo(() => {
     const published = announcements.filter((a) => getStatus(a) === 'published').length;
     const drafts = announcements.filter((a) => getStatus(a) === 'draft').length;
+    const scheduled = announcements.filter((a) => getStatus(a) === 'scheduled').length;
     const expired = announcements.filter((a) => getStatus(a) === 'expired').length;
-    return { total: announcements.length, published, drafts, expired };
+    return { total: announcements.length, published, drafts, scheduled, expired };
   }, [announcements]);
 
   const filteredAnnouncements = useMemo(() => {
@@ -603,7 +698,7 @@ const Announcements: React.FC = () => {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center mb-3">
                 <Megaphone className="w-6 h-6 text-blue-600" />
@@ -619,6 +714,13 @@ const Announcements: React.FC = () => {
               <h3 className="text-3xl font-bold text-gray-900">{stats.published}</h3>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
+                <Clock className="w-6 h-6 text-blue-700" />
+              </div>
+              <p className="text-xs text-gray-500 uppercase mb-1">Scheduled</p>
+              <h3 className="text-3xl font-bold text-gray-900">{stats.scheduled}</h3>
+            </div>
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
                 <FileText className="w-6 h-6 text-gray-500" />
               </div>
@@ -627,7 +729,7 @@ const Announcements: React.FC = () => {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="w-12 h-12 bg-yellow-50 rounded-lg flex items-center justify-center mb-3">
-                <Clock className="w-6 h-6 text-yellow-600" />
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Expired</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.expired}</h3>
@@ -739,7 +841,7 @@ const Announcements: React.FC = () => {
                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors first:rounded-t-lg ${statusFilter === 'all' ? 'text-primary-600 font-medium bg-primary-50' : 'text-gray-700'}`}>
                         All Statuses
                       </button>
-                      {(Object.keys(STATUS_LABELS) as ('published' | 'draft' | 'expired')[]).map((s) => (
+                      {(Object.keys(STATUS_LABELS) as AnnouncementStatus[]).map((s) => (
                         <button key={s} onClick={() => { setStatusFilter(s); setShowStatusDropdown(false); setCurrentPage(1); }}
                           className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors last:rounded-b-lg ${statusFilter === s ? 'text-primary-600 font-medium bg-primary-50' : 'text-gray-700'}`}>
                           {STATUS_LABELS[s]}
@@ -860,8 +962,11 @@ const Announcements: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {formatDate(announcement.created_at)}
+                            {announcement.scheduled_at && (
+                              <div className="text-xs text-blue-500 mt-0.5">Publishes {formatDateTime(announcement.scheduled_at)}</div>
+                            )}
                             {announcement.expires_at && (
-                              <div className="text-xs text-gray-400 mt-0.5">Expires {formatDate(announcement.expires_at)}</div>
+                              <div className="text-xs text-gray-400 mt-0.5">Expires {formatDateTime(announcement.expires_at)}</div>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">

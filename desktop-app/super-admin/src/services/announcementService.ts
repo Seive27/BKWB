@@ -65,6 +65,7 @@ interface AnnouncementRow {
   created_by: string | null;
   is_published: boolean;
   expires_at: string | null;
+  scheduled_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -82,6 +83,7 @@ function mapRow(row: AnnouncementRow): Announcement {
     created_by: row.created_by,
     is_published: row.is_published,
     expires_at: row.expires_at,
+    scheduled_at: row.scheduled_at,
     deleted_at: row.deleted_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -109,7 +111,19 @@ export async function getAnnouncements(
     // PostgREST does NOT evaluate now() inside filters — it would send the
     // literal 'now()' and Postgres fails to cast it to timestamptz. Send a
     // real ISO timestamp computed on the client instead.
-    query = query.or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+    //
+    // Single .or() with distributive and() groups: multiple chained .or()
+    // calls are comma-joined into one `or` param and OR'd across groups,
+    // which would lose the AND. We need
+    //   (expires_at IS NULL OR expires_at > now)
+    //   AND (scheduled_at IS NULL OR scheduled_at <= now)
+    const now = new Date().toISOString();
+    query = query.or(
+      `and(expires_at.is.null,scheduled_at.is.null),` +
+        `and(expires_at.is.null,scheduled_at.lte.${now}),` +
+        `and(expires_at.gt.${now},scheduled_at.is.null),` +
+        `and(expires_at.gt.${now},scheduled_at.lte.${now})`
+    );
   }
 
   if (options.audience && options.audience !== 'all') {
@@ -150,6 +164,7 @@ export async function createAnnouncement(
     target_audience: draft.target_audience,
     is_published: draft.is_published,
     expires_at: toNullableTimestamp(draft.expires_at),
+    scheduled_at: toNullableTimestamp(draft.scheduled_at),
     created_by: createdBy,
   };
   console.log('Announcement payload:', payload);
@@ -178,6 +193,7 @@ export async function updateAnnouncement(
     target_audience: draft.target_audience,
     is_published: draft.is_published,
     expires_at: toNullableTimestamp(draft.expires_at),
+    scheduled_at: toNullableTimestamp(draft.scheduled_at),
   };
   console.log('Announcement payload:', payload);
   const { data, error } = await supabase

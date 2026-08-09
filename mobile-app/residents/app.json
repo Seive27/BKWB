@@ -44,7 +44,8 @@
     },
     "extra": {
       "SUPABASE_URL": "",
-      "SUPABASE_ANON_KEY": ""
+      "SUPABASE_ANON_KEY": "",
+      "RESET_REDIRECT_URL": "https://idyllic-lolly-7c6e23.netlify.app/"
     }
   }
 }

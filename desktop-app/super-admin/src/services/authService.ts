@@ -200,9 +200,18 @@ export async function isAuthenticated(): Promise<boolean> {
   return !!data.session;
 }
 
+/**
+ * Where the "Forgot Password" email link lands. Point this at the hosted
+ * reset page (see /reset-password) or override per-app via
+ * VITE_RESET_REDIRECT_URL in .env.
+ */
+const RESET_REDIRECT_URL =
+  (import.meta.env.VITE_RESET_REDIRECT_URL as string | undefined) ||
+  'https://idyllic-lolly-7c6e23.netlify.app/';
+
 export async function resetPassword(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: undefined,
+    redirectTo: RESET_REDIRECT_URL,
   });
   if (error) {
     throw new Error(getAuthErrorMessage(error));

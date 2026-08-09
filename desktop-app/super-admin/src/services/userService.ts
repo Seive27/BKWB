@@ -22,7 +22,10 @@ export interface CreateUserInput {
   firstName: string;
   middleName?: string;
   lastName: string;
+  /** PH cell number (09XXXXXXXXX) — required for residents, unique. */
   phone?: string;
+  /** Required for residents — drives the automatic temporary password. */
+  dateOfBirth?: string;
   role: Role['name'];
   /** Residents only — optional consumer account details. */
   accountNumber?: string;
@@ -114,6 +117,56 @@ export async function getUsers(): Promise<ManagedUser[]> {
 // ── User creation (server-side via edge function) ──
 
 /**
+ * Extract the REAL error from a supabase-js `functions.invoke` failure.
+ * In supabase-js v2, FunctionsHttpError.context is a Response object whose
+ * body is the function's JSON (e.g. { "error": "..." }).
+ */
+async function getCreateUserErrorMessage(error: unknown): Promise<string> {
+  if (!error || typeof error !== 'object') {
+    return 'Failed to create user. Please try again.';
+  }
+  const e = error as { name?: string; message?: string; context?: unknown };
+
+  // FunctionsHttpError: read the actual response body from the function.
+  if (typeof Response !== 'undefined' && e.context instanceof Response) {
+    try {
+      const body = await e.context.text();
+      if (body.trim()) {
+        try {
+          const parsed = JSON.parse(body) as { error?: string; message?: string } | null;
+          if (parsed) {
+            if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+            if (typeof parsed.message === 'string' && parsed.message) return parsed.message;
+          }
+        } catch {
+          // Not JSON — fall through to the raw body below.
+        }
+        return body.trim().slice(0, 500);
+      }
+    } catch {
+      // Response body unreadable — fall through to the generic message.
+    }
+    return e.message || 'Failed to create user. Please try again.';
+  }
+
+  // FunctionsRelayError: context is a plain object (e.g. { requestId, message }).
+  if (e.context && typeof e.context === 'object' && 'message' in e.context) {
+    const relayMessage = (e.context as { message?: unknown }).message;
+    if (typeof relayMessage === 'string' && relayMessage) return relayMessage;
+  }
+
+  // Fetch-level failure: the request never reached the function.
+  if (
+    e.name === 'FunctionsFetchError' ||
+    (e.message ?? '').includes('Failed to send a request to the Edge Function')
+  ) {
+    return 'Could not reach the create-user edge function. It may not be deployed — run "supabase functions deploy create-user" and try again.';
+  }
+
+  return e.message || 'Failed to create user. Please try again.';
+}
+
+/**
  * Create a user through the `create-user` edge function. Auth users are
  * never created from the browser — the function uses the Admin API.
  */
@@ -125,6 +178,7 @@ export async function createUser(input: CreateUserInput): Promise<{ user_id: str
       first_name: input.firstName,
       middle_name: input.middleName ?? null,
       last_name: input.lastName,
+      date_of_birth: input.dateOfBirth ?? null,
       phone: input.phone ?? null,
       role: input.role,
       account_number: input.accountNumber ?? null,
@@ -134,18 +188,17 @@ export async function createUser(input: CreateUserInput): Promise<{ user_id: str
   });
 
   if (error) {
-    // PostgREST-style error object from the edge function.
-    const message =
-      typeof (error as { message?: string }).message === 'string'
-        ? (error as { message: string }).message
-        : 'Failed to create user. Make sure the create-user edge function is deployed.';
-    throw new Error(message);
+    // Log the full error object (with its Response context) for debugging,
+    // then surface the function's actual error message to the user.
+    console.error('[createUser] edge function error:', error);
+    throw new Error(await getCreateUserErrorMessage(error));
   }
   if (!data?.ok) {
-    throw new Error(
+    const message =
       (data as { error?: string } | null)?.error ??
-        'Failed to create user. Please try again.'
-    );
+      'Failed to create user. Please try again.';
+    console.error('[createUser] function returned ok:false:', message);
+    throw new Error(message);
   }
 
   return { user_id: data.user_id as string };

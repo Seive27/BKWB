@@ -1,5 +1,6 @@
 import { getPasswordValidationError } from '@/lib/password';
 import { supabase } from '@/lib/supabase';
+import { RESET_REDIRECT_URL } from '@/lib/env';
 
 export interface AuthUser {
   id: string;
@@ -190,6 +191,17 @@ export async function uploadAvatar(localUri: string): Promise<string> {
   const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
   await updateProfile({ avatar_url: publicUrl });
   return publicUrl;
+}
+
+/** Send a password reset email for the given account email. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.trim().toLowerCase(),
+    { redirectTo: RESET_REDIRECT_URL }
+  );
+  if (error) {
+    throw new Error(error.message || 'Failed to send reset email.');
+  }
 }
 
 /** Change the current user's password (strength rules enforced). */

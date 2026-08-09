@@ -45,6 +45,7 @@ interface AnnouncementRow {
   created_by: string | null;
   is_published: boolean;
   expires_at: string | null;
+  scheduled_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -62,6 +63,7 @@ function mapRow(row: AnnouncementRow): Announcement {
     created_by: row.created_by,
     is_published: row.is_published,
     expires_at: row.expires_at,
+    scheduled_at: row.scheduled_at,
     deleted_at: row.deleted_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -86,7 +88,16 @@ export async function getAnnouncements(
     // PostgREST does NOT evaluate now() inside filters — it would send the
     // literal 'now()' and Postgres fails to cast it to timestamptz. Send a
     // real ISO timestamp computed on the client instead.
-    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    // Single .or() with distributive and() groups (chained .or() calls are
+    // OR'd across groups and would lose the AND):
+    //   (expires_at IS NULL OR expires_at > now)
+    //   AND (scheduled_at IS NULL OR scheduled_at <= now)
+    .or(
+      `and(expires_at.is.null,scheduled_at.is.null),` +
+        `and(expires_at.is.null,scheduled_at.lte.${new Date().toISOString()}),` +
+        `and(expires_at.gt.${new Date().toISOString()},scheduled_at.is.null),` +
+        `and(expires_at.gt.${new Date().toISOString()},scheduled_at.lte.${new Date().toISOString()})`
+    )
     .order('created_at', { ascending: false });
 
   if (options.audience && options.audience !== 'all') {

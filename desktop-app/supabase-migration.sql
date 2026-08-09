@@ -168,6 +168,20 @@ CREATE TRIGGER on_profile_updated
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
 
+-- 7b. Cell numbers must be unique. Guarded with a DO block so the migration
+--     still runs on schemas that already contain duplicate phone values
+--     (the index is simply skipped and logged in that case).
+DO $$
+BEGIN
+  CREATE UNIQUE INDEX IF NOT EXISTS profiles_phone_unique
+    ON public.profiles (phone)
+    WHERE phone IS NOT NULL;
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE NOTICE 'profiles_phone_unique skipped: existing duplicate phone numbers found. Deduplicate profiles.phone and re-run this migration.';
+END $$;
+
+
 -- ============================================================
 -- 8. Announcements table
 -- ============================================================
@@ -184,6 +198,9 @@ CREATE TABLE IF NOT EXISTS public.announcements (
   created_by UUID REFERENCES public.profiles(id),
   is_published BOOLEAN NOT NULL DEFAULT TRUE,
   expires_at TIMESTAMPTZ,
+  -- Optional future publish time: the announcement stays hidden until this
+  -- timestamp is reached (Scheduled status). NULL = publish immediately.
+  scheduled_at TIMESTAMPTZ,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -201,6 +218,7 @@ ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS target_audience TEXT N
 ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
 ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -219,7 +237,7 @@ BEGIN
       AND c.table_name = 'announcements'
       AND c.is_nullable = 'NO'
       AND c.column_default IS NULL
-      AND c.column_name NOT IN ('id', 'title', 'content', 'category', 'priority', 'target_audience', 'created_by', 'is_published', 'expires_at', 'deleted_at', 'created_at', 'updated_at')
+      AND c.column_name NOT IN ('id', 'title', 'content', 'category', 'priority', 'target_audience', 'created_by', 'is_published', 'expires_at', 'scheduled_at', 'deleted_at', 'created_at', 'updated_at')
   LOOP
     EXECUTE format('ALTER TABLE public.announcements ALTER COLUMN %I DROP NOT NULL', col_name);
   END LOOP;
@@ -267,7 +285,8 @@ CREATE POLICY "Staff and admins can manage announcements"
   USING (public.is_staff_or_admin())
   WITH CHECK (public.is_staff_or_admin());
 
--- Everyone else may only read published, non-expired, non-deleted announcements.
+-- Everyone else may only read published, non-expired, non-deleted announcements
+-- whose scheduled publish time has been reached.
 DROP POLICY IF EXISTS "Anyone can read published announcements" ON public.announcements;
 CREATE POLICY "Anyone can read published announcements"
   ON public.announcements
@@ -277,6 +296,7 @@ CREATE POLICY "Anyone can read published announcements"
     deleted_at IS NULL
     AND is_published = TRUE
     AND (expires_at IS NULL OR expires_at > NOW())
+    AND (scheduled_at IS NULL OR scheduled_at <= NOW())
     AND public.is_staff_or_admin() = FALSE
   );
 
@@ -295,6 +315,36 @@ CREATE TRIGGER on_announcement_updated
   BEFORE UPDATE ON public.announcements
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
+
+-- 11b. Backend date validation (mirrors the frontend rules):
+--      * expires_at must be in the future
+--      * scheduled_at must be in the future (past dates are rejected)
+--      * expires_at must come after scheduled_at when both are set
+-- PostgreSQL CHECK constraints cannot call NOW(), so enforce via trigger.
+CREATE OR REPLACE FUNCTION public.validate_announcement_dates()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.expires_at IS NOT NULL AND NEW.expires_at <= NOW() THEN
+    RAISE EXCEPTION 'Expiration must be in the future.';
+  END IF;
+  IF NEW.scheduled_at IS NOT NULL AND NEW.scheduled_at <= NOW() THEN
+    RAISE EXCEPTION 'Schedule time must be in the future.';
+  END IF;
+  IF NEW.scheduled_at IS NOT NULL AND NEW.expires_at IS NOT NULL
+     AND NEW.expires_at <= NEW.scheduled_at THEN
+    RAISE EXCEPTION 'Expiration must be after the scheduled publish time.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_announcement_dates ON public.announcements;
+CREATE TRIGGER on_announcement_dates
+  BEFORE INSERT OR UPDATE OF expires_at, scheduled_at ON public.announcements
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_announcement_dates();
 
 -- 12. Enable Realtime for the announcements table (guarded so it is re-runnable)
 DO $$
@@ -684,6 +734,19 @@ END $$;
 -- 20d. Self-heal: ensure the unique constraint exists so the account seed
 --      (ON CONFLICT (account_number)) works on older schemas.
 CREATE UNIQUE INDEX IF NOT EXISTS resident_accounts_account_number_key ON public.resident_accounts (account_number);
+
+-- 20e. Account number generator: allocates the next ACC-#### in a race-safe
+--      way (DB sequence) for residents created without a manual consumer code.
+CREATE SEQUENCE IF NOT EXISTS public.account_number_seq START 1;
+
+CREATE OR REPLACE FUNCTION public.generate_account_number()
+RETURNS TEXT
+LANGUAGE sql
+VOLATILE
+SET search_path = ''
+AS $$
+  SELECT 'ACC-' || lpad(nextval('public.account_number_seq')::text, 4, '0');
+$$;
 
 -- 21. Meter readings table
 CREATE TABLE IF NOT EXISTS public.meter_readings (
@@ -1108,6 +1171,7 @@ SET search_path = ''
 AS $$
 BEGIN
   IF NEW.deleted_at IS NULL AND NEW.is_published
+     AND (NEW.scheduled_at IS NULL OR NEW.scheduled_at <= NOW())
      AND (TG_OP = 'INSERT' OR OLD.is_published IS DISTINCT FROM TRUE) THEN
     INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
     SELECT

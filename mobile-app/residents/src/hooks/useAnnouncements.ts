@@ -58,8 +58,16 @@ export function useAnnouncements(
       load(true);
     });
 
+    // Scheduled announcements become visible when their publish time passes,
+    // which does not fire a realtime event. Poll lightly so they appear
+    // automatically (realtime still covers instant changes).
+    const schedulePoll = setInterval(() => {
+      load(true);
+    }, 60_000);
+
     return () => {
       unsubscribe();
+      clearInterval(schedulePoll);
     };
   }, [load]);
 

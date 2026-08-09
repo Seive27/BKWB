@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus,
   Search,
@@ -9,11 +9,17 @@ import {
   X,
   RefreshCw,
   AlertCircle,
+  Copy,
+  Check,
+  CheckCircle2,
+  KeyRound,
 } from 'lucide-react';
 import {
   getResidents,
   getResidentStats,
   createResident,
+  generateTemporaryPassword,
+  validatePhone,
   type ResidentRecord,
 } from '../services/residentService';
 
@@ -23,8 +29,7 @@ interface AddResidentForm {
   lastName: string;
   email: string;
   phone: string;
-  password: string;
-  accountNumber: string;
+  dateOfBirth: string;
   serviceAddress: string;
   meterNumber: string;
 }
@@ -35,8 +40,7 @@ const EMPTY_FORM: AddResidentForm = {
   lastName: '',
   email: '',
   phone: '',
-  password: '',
-  accountNumber: '',
+  dateOfBirth: '',
   serviceAddress: '',
   meterNumber: '',
 };
@@ -76,37 +80,73 @@ const AddResidentModal: React.FC<{
   const [form, setForm] = useState<AddResidentForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof AddResidentForm, string>>>({});
+  const [passwordCopied, setPasswordCopied] = useState(false);
+  const [created, setCreated] = useState<{
+    email: string;
+    temporaryPassword: string;
+    accountNumber: string | null;
+  } | null>(null);
 
-  const set = (key: keyof AddResidentForm, value: string) =>
+  const set = (key: keyof AddResidentForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
+  // Auto-generated temporary password, shown before saving so staff can copy it.
+  const generatedPassword = useMemo(() => {
+    if (!form.lastName.trim() || !form.dateOfBirth) return '';
+    try {
+      return generateTemporaryPassword(form.firstName, form.lastName, form.dateOfBirth);
+    } catch {
+      return '';
+    }
+  }, [form.firstName, form.lastName, form.dateOfBirth]);
+
+  const handleCopyPassword = async () => {
+    if (!generatedPassword) return;
+    try {
+      await navigator.clipboard.writeText(generatedPassword);
+      setPasswordCopied(true);
+      setTimeout(() => setPasswordCopied(false), 2000);
+    } catch {
+      setError('Unable to copy. Please select the password manually.');
+    }
+  };
 
   const handleSave = async () => {
     setError(null);
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
-      setError('First name, last name and email are required.');
-      return;
-    }
-    if (form.password.trim() && form.password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
+    const errors: Partial<Record<keyof AddResidentForm, string>> = {};
+    if (!form.firstName.trim()) errors.firstName = 'First name is required.';
+    if (!form.lastName.trim()) errors.lastName = 'Last name is required.';
+    if (!form.email.trim()) errors.email = 'Email address is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+      errors.email = 'Enter a valid email address.';
+    if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
+    const phoneError = validatePhone(form.phone);
+    if (phoneError) errors.phone = phoneError;
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setSaving(true);
     try {
-      await createResident({
-        email: form.email,
-        password:
-          form.password.trim() ||
-          `${form.lastName.trim().toLowerCase()}_bkwb${new Date().getFullYear()}`,
+      const result = await createResident({
+        email: form.email.trim().toLowerCase(),
         firstName: form.firstName,
         middleName: form.middleName,
         lastName: form.lastName,
-        phone: form.phone,
-        accountNumber: form.accountNumber,
+        phone: form.phone.trim(),
+        dateOfBirth: form.dateOfBirth,
         serviceAddress: form.serviceAddress,
         meterNumber: form.meterNumber,
       });
+      // Show the credentials once so staff can record them before closing.
+      setCreated({
+        email: form.email.trim().toLowerCase(),
+        temporaryPassword: result.temporary_password ?? generatedPassword,
+        accountNumber: result.account_number,
+      });
       onCreated();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create resident.');
     } finally {
@@ -119,7 +159,15 @@ const AddResidentModal: React.FC<{
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      {created ? (
+        <SuccessView
+          email={created.email}
+          temporaryPassword={created.temporaryPassword}
+          accountNumber={created.accountNumber}
+          onClose={onClose}
+        />
+      ) : (
+        <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex items-center justify-between">
           <div>
@@ -144,8 +192,9 @@ const AddResidentModal: React.FC<{
                   type="text"
                   value={form.firstName}
                   onChange={(e) => set('firstName', e.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} ${fieldErrors.firstName ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.firstName && <p className="mt-1 text-xs text-red-500">{fieldErrors.firstName}</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Middle Name</label>
@@ -162,18 +211,25 @@ const AddResidentModal: React.FC<{
                   type="text"
                   value={form.lastName}
                   onChange={(e) => set('lastName', e.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} ${fieldErrors.lastName ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.lastName && <p className="mt-1 text-xs text-red-500">{fieldErrors.lastName}</p>}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Contact Number</label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Contact Number *</label>
                 <input
                   type="text"
-                  placeholder="+63 960 000 0000"
+                  placeholder="09171234567"
                   value={form.phone}
-                  onChange={(e) => set('phone', e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => set('phone', e.target.value.replace(/\D/g, ''))}
+                  maxLength={11}
+                  className={`${inputClass} ${fieldErrors.phone ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.phone ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.phone}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">Must start with 09 and be exactly 11 digits.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Email Address *</label>
@@ -182,20 +238,58 @@ const AddResidentModal: React.FC<{
                   placeholder="resident@email.com"
                   value={form.email}
                   onChange={(e) => set('email', e.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} ${fieldErrors.email ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.email && <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
-                  Temporary Password <span className="text-gray-400 normal-case">(min 8 chars)</span>
-                </label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Date of Birth *</label>
                 <input
-                  type="text"
-                  placeholder="Leave blank to auto-generate"
-                  value={form.password}
-                  onChange={(e) => set('password', e.target.value)}
-                  className={inputClass}
+                  type="date"
+                  max={new Date().toISOString().slice(0, 10)}
+                  value={form.dateOfBirth}
+                  onChange={(e) => set('dateOfBirth', e.target.value)}
+                  className={`${inputClass} ${fieldErrors.dateOfBirth ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.dateOfBirth ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.dateOfBirth}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">Used to generate the temporary password.</p>
+                )}
+              </div>
+              <div className="col-span-2">
+                <div className="flex items-center space-x-2 mb-2">
+                  <KeyRound className="w-4 h-4 text-primary-600" />
+                  <label className="block text-xs font-medium text-gray-700 uppercase">
+                    Temporary Password <span className="text-gray-400 normal-case">(auto-generated)</span>
+                  </label>
+                </div>
+                <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                  <code className="text-sm font-mono font-bold text-primary-700">
+                    {generatedPassword || (
+                      <span className="text-gray-400 italic font-normal">
+                        Enter last name and date of birth to generate
+                      </span>
+                    )}
+                  </code>
+                  {generatedPassword && (
+                    <button
+                      onClick={handleCopyPassword}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                      title="Copy password"
+                    >
+                      {passwordCopied ? (
+                        <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+                      ) : (
+                        <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Format: <strong>LastNameFirstNameMMDDYYYY</strong> (e.g. DelaCruzJuan05122003).
+                  This is emailed to the resident; they can change it after first login.
+                </p>
               </div>
             </div>
           </div>
@@ -203,16 +297,6 @@ const AddResidentModal: React.FC<{
           <div>
             <h3 className="text-base font-semibold text-gray-900 mb-4">Service Account</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Consumer Code</label>
-                <input
-                  type="text"
-                  placeholder="ACC-0001"
-                  value={form.accountNumber}
-                  onChange={(e) => set('accountNumber', e.target.value)}
-                  className={inputClass}
-                />
-              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Meter Serial Number</label>
                 <input
@@ -222,6 +306,16 @@ const AddResidentModal: React.FC<{
                   onChange={(e) => set('meterNumber', e.target.value)}
                   className={inputClass}
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number</label>
+                <input
+                  type="text"
+                  placeholder="Auto-generated (ACC-####)"
+                  disabled
+                  className={`${inputClass} bg-gray-50 text-gray-500`}
+                />
+                <p className="mt-1 text-xs text-gray-400">Auto-generated when the resident is saved.</p>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Service Address</label>
@@ -258,6 +352,85 @@ const AddResidentModal: React.FC<{
           </button>
         </div>
       </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Shown after a resident is created successfully — the staff member records
+ * the temporary password (and account number) before closing the modal.
+ */
+const SuccessView: React.FC<{
+  email: string;
+  temporaryPassword: string;
+  accountNumber: string | null;
+  onClose: () => void;
+}> = ({ email, temporaryPassword, accountNumber, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard may be unavailable in some webviews — ignore.
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl w-full max-w-md p-8">
+      <div className="text-center">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-green-600" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900">Resident account created</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          The resident can now sign in to the Residents mobile app with these credentials.
+        </p>
+      </div>
+
+      <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <div>
+          <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+          <p className="text-sm font-semibold text-gray-900">{email}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
+          <div className="flex items-center justify-between gap-2">
+            <code className="text-sm font-mono font-bold text-primary-700 break-all">
+              {temporaryPassword}
+            </code>
+            <button
+              onClick={handleCopy}
+              className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+            >
+              {copied ? (
+                <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+              ) : (
+                <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+              )}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Resident should change this after their first login.
+          </p>
+        </div>
+        {accountNumber && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase">Account Number</p>
+            <p className="text-sm font-semibold text-gray-900">{accountNumber}</p>
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={onClose}
+        className="mt-6 w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all duration-200"
+      >
+        Done
+      </button>
     </div>
   );
 };

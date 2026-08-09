@@ -12,7 +12,7 @@ Super Admin / Staff
 Edge Function (this folder)
         │  (validates caller is staff / super_admin via their JWT)
         ▼
-Supabase Admin API (service role)  →  auth.users
+Supabase Admin API (secret key)  →  auth.users
         │
         ▼
 handle_new_user trigger  →  profiles (seeded as resident)
@@ -31,7 +31,13 @@ Function updates profile: names, phone, requested role
 supabase login
 supabase link --project-ref <your-project-ref>
 supabase functions deploy create-user
+supabase functions deploy send-email
 ```
+
+No secrets need to be set manually: the function uses Supabase's
+auto-provisioned Edge Function credentials — `SUPABASE_SECRET_KEYS['default']`
+for the admin client and `SUPABASE_PUBLISHABLE_KEYS['default']` for the caller
+client (with a legacy `SUPABASE_ANON_KEY` fallback).
 
 ## Payload
 

@@ -171,7 +171,24 @@ async function getCreateUserErrorMessage(error: unknown): Promise<string> {
  * never created from the browser — the function uses the Admin API.
  */
 export async function createUser(input: CreateUserInput): Promise<{ user_id: string }> {
+  // Ensure we send a fresh access token. Stale/expired JWTs and missing
+  // Authorization headers show up in Tauri/WebKit as opaque network/CORS failures.
+  const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+  const accessToken =
+    refreshed.session?.access_token ??
+    (await supabase.auth.getSession()).data.session?.access_token;
+
+  if (refreshError && !accessToken) {
+    throw new Error('Your session expired. Please sign in again and retry.');
+  }
+  if (!accessToken) {
+    throw new Error('You must be signed in to create a user.');
+  }
+
   const { data, error } = await supabase.functions.invoke('create-user', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: {
       email: input.email,
       password: input.password,

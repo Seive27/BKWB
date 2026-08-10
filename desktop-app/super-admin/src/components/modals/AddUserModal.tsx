@@ -1,7 +1,24 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { X, User, Mail, Phone, Calendar, ChevronDown, Key, Copy, Check, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  X,
+  User,
+  Mail,
+  Phone,
+  Calendar,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Key,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from 'lucide-react';
 import { generateTemporaryPassword, validatePhone } from '../../services/residentService';
+import { getPasswordValidationError } from '../../lib/password';
 import UserCreatedView, { type UserCreatedInfo } from './UserCreatedView';
+import { PasswordStrengthHint } from '../ui/PasswordStrengthHint';
 
 export type { UserCreatedInfo };
 
@@ -40,6 +57,284 @@ export interface UserFormData {
   password: string;
 }
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** Mask typed digits into YYYY-MM-DD as the user types. */
+function formatIsoDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+function parseIsoDate(value: string): { y: number; m: number; d: number } | null {
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return { y, m, d };
+}
+
+function toIsoDate(y: number, m: number, d: number): string {
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** Defined outside the modal so React keeps the same component identity across re-renders
+ *  (defining it inside caused inputs to remount and lose focus after each keystroke). */
+const InputField = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+  icon: Icon,
+  error,
+  required,
+  disabled,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  icon?: React.FC<{ className?: string }>;
+  error?: string;
+  required?: boolean;
+  disabled?: boolean;
+  type?: string;
+}) => (
+  <div>
+    <label className="block text-xs font-semibold text-gray-700 uppercase mb-2">
+      {label}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
+      {!required && <span className="text-gray-400 font-normal lowercase"> (optional)</span>}
+    </label>
+    <div className="relative">
+      {Icon && (
+        <Icon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+      )}
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className={`w-full ${Icon ? 'pl-10' : 'px-4'} pr-4 py-2.5 border ${
+          error ? 'border-red-300' : 'border-gray-300'
+        } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm disabled:bg-gray-50 disabled:text-gray-500`}
+      />
+    </div>
+    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+  </div>
+);
+
+/** Typable YYYY-MM-DD field with a large month/year calendar dropdown. */
+const DateOfBirthField = ({
+  value,
+  onChange,
+  error,
+  maxIso,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+  maxIso: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const parsed = parseIsoDate(value);
+  const maxParsed = parseIsoDate(maxIso) ?? {
+    y: new Date().getFullYear(),
+    m: new Date().getMonth() + 1,
+    d: new Date().getDate(),
+  };
+
+  const [viewYear, setViewYear] = useState(parsed?.y ?? maxParsed.y - 18);
+  const [viewMonth, setViewMonth] = useState(parsed?.m ?? maxParsed.m);
+
+  useEffect(() => {
+    if (!open) return;
+    if (parsed) {
+      setViewYear(parsed.y);
+      setViewMonth(parsed.m);
+    }
+  }, [open, parsed?.y, parsed?.m]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  const years = useMemo(() => {
+    const list: number[] = [];
+    for (let y = maxParsed.y; y >= 1900; y -= 1) list.push(y);
+    return list;
+  }, [maxParsed.y]);
+
+  const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+  const firstWeekday = new Date(viewYear, viewMonth - 1, 1).getDay();
+
+  const isAfterMax = (y: number, m: number, d: number) =>
+    y > maxParsed.y ||
+    (y === maxParsed.y && m > maxParsed.m) ||
+    (y === maxParsed.y && m === maxParsed.m && d > maxParsed.d);
+
+  const selectDay = (day: number) => {
+    if (isAfterMax(viewYear, viewMonth, day)) return;
+    onChange(toIsoDate(viewYear, viewMonth, day));
+    setOpen(false);
+  };
+
+  const shiftMonth = (delta: number) => {
+    const date = new Date(viewYear, viewMonth - 1 + delta, 1);
+    const nextY = date.getFullYear();
+    const nextM = date.getMonth() + 1;
+    if (nextY < 1900 || nextY > maxParsed.y) return;
+    if (nextY === maxParsed.y && nextM > maxParsed.m) return;
+    setViewYear(nextY);
+    setViewMonth(nextM);
+  };
+
+  return (
+    <div ref={rootRef}>
+      <label className="block text-xs font-semibold text-gray-700 uppercase mb-2">
+        Date of Birth <span className="text-red-500 ml-0.5">*</span>
+      </label>
+      <div className="relative">
+        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="YYYY-MM-DD"
+          value={value}
+          onChange={(e) => onChange(formatIsoDateInput(e.target.value))}
+          className={`w-full pl-10 pr-12 py-2.5 border ${
+            error ? 'border-red-300' : 'border-gray-300'
+          } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm font-mono tracking-wide`}
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+          title="Open calendar"
+          aria-label="Open calendar"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2 w-full rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+          <div className="mb-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => shiftMonth(-1)}
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <select
+              value={viewMonth}
+              onChange={(e) => setViewMonth(Number(e.target.value))}
+              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {MONTH_NAMES.map((name, index) => (
+                <option key={name} value={index + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={viewYear}
+              onChange={(e) => setViewYear(Number(e.target.value))}
+              className="w-[7rem] rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => shiftMonth(1)}
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="mb-2 grid grid-cols-7 gap-1.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-400">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
+              <div key={day} className="py-1">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5">
+            {Array.from({ length: firstWeekday }).map((_, index) => (
+              <div key={`empty-${index}`} className="h-11" />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, index) => {
+              const day = index + 1;
+              const iso = toIsoDate(viewYear, viewMonth, day);
+              const selected = value === iso;
+              const disabled = isAfterMax(viewYear, viewMonth, day);
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => selectDay(day)}
+                  className={`h-11 rounded-lg text-sm font-medium transition-colors ${
+                    selected
+                      ? 'bg-primary-600 text-white'
+                      : disabled
+                        ? 'cursor-not-allowed text-gray-300'
+                        : 'text-gray-700 hover:bg-primary-50 hover:text-primary-700'
+                  }`}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mt-3 text-center text-xs text-gray-400">Format: YYYY-MM-DD</p>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
 const AddUserModal: React.FC<AddUserModalProps> = ({
   isOpen,
   onClose,
@@ -68,6 +363,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
   const roles = ['Resident', 'Meter Reader', 'Staff', 'Super Admin'];
   const isAutoGeneratedRole = formData.role === 'Resident' || formData.role === 'Meter Reader';
   const isManualRole = formData.role === 'Staff' || formData.role === 'Super Admin';
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   // Auto-generate temporary password for Resident/Meter Reader.
   // Format (professor requirement): LastNameFirstNameMMDDYYYY, e.g. DelaCruzJuan05122003.
@@ -80,13 +376,14 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     }
   }, [formData.firstName, formData.lastName, formData.dateOfBirth, isAutoGeneratedRole]);
 
-  // Generate password for Staff/Super Admin
+  // Generate password for Staff/Super Admin (meets strength requirements)
   const handleGeneratePassword = useCallback(() => {
-    const base = formData.lastName.toLowerCase() || 'user';
-    const orgSuffix = formData.emailAddress.includes('@bkwb.com') ? 'bkwb' : 'org';
+    const base = (formData.lastName || 'User').replace(/\s+/g, '');
+    const titled = base.charAt(0).toUpperCase() + base.slice(1).toLowerCase();
+    const orgSuffix = formData.emailAddress.includes('@bkwb.com') ? 'Bkwb' : 'Org';
     const year = new Date().getFullYear();
     const randomDigits = Math.floor(10 + Math.random() * 89).toString();
-    const generated = `${base}_${orgSuffix}${year}${randomDigits}`;
+    const generated = `${titled}_${orgSuffix}${year}${randomDigits}!`;
     setFormData((prev) => ({ ...prev, password: generated }));
   }, [formData.lastName, formData.emailAddress]);
 
@@ -99,21 +396,16 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     }
   };
 
-  // Normalize MM/DD/YYYY (as typed in the form) to YYYY-MM-DD for the DB.
-  const normalizeDob = useCallback((value: string): string => {
-    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) return value;
-    return `${match[3]}-${match[1]}-${match[2]}`;
-  }, []);
-
   const validateForm = () => {
     const newErrors: Partial<Record<keyof UserFormData, string>> = {};
 
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
     if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!formData.dateOfBirth.trim()) newErrors.dateOfBirth = 'Date of birth is required';
-    else if (!/^\d{2}\/\d{2}\/\d{4}$/.test(formData.dateOfBirth.trim()))
-      newErrors.dateOfBirth = 'Enter a complete date in MM/DD/YYYY format';
+    else if (!parseIsoDate(formData.dateOfBirth.trim()))
+      newErrors.dateOfBirth = 'Enter a complete date in YYYY-MM-DD format';
+    else if (formData.dateOfBirth.trim() > todayIso)
+      newErrors.dateOfBirth = 'Date of birth cannot be in the future';
     const phoneError = validatePhone(formData.cellNumber);
     if (phoneError) newErrors.cellNumber = phoneError;
     if (!formData.emailAddress.trim()) newErrors.emailAddress = 'Email address is required';
@@ -124,8 +416,10 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
       newErrors.dateOfBirth = 'Date of birth is required to generate the temporary password';
     if (isManualRole && !formData.password.trim())
       newErrors.password = 'Password is required for this role';
-    if (isManualRole && formData.password.trim() && formData.password.length < 8)
-      newErrors.password = 'Password must be at least 8 characters';
+    else if (isManualRole && formData.password.trim()) {
+      const strengthError = getPasswordValidationError(formData.password.trim());
+      if (strengthError) newErrors.password = strengthError;
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -136,7 +430,8 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     if (validateForm()) {
       onSubmit({
         ...formData,
-        dateOfBirth: normalizeDob(formData.dateOfBirth),
+        // date input already yields YYYY-MM-DD for the DB
+        dateOfBirth: formData.dateOfBirth.trim(),
         // Trim so the displayed/returned value matches exactly what the edge
         // function uses (it trims body.password too). Auto-generated passwords
         // never contain whitespace, so this only affects manual entry.
@@ -172,59 +467,6 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     );
   }
 
-  const formatDateForDisplay = (value: string) => {
-    const cleaned = value.replace(/[^0-9]/g, '');
-    if (cleaned.length <= 2) return cleaned;
-    if (cleaned.length <= 4) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`;
-    return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4, 8)}`;
-  };
-
-  const InputField = ({
-    label,
-    value,
-    onChange,
-    placeholder,
-    icon: Icon,
-    error,
-    required,
-    disabled,
-    type = 'text',
-  }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    icon?: React.FC<{ className?: string }>;
-    error?: string;
-    required?: boolean;
-    disabled?: boolean;
-    type?: string;
-  }) => (
-    <div>
-      <label className="block text-xs font-semibold text-gray-700 uppercase mb-2">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-        {!required && <span className="text-gray-400 font-normal lowercase"> (optional)</span>}
-      </label>
-      <div className="relative">
-        {Icon && (
-          <Icon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-        )}
-        <input
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className={`w-full ${Icon ? 'pl-10' : 'px-4'} pr-4 py-2.5 border ${
-            error ? 'border-red-300' : 'border-gray-300'
-          } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm disabled:bg-gray-50 disabled:text-gray-500`}
-        />
-      </div>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -259,7 +501,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
               <InputField
                 label="First Name"
                 value={formData.firstName}
-                onChange={(v) => setFormData({ ...formData, firstName: v })}
+                onChange={(v) => setFormData((prev) => ({ ...prev, firstName: v }))}
                 placeholder="e.g. Juan"
                 icon={User}
                 error={errors.firstName}
@@ -269,44 +511,53 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
               <InputField
                 label="Middle Name"
                 value={formData.middleName}
-                onChange={(v) => setFormData({ ...formData, middleName: v })}
+                onChange={(v) => setFormData((prev) => ({ ...prev, middleName: v }))}
                 placeholder="e.g. Reyes"
               />
 
               <InputField
                 label="Last Name"
                 value={formData.lastName}
-                onChange={(v) => setFormData({ ...formData, lastName: v })}
+                onChange={(v) => setFormData((prev) => ({ ...prev, lastName: v }))}
                 placeholder="e.g. Dela Cruz"
                 icon={User}
                 error={errors.lastName}
                 required
               />
 
-              <InputField
-                label="Date of Birth"
+              <DateOfBirthField
                 value={formData.dateOfBirth}
-                onChange={(v) => setFormData({ ...formData, dateOfBirth: formatDateForDisplay(v) })}
-                placeholder="MM/DD/YYYY"
-                icon={Calendar}
+                onChange={(v) => setFormData((prev) => ({ ...prev, dateOfBirth: v }))}
                 error={errors.dateOfBirth}
-                required
+                maxIso={todayIso}
               />
 
-              <InputField
-                label="Cell Number"
-                value={formData.cellNumber}
-                onChange={(v) => setFormData({ ...formData, cellNumber: v.replace(/\D/g, '') })}
-                placeholder="09171234567"
-                icon={Phone}
-                error={errors.cellNumber}
-                required
-              />
+              <div>
+                <InputField
+                  label="Cell Number"
+                  value={formData.cellNumber}
+                  onChange={(v) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      cellNumber: v.replace(/\D/g, '').slice(0, 11),
+                    }))
+                  }
+                  placeholder="09171234567"
+                  icon={Phone}
+                  error={errors.cellNumber}
+                  required
+                />
+                {!errors.cellNumber && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Must be 11 digits starting with 09 (e.g. 09171234567).
+                  </p>
+                )}
+              </div>
 
               <InputField
                 label="Email Address"
                 value={formData.emailAddress}
-                onChange={(v) => setFormData({ ...formData, emailAddress: v })}
+                onChange={(v) => setFormData((prev) => ({ ...prev, emailAddress: v }))}
                 placeholder={isManualRole ? 'user@bkwb.com' : 'user@email.com'}
                 icon={Mail}
                 error={errors.emailAddress}
@@ -323,7 +574,9 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
             <div className="relative">
               <select
                 value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value, password: '' })}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, role: e.target.value, password: '' }))
+                }
                 className={`w-full px-4 py-2.5 border ${
                   errors.role ? 'border-red-300' : 'border-gray-300'
                 } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm appearance-none bg-white`}
@@ -395,9 +648,11 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter password (min. 8 characters)"
+                      placeholder="Enter a strong password"
                       value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, password: e.target.value }))
+                      }
                       className={`w-full px-4 pr-24 py-2.5 border ${
                         errors.password ? 'border-red-300' : 'border-gray-300'
                       } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm`}
@@ -436,7 +691,8 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                     </div>
                   </div>
                   {errors.password && <p className="text-xs text-red-600 mt-1">{errors.password}</p>}
-                  <p className="text-xs text-gray-500 mt-1">
+                  <PasswordStrengthHint password={formData.password} />
+                  <p className="text-xs text-gray-500 mt-2">
                     Use organization credentials (e.g., <strong>@bkwb.com</strong>).
                     Click <RefreshCw className="w-3 h-3 inline-block" /> to auto-generate.
                   </p>

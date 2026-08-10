@@ -22,6 +22,7 @@ export interface ReadingAccount {
   id: string;
   account_number: string;
   service_address: string | null;
+  sitio: string | null;
 }
 
 /** The water meter attached to the account. */

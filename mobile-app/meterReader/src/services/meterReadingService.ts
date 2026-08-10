@@ -1,10 +1,15 @@
 import { supabase } from '@/lib/supabase';
-import type {
-  MeterReading,
-  ReadingAccount,
-  ReadingMeter,
-  ReadingPerson,
-} from '@/types/readings';
+import type { MeterReading } from '@/types/readings';
+
+/** Progress summary for one sitio assignment route. */
+export interface SitioRouteProgress {
+  sitio: string;
+  total: number;
+  completed: number;
+  remaining: number;
+  percent: number;
+  readings: MeterReading[];
+}
 
 // ── Error Handling ──
 
@@ -57,7 +62,7 @@ function mapRow(row: MeterReadingRow): MeterReading {
 }
 
 const READING_SELECT =
-  '*, resident:profiles!meter_readings_resident_id_fkey(id, first_name, last_name), account:resident_accounts!meter_readings_account_id_fkey(id, account_number, service_address), meter:meters!meter_readings_meter_id_fkey(id, meter_number), meter_reader:profiles!meter_readings_meter_reader_id_fkey(id, first_name, last_name), assigner:profiles!meter_readings_assigned_by_fkey(id, first_name, last_name), reviewer:profiles!meter_readings_reviewed_by_fkey(id, first_name, last_name)';
+  '*, resident:profiles!meter_readings_resident_id_fkey(id, first_name, last_name), account:resident_accounts!meter_readings_account_id_fkey(id, account_number, service_address, sitio), meter:meters!meter_readings_meter_id_fkey(id, meter_number), meter_reader:profiles!meter_readings_meter_reader_id_fkey(id, first_name, last_name), assigner:profiles!meter_readings_assigned_by_fkey(id, first_name, last_name), reviewer:profiles!meter_readings_reviewed_by_fkey(id, first_name, last_name)';
 
 /** Returns the currently authenticated meter reader's id or throws. */
 async function requireUserId(): Promise<string> {
@@ -88,6 +93,80 @@ export async function getAssignedReadings(): Promise<MeterReading[]> {
   }
 
   return (data ?? []).map((row) => mapRow(row as unknown as MeterReadingRow));
+}
+
+/**
+ * Fetch progress for sitios the reader still has open assignments in.
+ * Includes submitted readings from the same assignment dates so the progress
+ * bar can move as the reader completes the route.
+ */
+export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
+  const userId = await requireUserId();
+
+  const { data: openRows, error: openError } = await supabase
+    .from('meter_readings')
+    .select(READING_SELECT)
+    .eq('meter_reader_id', userId)
+    .eq('status', 'assigned')
+    .is('deleted_at', null)
+    .order('assignment_date', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (openError) {
+    throw new Error(getMeterReadingErrorMessage(openError));
+  }
+
+  const remaining = (openRows ?? []).map((row) =>
+    mapRow(row as unknown as MeterReadingRow)
+  );
+  if (remaining.length === 0) return [];
+
+  const sitios = [
+    ...new Set(
+      remaining.map((r) => (r.account?.sitio ?? '').trim() || 'Unassigned Sitio')
+    ),
+  ];
+  const dates = [...new Set(remaining.map((r) => r.assignment_date))];
+
+  const { data: routeRows, error: routeError } = await supabase
+    .from('meter_readings')
+    .select(READING_SELECT)
+    .eq('meter_reader_id', userId)
+    .in('assignment_date', dates)
+    .is('deleted_at', null);
+
+  if (routeError) {
+    throw new Error(getMeterReadingErrorMessage(routeError));
+  }
+
+  const allRoute = (routeRows ?? []).map((row) =>
+    mapRow(row as unknown as MeterReadingRow)
+  );
+
+  return sitios
+    .map((sitio) => {
+      const sitioRemaining = remaining.filter(
+        (r) => ((r.account?.sitio ?? '').trim() || 'Unassigned Sitio') === sitio
+      );
+      const sitioAll = allRoute.filter(
+        (r) =>
+          ((r.account?.sitio ?? '').trim() || 'Unassigned Sitio') === sitio &&
+          dates.includes(r.assignment_date)
+      );
+      const total = Math.max(sitioAll.length, sitioRemaining.length);
+      const completed = Math.max(0, total - sitioRemaining.length);
+      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      return {
+        sitio,
+        total,
+        completed,
+        remaining: sitioRemaining.length,
+        percent,
+        readings: sitioRemaining,
+      };
+    })
+    .sort((a, b) => a.sitio.localeCompare(b.sitio));
 }
 
 /** Fetch the reader's submitted readings (history), newest first. */

@@ -58,6 +58,10 @@ export function AssignedReadingCard({
         <Text className="mb-2 text-[13px] text-navy-muted"># {accountNumber}</Text>
 
         <MetaRow icon="🔢" text={`Meter: ${meterNumber}`} />
+        <MetaRow
+          icon="🏘️"
+          text={`Sitio: ${reading.account?.sitio?.trim() || 'Unassigned'}`}
+        />
         <MetaRow icon="📍" text={address} />
         <MetaRow icon="🕒" text={`Assigned: ${formatDate(reading.assignment_date)}`} />
 

@@ -2,12 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   getAssignedReadings,
+  getSitioRouteProgress,
   subscribeToMeterReadings,
+  type SitioRouteProgress,
 } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 
 interface UseAssignmentsResult {
   assignments: MeterReading[];
+  /** Sitio-grouped route progress for the Assigned screen. */
+  sitioRoutes: SitioRouteProgress[];
   /** True on the very first load. */
   loading: boolean;
   /** True while re-fetching after realtime events or manual refresh. */
@@ -18,11 +22,12 @@ interface UseAssignmentsResult {
 
 /**
  * Loads the reader's active (assigned, not yet submitted) meter readings and
- * keeps them in sync via a realtime channel. Subscriptions are cleaned up on
- * unmount. Mirrors the announcement hook pattern.
+ * keeps them in sync via a realtime channel. Also loads sitio route progress
+ * so the Assigned screen can show completion bars per sitio.
  */
 export function useAssignments(): UseAssignmentsResult {
   const [assignments, setAssignments] = useState<MeterReading[]>([]);
+  const [sitioRoutes, setSitioRoutes] = useState<SitioRouteProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +40,12 @@ export function useAssignments(): UseAssignmentsResult {
     }
     setError(null);
     try {
-      const data = await getAssignedReadings();
-      setAssignments(data);
+      const [assigned, routes] = await Promise.all([
+        getAssignedReadings(),
+        getSitioRouteProgress(),
+      ]);
+      setAssignments(assigned);
+      setSitioRoutes(routes);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to load assigned readings.'
@@ -61,6 +70,5 @@ export function useAssignments(): UseAssignmentsResult {
 
   const refresh = useCallback(() => load(true), [load]);
 
-  return { assignments, loading, refreshing, error, refresh };
+  return { assignments, sitioRoutes, loading, refreshing, error, refresh };
 }
-

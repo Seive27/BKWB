@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { StartReadingModal } from '@/components/modals/StartReadingModal';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
@@ -60,10 +61,11 @@ export default function Dashboard({
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
 
-  const { assignments, refreshing, refresh } = useAssignments();
+  const { assignments, sitioRoutes, refreshing, refresh } = useAssignments();
   const { readings: history } = useReadingHistory();
 
   const [readerName, setReaderName] = useState('Reader');
+  const [showStartReading, setShowStartReading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -84,9 +86,22 @@ export default function Dashboard({
   const pendingReview = history.filter((r) => r.status === 'pending_review').length;
   const pendingReadings = assignments.length + pendingReview;
   const routeProgress =
-    totalAssigned + readingsCompleted > 0
-      ? Math.round((readingsCompleted / (totalAssigned + readingsCompleted)) * 100)
-      : 0;
+    sitioRoutes.length > 0
+      ? Math.round(
+          (sitioRoutes.reduce((sum, r) => sum + r.completed, 0) /
+            Math.max(
+              1,
+              sitioRoutes.reduce((sum, r) => sum + r.total, 0),
+            )) *
+            100,
+        )
+      : totalAssigned + readingsCompleted > 0
+        ? Math.round((readingsCompleted / (totalAssigned + readingsCompleted)) * 100)
+        : 0;
+  const assignedSitioLabel =
+    sitioRoutes.length > 0
+      ? sitioRoutes.map((r) => r.sitio).join(', ')
+      : null;
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     month: 'short',
@@ -131,12 +146,14 @@ export default function Dashboard({
         </Text>
         <Text className="mb-5 text-[15px] text-navy-muted">
           {totalAssigned > 0
-            ? `${totalAssigned} assigned reading${totalAssigned === 1 ? '' : 's'} to complete`
+            ? assignedSitioLabel
+              ? `${assignedSitioLabel} · ${totalAssigned} reading${totalAssigned === 1 ? '' : 's'} to complete`
+              : `${totalAssigned} assigned reading${totalAssigned === 1 ? '' : 's'} to complete`
             : 'No active assignments'}
         </Text>
 
         <Pressable
-          onPress={() => onTabPress?.('assigned')}
+          onPress={() => setShowStartReading(true)}
           className="mb-3 flex-row items-center justify-center gap-2.5 rounded-2xl bg-brand py-4 active:opacity-85"
           accessibilityRole="button"
           accessibilityLabel="Start Reading"
@@ -242,6 +259,17 @@ export default function Dashboard({
       </ScrollView>
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
+
+      <StartReadingModal
+        visible={showStartReading}
+        onClose={() => setShowStartReading(false)}
+        onConfirm={(payload) => {
+          Alert.alert(
+            'Reading recorded',
+            `Meter ${payload.meterNumber} in ${payload.sitio}: ${payload.currentReading} m³`,
+          );
+        }}
+      />
     </View>
   );
 }

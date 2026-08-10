@@ -36,8 +36,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Meter Reader to access your photos to update your profile picture.",
-          "cameraPermission": "Allow Meter Reader to use your camera to take a profile selfie.",
+          "photosPermission": "Allow Meter Reader to access your photos for profile pictures and meter readings.",
+          "cameraPermission": "Allow Meter Reader to use your camera to photograph meters and update your profile picture.",
           "microphonePermission": false
         }
       ]

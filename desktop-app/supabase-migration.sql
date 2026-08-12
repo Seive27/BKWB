@@ -118,6 +118,32 @@ CREATE POLICY "Users can update own profile"
   FOR UPDATE
   USING (auth.uid() = id);
 
+-- Staff may edit resident profile fields and toggle is_active.
+-- Restricted to role=resident so staff cannot edit other staff/admin rows.
+DROP POLICY IF EXISTS "Staff can update resident profiles" ON public.profiles;
+CREATE POLICY "Staff can update resident profiles"
+  ON public.profiles
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (SELECT public.is_staff())
+    AND EXISTS (
+      SELECT 1
+      FROM public.roles r
+      WHERE r.id = role_id
+        AND r.name = 'resident'
+    )
+  )
+  WITH CHECK (
+    (SELECT public.is_staff())
+    AND EXISTS (
+      SELECT 1
+      FROM public.roles r
+      WHERE r.id = role_id
+        AND r.name = 'resident'
+    )
+  );
+
 DROP POLICY IF EXISTS "Anyone can read roles" ON public.roles;
 CREATE POLICY "Anyone can read roles"
   ON public.roles
@@ -275,15 +301,28 @@ AS $$
   );
 $$;
 
+-- 9e. Indexes for FK lookups and announcement list/feed queries.
+CREATE INDEX IF NOT EXISTS announcements_created_by_idx
+  ON public.announcements (created_by);
+
+CREATE INDEX IF NOT EXISTS announcements_active_created_at_idx
+  ON public.announcements (created_at DESC)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS announcements_published_feed_idx
+  ON public.announcements (created_at DESC)
+  WHERE deleted_at IS NULL AND is_published = TRUE;
+
 -- 10. Policies (idempotent: drop-then-create so the migration can be re-run)
 -- Staff and super admins may manage (insert/update/delete) announcements.
+-- Wrap helper in SELECT so Postgres caches the per-statement result.
 DROP POLICY IF EXISTS "Staff and admins can manage announcements" ON public.announcements;
 CREATE POLICY "Staff and admins can manage announcements"
   ON public.announcements
   FOR ALL
   TO authenticated
-  USING (public.is_staff_or_admin())
-  WITH CHECK (public.is_staff_or_admin());
+  USING ((SELECT public.is_staff_or_admin()))
+  WITH CHECK ((SELECT public.is_staff_or_admin()));
 
 -- Everyone else may only read published, non-expired, non-deleted announcements
 -- whose scheduled publish time has been reached.
@@ -297,7 +336,7 @@ CREATE POLICY "Anyone can read published announcements"
     AND is_published = TRUE
     AND (expires_at IS NULL OR expires_at > NOW())
     AND (scheduled_at IS NULL OR scheduled_at <= NOW())
-    AND public.is_staff_or_admin() = FALSE
+    AND (SELECT public.is_staff_or_admin()) = FALSE
   );
 
 -- Allow authenticated users to read profile names so announcement
@@ -318,19 +357,28 @@ CREATE TRIGGER on_announcement_updated
 
 -- 11b. Backend date validation (mirrors the frontend rules):
 --      * expires_at must be in the future
---      * scheduled_at must be in the future (past dates are rejected)
+--      * scheduled_at must be in the future when newly set/changed
 --      * expires_at must come after scheduled_at when both are set
 -- PostgreSQL CHECK constraints cannot call NOW(), so enforce via trigger.
 CREATE OR REPLACE FUNCTION public.validate_announcement_dates()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = ''
 AS $$
 BEGIN
   IF NEW.expires_at IS NOT NULL AND NEW.expires_at <= NOW() THEN
     RAISE EXCEPTION 'Expiration must be in the future.';
   END IF;
-  IF NEW.scheduled_at IS NOT NULL AND NEW.scheduled_at <= NOW() THEN
-    RAISE EXCEPTION 'Schedule time must be in the future.';
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.scheduled_at IS NOT NULL AND NEW.scheduled_at <= NOW() THEN
+      RAISE EXCEPTION 'Schedule time must be in the future.';
+    END IF;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at
+       AND NEW.scheduled_at IS NOT NULL
+       AND NEW.scheduled_at <= NOW() THEN
+      RAISE EXCEPTION 'Schedule time must be in the future.';
+    END IF;
   END IF;
   IF NEW.scheduled_at IS NOT NULL AND NEW.expires_at IS NOT NULL
      AND NEW.expires_at <= NEW.scheduled_at THEN
@@ -696,6 +744,8 @@ CREATE TABLE IF NOT EXISTS public.resident_accounts (
   account_number TEXT NOT NULL UNIQUE,
   meter_id UUID REFERENCES public.meters(id),
   service_address TEXT,
+  -- Barangay Kalunasan sitio / zone used for bulk meter-reading assignment.
+  sitio TEXT,
   connection_status TEXT NOT NULL DEFAULT 'active'
     CHECK (connection_status IN ('active', 'inactive', 'disconnected')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -707,6 +757,7 @@ ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS resident_id UUID R
 ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS account_number TEXT;
 ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS meter_id UUID REFERENCES public.meters(id);
 ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS service_address TEXT;
+ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS sitio TEXT;
 ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS connection_status TEXT NOT NULL DEFAULT 'active';
 ALTER TABLE public.resident_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -725,7 +776,7 @@ BEGIN
       AND c.table_name = 'resident_accounts'
       AND c.is_nullable = 'NO'
       AND c.column_default IS NULL
-      AND c.column_name NOT IN ('id', 'resident_id', 'account_number', 'meter_id', 'service_address', 'connection_status', 'created_at', 'updated_at')
+      AND c.column_name NOT IN ('id', 'resident_id', 'account_number', 'meter_id', 'service_address', 'sitio', 'connection_status', 'created_at', 'updated_at')
   LOOP
     EXECUTE format('ALTER TABLE public.resident_accounts ALTER COLUMN %I DROP NOT NULL', col_name);
   END LOOP;
@@ -734,6 +785,7 @@ END $$;
 -- 20d. Self-heal: ensure the unique constraint exists so the account seed
 --      (ON CONFLICT (account_number)) works on older schemas.
 CREATE UNIQUE INDEX IF NOT EXISTS resident_accounts_account_number_key ON public.resident_accounts (account_number);
+CREATE INDEX IF NOT EXISTS idx_resident_accounts_sitio ON public.resident_accounts (sitio);
 
 -- 20e. Account number generator: allocates the next ACC-#### in a race-safe
 --      way (DB sequence) for residents created without a manual consumer code.
@@ -814,12 +866,50 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 21d. Older schemas required current_reading / reading_date / meter_id on
+--      insert. Assignments are created before a reading is submitted, so
+--      those columns must be nullable. Also normalize types + defaults.
+ALTER TABLE public.meter_readings ALTER COLUMN current_reading DROP NOT NULL;
+ALTER TABLE public.meter_readings ALTER COLUMN reading_date DROP NOT NULL;
+ALTER TABLE public.meter_readings ALTER COLUMN meter_id DROP NOT NULL;
+ALTER TABLE public.meter_readings ALTER COLUMN previous_reading SET DEFAULT 0;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'meter_readings'
+      AND column_name = 'reading_date'
+      AND data_type = 'date'
+  ) THEN
+    ALTER TABLE public.meter_readings
+      ALTER COLUMN reading_date TYPE timestamptz
+      USING reading_date::timestamptz;
+  END IF;
+END $$;
+
 -- Useful indexes for the meter reading workflow
 CREATE INDEX IF NOT EXISTS idx_meter_readings_account_id ON public.meter_readings (account_id);
 CREATE INDEX IF NOT EXISTS idx_meter_readings_meter_reader_id ON public.meter_readings (meter_reader_id);
 CREATE INDEX IF NOT EXISTS idx_meter_readings_status ON public.meter_readings (status);
 CREATE INDEX IF NOT EXISTS idx_meter_readings_resident_id ON public.meter_readings (resident_id);
+CREATE INDEX IF NOT EXISTS idx_meter_readings_assigned_by ON public.meter_readings (assigned_by);
+CREATE INDEX IF NOT EXISTS idx_meter_readings_reviewed_by ON public.meter_readings (reviewed_by);
 CREATE INDEX IF NOT EXISTS idx_resident_accounts_resident_id ON public.resident_accounts (resident_id);
+
+CREATE INDEX IF NOT EXISTS idx_meter_readings_active_status
+  ON public.meter_readings (status, assignment_date DESC, created_at DESC)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_meter_readings_account_open
+  ON public.meter_readings (account_id)
+  WHERE deleted_at IS NULL AND status IN ('assigned', 'pending_review');
+
+CREATE INDEX IF NOT EXISTS idx_meter_readings_account_prev
+  ON public.meter_readings (account_id, reading_date DESC, created_at DESC)
+  WHERE deleted_at IS NULL AND status IN ('approved', 'billed');
 
 -- 22. Consumption is calculated automatically at the database level.
 --     consumption = current_reading - previous_reading, never negative.
@@ -931,8 +1021,8 @@ CREATE POLICY "Staff can manage meter readings"
   ON public.meter_readings
   FOR ALL
   TO authenticated
-  USING (public.is_staff())
-  WITH CHECK (public.is_staff());
+  USING ((SELECT public.is_staff()))
+  WITH CHECK ((SELECT public.is_staff()));
 
 -- Super admins have read-only monitoring.
 DROP POLICY IF EXISTS "Admins can read meter readings" ON public.meter_readings;
@@ -940,7 +1030,7 @@ CREATE POLICY "Admins can read meter readings"
   ON public.meter_readings
   FOR SELECT
   TO authenticated
-  USING (public.is_staff_or_admin());
+  USING ((SELECT public.is_staff_or_admin()));
 
 -- Meter readers can read their own assigned readings + history.
 DROP POLICY IF EXISTS "Meter readers can read own readings" ON public.meter_readings;
@@ -948,7 +1038,7 @@ CREATE POLICY "Meter readers can read own readings"
   ON public.meter_readings
   FOR SELECT
   TO authenticated
-  USING (meter_reader_id = auth.uid() AND deleted_at IS NULL);
+  USING (meter_reader_id = (SELECT auth.uid()) AND deleted_at IS NULL);
 
 -- Meter readers can submit only their own currently-assigned readings.
 -- The target status is locked to 'pending_review' so a reader can never
@@ -958,11 +1048,64 @@ CREATE POLICY "Meter readers can submit own assigned readings"
   ON public.meter_readings
   FOR UPDATE
   TO authenticated
-  USING (meter_reader_id = auth.uid() AND status = 'assigned' AND deleted_at IS NULL)
+  USING (
+    meter_reader_id = (SELECT auth.uid())
+    AND status = 'assigned'
+    AND deleted_at IS NULL
+  )
   WITH CHECK (
-    meter_reader_id = auth.uid()
+    meter_reader_id = (SELECT auth.uid())
     AND deleted_at IS NULL
     AND status = 'pending_review'
+  );
+
+-- 25b. Meter photo storage: readers upload to their own folder; staff can view.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('meter-images', 'meter-images', FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Meter readers can upload meter images" ON storage.objects;
+CREATE POLICY "Meter readers can upload meter images"
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'meter-images'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+DROP POLICY IF EXISTS "Meter readers can read own meter images" ON storage.objects;
+CREATE POLICY "Meter readers can read own meter images"
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'meter-images'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+DROP POLICY IF EXISTS "Meter readers can update own meter images" ON storage.objects;
+CREATE POLICY "Meter readers can update own meter images"
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'meter-images'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  )
+  WITH CHECK (
+    bucket_id = 'meter-images'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+DROP POLICY IF EXISTS "Staff can read meter images" ON storage.objects;
+CREATE POLICY "Staff can read meter images"
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'meter-images'
+    AND (SELECT public.is_staff())
   );
 
 -- 26. Enable Realtime for meter readings (syncs assignments + submissions)
@@ -990,6 +1133,7 @@ ON CONFLICT (meter_number) DO NOTHING;
 CREATE OR REPLACE FUNCTION public.guard_meter_reading_reader_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = ''
 AS $$
 BEGIN
   -- Staff and super admins manage readings directly; skip the guard.
@@ -1042,16 +1186,94 @@ meter_rows AS (
     count(*) OVER () AS meter_count
   FROM public.meters
 )
-INSERT INTO public.resident_accounts (resident_id, account_number, meter_id, service_address, connection_status)
+INSERT INTO public.resident_accounts (resident_id, account_number, meter_id, service_address, sitio, connection_status)
 SELECT
   rr.id,
   'ACC-' || lpad((rr.rn + 1)::text, 4, '0'),
   mr.id,
-  'Purok ' || (rr.rn % 8 + 1) || ', Barangay Kalunasan',
+  (ARRAY[
+    'Back Crisanto',
+    'Ellena Homes',
+    'Lariha',
+    'Lokana',
+    'Lower Awihaw',
+    'Lower Camparang',
+    'Lower Kalunasan',
+    'Mountain View Village',
+    'Pang Pang Lanog',
+    'San Jose Ville',
+    'San Marcelo',
+    'Sobusteha',
+    'Unit 2',
+    'Unit 3',
+    'Unit 4',
+    'Unit 5',
+    'Upper Awiha',
+    'Upper Camprang',
+    'Upper Kalunasan',
+    'Valle Estrella'
+  ])[ (rr.rn % 20) + 1 ] || ', Barangay Kalunasan',
+  (ARRAY[
+    'Back Crisanto',
+    'Ellena Homes',
+    'Lariha',
+    'Lokana',
+    'Lower Awihaw',
+    'Lower Camparang',
+    'Lower Kalunasan',
+    'Mountain View Village',
+    'Pang Pang Lanog',
+    'San Jose Ville',
+    'San Marcelo',
+    'Sobusteha',
+    'Unit 2',
+    'Unit 3',
+    'Unit 4',
+    'Unit 5',
+    'Upper Awiha',
+    'Upper Camprang',
+    'Upper Kalunasan',
+    'Valle Estrella'
+  ])[ (rr.rn % 20) + 1 ],
   'active'
 FROM resident_rows rr
 JOIN meter_rows mr ON mr.meter_idx = (rr.rn % mr.meter_count)
 ON CONFLICT (account_number) DO NOTHING;
+
+-- Backfill sitio on existing accounts that were seeded before the column existed.
+UPDATE public.resident_accounts ra
+SET sitio = s.name
+FROM (
+  SELECT
+    id,
+    (row_number() OVER (ORDER BY account_number) - 1) % 20 AS idx
+  FROM public.resident_accounts
+  WHERE sitio IS NULL OR btrim(sitio) = ''
+) mapped
+JOIN (
+  VALUES
+    (0, 'Back Crisanto'),
+    (1, 'Ellena Homes'),
+    (2, 'Lariha'),
+    (3, 'Lokana'),
+    (4, 'Lower Awihaw'),
+    (5, 'Lower Camparang'),
+    (6, 'Lower Kalunasan'),
+    (7, 'Mountain View Village'),
+    (8, 'Pang Pang Lanog'),
+    (9, 'San Jose Ville'),
+    (10, 'San Marcelo'),
+    (11, 'Sobusteha'),
+    (12, 'Unit 2'),
+    (13, 'Unit 3'),
+    (14, 'Unit 4'),
+    (15, 'Unit 5'),
+    (16, 'Upper Awiha'),
+    (17, 'Upper Camprang'),
+    (18, 'Upper Kalunasan'),
+    (19, 'Valle Estrella')
+) AS s(idx, name) ON s.idx = mapped.idx
+WHERE ra.id = mapped.id;
 
 -- ============================================================
 -- 28. Notifications table (shared across all applications)

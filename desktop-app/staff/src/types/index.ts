@@ -29,6 +29,7 @@ export interface ResidentAccount {
   account_number: string;
   meter_id: string | null;
   service_address: string | null;
+  sitio: string | null;
   connection_status: 'active' | 'inactive' | 'disconnected';
   created_at: string;
   updated_at: string;
@@ -67,11 +68,12 @@ export interface MeterReading {
   updated_at: string;
   /** Joined profiles row for the resident. */
   resident?: TicketPerson | null;
-  /** Joined resident_accounts row (account number + address). */
+  /** Joined resident_accounts row (account number + address + sitio). */
   account?: {
     id: string;
     account_number: string;
     service_address: string | null;
+    sitio: string | null;
   } | null;
   /** Joined meters row. */
   meter?: Meter | null;

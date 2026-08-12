@@ -35,6 +35,7 @@ import {
   deleteAnnouncement,
   updateAnnouncement,
 } from '../services/announcementService';
+import { FutureDateTimeField } from '../components/ui/FutureDateTimeField';
 
 // ── Constants ──
 
@@ -93,22 +94,6 @@ function formatDateTime(iso: string | null | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-/** Local datetime string (yyyy-MM-ddTHH:mm) for <input type="datetime-local">. */
-function toLocalInputValue(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Earliest selectable moment for datetime-local inputs (now, rounded to minute). */
-function minDateTimeLocal(): string {
-  const d = new Date();
-  d.setSeconds(0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export type AnnouncementStatus = 'published' | 'draft' | 'scheduled' | 'expired';
@@ -373,14 +358,10 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
                 Expiration Date <span className="text-gray-400 font-normal">(optional)</span>
               </label>
-              <input
-                type="datetime-local"
-                min={minDateTimeLocal()}
-                value={toLocalInputValue(draft.expires_at)}
-                onChange={(e) =>
-                  set('expires_at', e.target.value ? new Date(e.target.value).toISOString() : null)
-                }
-                className={inputClass(!!fieldErrors.expires_at)}
+              <FutureDateTimeField
+                value={draft.expires_at}
+                onChange={(iso) => set('expires_at', iso)}
+                hasError={!!fieldErrors.expires_at}
               />
               {fieldErrors.expires_at && (
                 <p className="mt-1 text-xs text-red-500">{fieldErrors.expires_at}</p>
@@ -390,14 +371,10 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
                 Publish At <span className="text-gray-400 font-normal">(optional)</span>
               </label>
-              <input
-                type="datetime-local"
-                min={minDateTimeLocal()}
-                value={toLocalInputValue(draft.scheduled_at)}
-                onChange={(e) =>
-                  set('scheduled_at', e.target.value ? new Date(e.target.value).toISOString() : null)
-                }
-                className={inputClass(!!fieldErrors.scheduled_at)}
+              <FutureDateTimeField
+                value={draft.scheduled_at}
+                onChange={(iso) => set('scheduled_at', iso)}
+                hasError={!!fieldErrors.scheduled_at}
               />
               {fieldErrors.scheduled_at ? (
                 <p className="mt-1 text-xs text-red-500">{fieldErrors.scheduled_at}</p>

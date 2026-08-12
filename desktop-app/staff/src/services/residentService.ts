@@ -6,6 +6,7 @@ export interface ResidentRecord {
   /** The resident profile id (profiles.id). */
   id: string;
   firstName: string;
+  middleName: string | null;
   lastName: string;
   fullName: string;
   email: string;
@@ -15,6 +16,7 @@ export interface ResidentRecord {
   accountId: string | null;
   accountNumber: string | null;
   serviceAddress: string | null;
+  sitio: string | null;
   connectionStatus: 'active' | 'inactive' | 'disconnected' | null;
   meterId: string | null;
   meterNumber: string | null;
@@ -33,6 +35,18 @@ export interface ResidentCreateInput {
   /** Required: drives the automatic temporary password. */
   dateOfBirth: string;
   serviceAddress?: string;
+  sitio?: string;
+  meterNumber?: string;
+}
+
+export interface ResidentUpdateInput {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  phone: string;
+  dateOfBirth?: string;
+  serviceAddress?: string;
+  sitio?: string;
   meterNumber?: string;
 }
 
@@ -129,6 +143,7 @@ export function getResidentServiceErrorMessage(error: {
 interface ResidentRow {
   id: string;
   first_name: string;
+  middle_name: string | null;
   last_name: string;
   email: string;
   phone: string | null;
@@ -139,6 +154,7 @@ interface ResidentRow {
     id: string;
     account_number: string;
     service_address: string | null;
+    sitio: string | null;
     connection_status: 'active' | 'inactive' | 'disconnected';
     meter: { meter_number: string } | null;
   }[];
@@ -149,6 +165,7 @@ function mapRow(row: ResidentRow): ResidentRecord {
   return {
     id: row.id,
     firstName: row.first_name,
+    middleName: row.middle_name ?? null,
     lastName: row.last_name,
     fullName: `${row.first_name} ${row.last_name}`.trim(),
     email: row.email,
@@ -157,6 +174,7 @@ function mapRow(row: ResidentRow): ResidentRecord {
     accountId: account?.id ?? null,
     accountNumber: account?.account_number ?? null,
     serviceAddress: account?.service_address ?? null,
+    sitio: account?.sitio ?? null,
     connectionStatus: account?.connection_status ?? null,
     meterId: account?.meter?.meter_number ?? null,
     meterNumber: account?.meter?.meter_number ?? null,
@@ -173,7 +191,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, connection_status, meter:meters(meter_number))'
+      'id, first_name, middle_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -283,6 +301,7 @@ export async function createResident(
       phone: input.phone,
       role: 'resident',
       service_address: input.serviceAddress ?? null,
+      sitio: input.sitio ?? null,
       meter_number: input.meterNumber ?? null,
     },
   });
@@ -308,4 +327,116 @@ export async function createResident(
     account_number: (data as { account_number?: string | null })
       .account_number ?? null,
   };
+}
+
+/** Resolve a meter serial to a meters.id, creating the row when needed. */
+async function resolveMeterId(meterNumber: string): Promise<string> {
+  const serial = meterNumber.trim();
+  const { data: existing, error: lookupError } = await supabase
+    .from('meters')
+    .select('id')
+    .eq('meter_number', serial)
+    .maybeSingle();
+  if (lookupError) {
+    throw new Error(getResidentServiceErrorMessage(lookupError));
+  }
+  if (existing?.id) return existing.id as string;
+
+  const { data: created, error: insertError } = await supabase
+    .from('meters')
+    .insert({ meter_number: serial, is_active: true })
+    .select('id')
+    .maybeSingle();
+  if (insertError) {
+    throw new Error(getResidentServiceErrorMessage(insertError));
+  }
+  if (!created?.id) {
+    throw new Error('Failed to create the meter record.');
+  }
+  return created.id as string;
+}
+
+/**
+ * Update a resident's profile and primary service account.
+ * Email and account number are not editable here (auth + generated identifiers).
+ */
+export async function updateResident(
+  resident: ResidentRecord,
+  input: ResidentUpdateInput
+): Promise<void> {
+  const phoneError = validatePhone(input.phone);
+  if (phoneError) throw new Error(phoneError);
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      first_name: input.firstName.trim(),
+      middle_name: input.middleName?.trim() || null,
+      last_name: input.lastName.trim(),
+      phone: input.phone.trim(),
+      date_of_birth: input.dateOfBirth?.trim() || null,
+    })
+    .eq('id', resident.id);
+
+  if (profileError) {
+    const msg = profileError.message?.toLowerCase() ?? '';
+    if (msg.includes('phone') && (msg.includes('unique') || msg.includes('duplicate'))) {
+      throw new Error('This cell number is already registered to another account.');
+    }
+    throw new Error(getResidentServiceErrorMessage(profileError));
+  }
+
+  if (!resident.accountId) {
+    return;
+  }
+
+  let meterId: string | null = null;
+  const meterNumber = input.meterNumber?.trim() ?? '';
+  if (meterNumber) {
+    meterId = await resolveMeterId(meterNumber);
+  }
+
+  const { error: accountError } = await supabase
+    .from('resident_accounts')
+    .update({
+      service_address: input.serviceAddress?.trim() || null,
+      sitio: input.sitio?.trim() || null,
+      meter_id: meterId,
+    })
+    .eq('id', resident.accountId);
+
+  if (accountError) {
+    throw new Error(getResidentServiceErrorMessage(accountError));
+  }
+}
+
+/**
+ * Toggle the resident account between Active and Inactive.
+ * Also flips profiles.is_active so deactivated residents cannot sign in.
+ */
+export async function setResidentStatus(
+  resident: ResidentRecord,
+  status: 'active' | 'inactive'
+): Promise<void> {
+  if (!resident.accountId) {
+    throw new Error('This resident has no service account to update.');
+  }
+
+  const { error: accountError } = await supabase
+    .from('resident_accounts')
+    .update({ connection_status: status })
+    .eq('id', resident.accountId);
+
+  if (accountError) {
+    throw new Error(getResidentServiceErrorMessage(accountError));
+  }
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ is_active: status === 'active' })
+    .eq('id', resident.id);
+
+  if (profileError) {
+    throw new Error(getResidentServiceErrorMessage(profileError));
+  }
 }

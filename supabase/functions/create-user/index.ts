@@ -1,3 +1,4 @@
+/// <reference path="../deno.d.ts" />
 // ============================================================
 // create-user — BKWB Edge Function
 // ------------------------------------------------------------
@@ -80,6 +81,8 @@ interface CreateUserPayload {
   account_number?: string | null;
   /** Residents only: service address for the new account. */
   service_address?: string | null;
+  /** Residents only: sitio / zone for meter reading assignment. */
+  sitio?: string | null;
   /** Residents only: meter serial number. A meters row is created if absent. */
   meter_number?: string | null;
 }
@@ -276,6 +279,7 @@ async function handleRequest(req: Request): Promise<Response> {
     lastName,
     hasPhone: !!phone,
     hasDateOfBirth: !!dateOfBirth,
+    sitio: body.sitio?.trim() || null,
   });
 
   // ── 3a. Cell number validation: required + format + uniqueness ──
@@ -425,13 +429,17 @@ async function handleRequest(req: Request): Promise<Response> {
         account_number: accountNumber,
         meter_id: meterId,
         service_address: body.service_address?.trim() || null,
+        sitio: body.sitio?.trim() || null,
         connection_status: 'active',
       });
     if (accountError) {
       await rollback();
       return fail(500, accountError.message);
     }
-    console.log('[create-user] resident account created', { account_number: accountNumber });
+    console.log('[create-user] resident account created', {
+      account_number: accountNumber,
+      sitio: body.sitio?.trim() || null,
+    });
   }
 
   // ── 7. Email the credentials (best-effort — never fails the request) ──

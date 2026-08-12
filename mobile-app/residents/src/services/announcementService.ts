@@ -19,7 +19,10 @@ export function getAnnouncementErrorMessage(error: {
   if (
     msg.includes('relation') ||
     msg.includes('does not exist') ||
-    code === '42P01'
+    msg.includes('schema cache') ||
+    code === '42P01' ||
+    code === 'PGRST204' ||
+    code === 'PGRST205'
   ) {
     return 'The announcements table has not been set up yet. Please run the SQL migration.';
   }

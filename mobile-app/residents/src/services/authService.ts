@@ -95,6 +95,7 @@ export interface FullProfile {
   /** Primary resident account (resident_accounts), if any. */
   account_number: string | null;
   service_address: string | null;
+  sitio: string | null;
 }
 
 export async function getCurrentProfile(): Promise<FullProfile | null> {
@@ -107,7 +108,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, email, first_name, middle_name, last_name, phone, avatar_url, is_active, role:roles(name), accounts:resident_accounts(account_number, service_address)'
+      'id, email, first_name, middle_name, last_name, phone, avatar_url, is_active, role:roles(name), accounts:resident_accounts(account_number, service_address, sitio)'
     )
     .eq('id', userId)
     .maybeSingle();
@@ -128,7 +129,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
     avatar_url: string | null;
     is_active: boolean;
     role?: { name: string } | null;
-    accounts?: { account_number: string; service_address: string | null }[] | null;
+    accounts?: { account_number: string; service_address: string | null; sitio: string | null }[] | null;
   };
   const account = row.accounts?.[0] ?? null;
   return {
@@ -143,6 +144,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
     role_name: row.role?.name ?? 'resident',
     account_number: account?.account_number ?? null,
     service_address: account?.service_address ?? null,
+    sitio: account?.sitio ?? null,
   };
 }
 

@@ -383,6 +383,7 @@ export default function Profile({
                   </>
                 )}
                 <InfoRow label="Service Address" value={profile?.service_address ?? '—'} />
+                <InfoRow label="Sitio" value={profile?.sitio ?? '—'} />
                 <InfoRow label="Email" value={profile?.email ?? '—'} />
                 <InfoRow label="Account Status" value={profile?.is_active ? 'Active' : 'Inactive'} isStatus isLast />
               </View>

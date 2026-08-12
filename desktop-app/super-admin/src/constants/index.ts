@@ -92,3 +92,29 @@ export const TICKET_PRIORITIES = {
   HIGH: 'high',
   URGENT: 'urgent',
 } as const;
+
+// ── Barangay Kalunasan sitios (meter reading assignment zones) ──
+export const SITIO_OPTIONS = [
+  'Back Crisanto',
+  'Ellena Homes',
+  'Lariha',
+  'Lokana',
+  'Lower Awihaw',
+  'Lower Camparang',
+  'Lower Kalunasan',
+  'Mountain View Village',
+  'Pang Pang Lanog',
+  'San Jose Ville',
+  'San Marcelo',
+  'Sobusteha',
+  'Unit 2',
+  'Unit 3',
+  'Unit 4',
+  'Unit 5',
+  'Upper Awiha',
+  'Upper Camprang',
+  'Upper Kalunasan',
+  'Valle Estrella',
+] as const;
+
+export type SitioOption = (typeof SITIO_OPTIONS)[number];

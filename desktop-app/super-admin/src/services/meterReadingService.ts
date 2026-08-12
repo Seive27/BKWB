@@ -35,9 +35,9 @@ export function getMeterReadingErrorMessage(error: {
   const code = error?.code ?? '';
 
   if (
-    msg.includes('relation') ||
-    msg.includes('does not exist') ||
-    code === '42P01'
+    code === '42P01' ||
+    (msg.includes('does not exist') &&
+      (msg.includes('relation') || msg.includes('table')))
   ) {
     return 'The meter readings tables have not been set up yet. Please run the SQL migration.';
   }

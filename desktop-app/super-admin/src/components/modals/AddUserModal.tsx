@@ -95,6 +95,11 @@ function toIsoDate(y: number, m: number, d: number): string {
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/** Capitalize the first letter of each word (e.g. "juan dela cruz" → "Juan Dela Cruz"). */
+function capitalizeName(value: string): string {
+  return value.replace(/(^|\s)(\S)/g, (_match, space: string, char: string) => space + char.toUpperCase());
+}
+
 /** Defined outside the modal so React keeps the same component identity across re-renders
  *  (defining it inside caused inputs to remount and lose focus after each keystroke). */
 const InputField = ({
@@ -107,6 +112,10 @@ const InputField = ({
   required,
   disabled,
   type = 'text',
+  autoCapitalize,
+  autoCorrect,
+  autoComplete,
+  spellCheck,
 }: {
   label: string;
   value: string;
@@ -117,6 +126,10 @@ const InputField = ({
   required?: boolean;
   disabled?: boolean;
   type?: string;
+  autoCapitalize?: 'none' | 'off' | 'sentences' | 'words' | 'characters';
+  autoCorrect?: 'on' | 'off';
+  autoComplete?: string;
+  spellCheck?: boolean;
 }) => (
   <div>
     <label className="block text-xs font-semibold text-gray-700 uppercase mb-2">
@@ -134,6 +147,10 @@ const InputField = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        autoComplete={autoComplete}
+        spellCheck={spellCheck}
         className={`w-full ${Icon ? 'pl-10' : 'px-4'} pr-4 py-2.5 border ${
           error ? 'border-red-300' : 'border-gray-300'
         } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm disabled:bg-gray-50 disabled:text-gray-500`}
@@ -430,6 +447,10 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     if (validateForm()) {
       onSubmit({
         ...formData,
+        firstName: capitalizeName(formData.firstName.trim()),
+        middleName: capitalizeName(formData.middleName.trim()),
+        lastName: capitalizeName(formData.lastName.trim()),
+        emailAddress: formData.emailAddress.trim(),
         // date input already yields YYYY-MM-DD for the DB
         dateOfBirth: formData.dateOfBirth.trim(),
         // Trim so the displayed/returned value matches exactly what the edge
@@ -501,28 +522,34 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
               <InputField
                 label="First Name"
                 value={formData.firstName}
-                onChange={(v) => setFormData((prev) => ({ ...prev, firstName: v }))}
+                onChange={(v) => setFormData((prev) => ({ ...prev, firstName: capitalizeName(v) }))}
                 placeholder="e.g. Juan"
                 icon={User}
                 error={errors.firstName}
                 required
+                autoCapitalize="words"
+                autoComplete="given-name"
               />
 
               <InputField
                 label="Middle Name"
                 value={formData.middleName}
-                onChange={(v) => setFormData((prev) => ({ ...prev, middleName: v }))}
+                onChange={(v) => setFormData((prev) => ({ ...prev, middleName: capitalizeName(v) }))}
                 placeholder="e.g. Reyes"
+                autoCapitalize="words"
+                autoComplete="additional-name"
               />
 
               <InputField
                 label="Last Name"
                 value={formData.lastName}
-                onChange={(v) => setFormData((prev) => ({ ...prev, lastName: v }))}
+                onChange={(v) => setFormData((prev) => ({ ...prev, lastName: capitalizeName(v) }))}
                 placeholder="e.g. Dela Cruz"
                 icon={User}
                 error={errors.lastName}
                 required
+                autoCapitalize="words"
+                autoComplete="family-name"
               />
 
               <DateOfBirthField
@@ -556,12 +583,17 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
 
               <InputField
                 label="Email Address"
+                type="email"
                 value={formData.emailAddress}
                 onChange={(v) => setFormData((prev) => ({ ...prev, emailAddress: v }))}
                 placeholder={isManualRole ? 'user@bkwb.com' : 'user@email.com'}
                 icon={Mail}
                 error={errors.emailAddress}
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="email"
+                spellCheck={false}
               />
             </div>
           </div>

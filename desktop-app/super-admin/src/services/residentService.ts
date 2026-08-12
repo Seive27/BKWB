@@ -15,6 +15,7 @@ export interface ResidentRecord {
   accountId: string | null;
   accountNumber: string | null;
   serviceAddress: string | null;
+  sitio: string | null;
   connectionStatus: 'active' | 'inactive' | 'disconnected' | null;
   meterId: string | null;
   meterNumber: string | null;
@@ -33,6 +34,7 @@ export interface ResidentCreateInput {
   /** Required: drives the automatic temporary password. */
   dateOfBirth: string;
   serviceAddress?: string;
+  sitio?: string;
   meterNumber?: string;
 }
 
@@ -139,6 +141,7 @@ interface ResidentRow {
     id: string;
     account_number: string;
     service_address: string | null;
+    sitio: string | null;
     connection_status: 'active' | 'inactive' | 'disconnected';
     meter: { meter_number: string } | null;
   }[];
@@ -157,6 +160,7 @@ function mapRow(row: ResidentRow): ResidentRecord {
     accountId: account?.id ?? null,
     accountNumber: account?.account_number ?? null,
     serviceAddress: account?.service_address ?? null,
+    sitio: account?.sitio ?? null,
     connectionStatus: account?.connection_status ?? null,
     meterId: account?.meter?.meter_number ?? null,
     meterNumber: account?.meter?.meter_number ?? null,
@@ -173,7 +177,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, connection_status, meter:meters(meter_number))'
+      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -283,6 +287,7 @@ export async function createResident(
       phone: input.phone,
       role: 'resident',
       service_address: input.serviceAddress ?? null,
+      sitio: input.sitio ?? null,
       meter_number: input.meterNumber ?? null,
     },
   });

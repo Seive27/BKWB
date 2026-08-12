@@ -13,6 +13,7 @@ import {
   Check,
   CheckCircle2,
   KeyRound,
+  ChevronDown,
 } from 'lucide-react';
 import {
   getResidents,
@@ -22,6 +23,7 @@ import {
   validatePhone,
   type ResidentRecord,
 } from '../services/residentService';
+import { SITIO_OPTIONS } from '../constants';
 
 interface AddResidentForm {
   firstName: string;
@@ -31,6 +33,7 @@ interface AddResidentForm {
   phone: string;
   dateOfBirth: string;
   serviceAddress: string;
+  sitio: string;
   meterNumber: string;
 }
 
@@ -42,6 +45,7 @@ const EMPTY_FORM: AddResidentForm = {
   phone: '',
   dateOfBirth: '',
   serviceAddress: '',
+  sitio: '',
   meterNumber: '',
 };
 
@@ -125,6 +129,7 @@ const AddResidentModal: React.FC<{
     if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
     const phoneError = validatePhone(form.phone);
     if (phoneError) errors.phone = phoneError;
+    if (!form.sitio.trim()) errors.sitio = 'Sitio is required.';
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
@@ -138,6 +143,7 @@ const AddResidentModal: React.FC<{
         phone: form.phone.trim(),
         dateOfBirth: form.dateOfBirth,
         serviceAddress: form.serviceAddress,
+        sitio: form.sitio || undefined,
         meterNumber: form.meterNumber,
       });
       // Show the credentials once so staff can record them before closing.
@@ -317,6 +323,31 @@ const AddResidentModal: React.FC<{
                 />
                 <p className="mt-1 text-xs text-gray-400">Auto-generated when the resident is saved.</p>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Sitio *</label>
+                <div className="relative">
+                  <select
+                    value={form.sitio}
+                    onChange={(e) => set('sitio', e.target.value)}
+                    className={`${inputClass} appearance-none bg-white text-gray-900 pr-10 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
+                  >
+                    <option value="">Select a sitio</option>
+                    {SITIO_OPTIONS.map((sitio) => (
+                      <option key={sitio} value={sitio}>
+                        {sitio}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
+                {fieldErrors.sitio ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.sitio}</p>
+                ) : form.sitio ? (
+                  <p className="mt-1 text-xs text-gray-500">Selected: <span className="font-medium text-gray-700">{form.sitio}</span></p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">Used to assign meter readings by coverage area.</p>
+                )}
+              </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Service Address</label>
                 <input
@@ -467,13 +498,14 @@ const Residents: React.FC = () => {
       r.fullName.toLowerCase().includes(q) ||
       (r.accountNumber ?? '').toLowerCase().includes(q) ||
       (r.meterNumber ?? '').toLowerCase().includes(q) ||
+      (r.sitio ?? '').toLowerCase().includes(q) ||
       r.email.toLowerCase().includes(q)
     );
   });
 
   const handleExport = () => {
     if (filteredResidents.length === 0) return;
-    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Status', 'Created'];
+    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Status', 'Created'];
     const rows = filteredResidents.map((r) => [
       r.fullName,
       r.email,
@@ -481,6 +513,7 @@ const Residents: React.FC = () => {
       r.accountNumber ?? '',
       r.meterNumber ?? '',
       r.serviceAddress ?? '',
+      r.sitio ?? '',
       getStatusText(r.connectionStatus),
       new Date(r.createdAt).toLocaleDateString(),
     ]);
@@ -605,13 +638,14 @@ const Residents: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter ID</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sitio</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
@@ -620,7 +654,7 @@ const Residents: React.FC = () => {
                     </tr>
                   ) : filteredResidents.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">No residents found.</p>
                       </td>
@@ -649,6 +683,9 @@ const Residents: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {resident.serviceAddress ?? '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {resident.sitio ?? '—'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>

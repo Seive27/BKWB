@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -37,18 +37,24 @@ const DISMISS_DISTANCE = 100;
 const DISMISS_VELOCITY = 800;
 const CLOSE_DURATION_MS = 260;
 
+export type StartReadingPayload = {
+  dateOfReading: string;
+  meterNumber: string;
+  sitio: string;
+  photoUri: string | null;
+  photoBase64: string | null;
+  currentReading: string;
+  notes: string;
+};
+
 type StartReadingModalProps = {
   visible: boolean;
   onClose: () => void;
+  /** Pre-fill (and optionally lock) the sitio from the Assigned card. */
+  defaultSitio?: string;
+  lockSitio?: boolean;
   /** Called when the reader confirms a complete reading entry. */
-  onConfirm?: (payload: {
-    dateOfReading: string;
-    meterNumber: string;
-    sitio: string;
-    photoUri: string | null;
-    currentReading: string;
-    notes: string;
-  }) => void;
+  onConfirm?: (payload: StartReadingPayload) => void | Promise<void>;
 };
 
 function formatReadingDate(date: Date): string {
@@ -63,27 +69,33 @@ function formatReadingDate(date: Date): string {
 export function StartReadingModal({
   visible,
   onClose,
+  defaultSitio,
+  lockSitio = false,
   onConfirm,
 }: StartReadingModalProps) {
   const [dateOfReading] = useState(() => formatReadingDate(new Date()));
   const [meterNumber, setMeterNumber] = useState('');
-  const [sitio, setSitio] = useState('');
+  const [sitio, setSitio] = useState(defaultSitio ?? '');
   const [sitioOpen, setSitioOpen] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [currentReading, setCurrentReading] = useState('');
   const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const translateY = useSharedValue(SHEET_MAX_HEIGHT);
   const dragStartY = useSharedValue(0);
 
   const resetForm = useCallback(() => {
     setMeterNumber('');
-    setSitio('');
+    setSitio(defaultSitio ?? '');
     setSitioOpen(false);
     setPhotoUri(null);
+    setPhotoBase64(null);
     setCurrentReading('');
     setNotes('');
-  }, []);
+    setSubmitting(false);
+  }, [defaultSitio]);
 
   // Only notify parent — do not snap translateY back to 0 while the modal is
   // still mounted (that caused the close distortion).
@@ -109,6 +121,8 @@ export function StartReadingModal({
 
   useLayoutEffect(() => {
     if (visible) {
+      setSitio(defaultSitio ?? '');
+      setSitioOpen(false);
       translateY.value = SHEET_MAX_HEIGHT;
       translateY.value = withTiming(0, {
         duration: CLOSE_DURATION_MS,
@@ -117,7 +131,13 @@ export function StartReadingModal({
     } else {
       translateY.value = SHEET_MAX_HEIGHT;
     }
-  }, [visible, translateY]);
+  }, [visible, defaultSitio, translateY]);
+
+  const applyPhotoAsset = useCallback((asset: ImagePicker.ImagePickerAsset) => {
+    if (!asset.uri) return;
+    setPhotoUri(asset.uri);
+    setPhotoBase64(asset.base64 ?? null);
+  }, []);
 
   const takeMeterPhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -131,17 +151,34 @@ export function StartReadingModal({
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
+      allowsEditing: false,
+      quality: 0.7,
+      base64: true,
       cameraType: ImagePicker.CameraType.back,
     });
 
-    if (!result.canceled && result.assets[0]?.uri) {
-      setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) {
+      applyPhotoAsset(result.assets[0]);
     }
   };
 
-  const handleConfirm = () => {
+  // Android can kill the activity after the camera closes. Recover the photo.
+  useEffect(() => {
+    if (!visible) return;
+
+    let active = true;
+    void ImagePicker.getPendingResultAsync().then((pending) => {
+      if (!active || !pending || !('assets' in pending)) return;
+      const asset = pending.assets?.[0];
+      if (asset) applyPhotoAsset(asset);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [visible, applyPhotoAsset]);
+
+  const handleConfirm = async () => {
     const trimmedMeter = meterNumber.trim();
     const trimmedReading = currentReading.trim();
 
@@ -153,20 +190,35 @@ export function StartReadingModal({
       Alert.alert('Missing sitio', 'Please select a sitio.');
       return;
     }
+    if (!photoUri) {
+      Alert.alert('Missing meter photo', 'Please take a photo of the meter.');
+      return;
+    }
     if (!trimmedReading) {
       Alert.alert('Missing reading', 'Please enter the current reading or consumption.');
       return;
     }
 
-    onConfirm?.({
-      dateOfReading,
-      meterNumber: trimmedMeter,
-      sitio,
-      photoUri,
-      currentReading: trimmedReading,
-      notes: notes.trim(),
-    });
-    animateClosed();
+    setSubmitting(true);
+    try {
+      await onConfirm?.({
+        dateOfReading,
+        meterNumber: trimmedMeter,
+        sitio,
+        photoUri,
+        photoBase64,
+        currentReading: trimmedReading,
+        notes: notes.trim(),
+      });
+      animateClosed();
+    } catch (err) {
+      Alert.alert(
+        'Submission failed',
+        err instanceof Error ? err.message : 'An unexpected error occurred.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const panGesture = Gesture.Pan()
@@ -287,57 +339,71 @@ export function StartReadingModal({
                 <Text className="mb-2 text-[13px] font-semibold text-navy-muted">
                   Sitio
                 </Text>
-                <Pressable
-                  onPress={() => setSitioOpen((open) => !open)}
-                  className="flex-row items-center justify-between rounded-2xl border border-slate-200 bg-surface px-4 py-3.5 active:opacity-85"
-                  accessibilityRole="button"
-                  accessibilityLabel="Select sitio"
-                >
-                  <Text
-                    className={`text-[15px] ${
-                      sitio ? 'font-semibold text-navy' : 'text-navy-soft'
-                    }`}
-                  >
-                    {sitio || 'Select sitio'}
-                  </Text>
-                  <Text className="text-base text-navy-soft">
-                    {sitioOpen ? '▲' : '▼'}
-                  </Text>
-                </Pressable>
-
-                {sitioOpen ? (
-                  <View className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    {SITIO_OPTIONS.map((option, index) => {
-                      const selected = option === sitio;
-                      return (
-                        <Pressable
-                          key={option}
-                          onPress={() => {
-                            setSitio(option);
-                            setSitioOpen(false);
-                          }}
-                          className={`px-4 py-3.5 active:bg-surface ${
-                            index < SITIO_OPTIONS.length - 1
-                              ? 'border-b border-slate-100'
-                              : ''
-                          } ${selected ? 'bg-completed-soft' : ''}`}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected }}
-                        >
-                          <Text
-                            className={`text-[15px] ${
-                              selected
-                                ? 'font-semibold text-brand'
-                                : 'text-navy'
-                            }`}
-                          >
-                            {option}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                {lockSitio ? (
+                  <View className="rounded-2xl bg-surface px-4 py-3.5">
+                    <Text className="text-[15px] font-semibold text-navy">
+                      {sitio || defaultSitio || '—'}
+                    </Text>
                   </View>
-                ) : null}
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => setSitioOpen((open) => !open)}
+                      className="flex-row items-center justify-between rounded-2xl border border-slate-200 bg-surface px-4 py-3.5 active:opacity-85"
+                      accessibilityRole="button"
+                      accessibilityLabel="Select sitio"
+                    >
+                      <Text
+                        className={`text-[15px] ${
+                          sitio ? 'font-semibold text-navy' : 'text-navy-soft'
+                        }`}
+                      >
+                        {sitio || 'Select sitio'}
+                      </Text>
+                      <Text className="text-base text-navy-soft">
+                        {sitioOpen ? '▲' : '▼'}
+                      </Text>
+                    </Pressable>
+
+                    {sitioOpen ? (
+                      <ScrollView
+                        className="mt-2 max-h-64 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                        nestedScrollEnabled
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {SITIO_OPTIONS.map((option, index) => {
+                          const selected = option === sitio;
+                          return (
+                            <Pressable
+                              key={option}
+                              onPress={() => {
+                                setSitio(option);
+                                setSitioOpen(false);
+                              }}
+                              className={`px-4 py-3.5 active:bg-surface ${
+                                index < SITIO_OPTIONS.length - 1
+                                  ? 'border-b border-slate-100'
+                                  : ''
+                              } ${selected ? 'bg-completed-soft' : ''}`}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected }}
+                            >
+                              <Text
+                                className={`text-[15px] ${
+                                  selected
+                                    ? 'font-semibold text-brand'
+                                    : 'text-navy'
+                                }`}
+                              >
+                                {option}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : null}
+                  </>
+                )}
               </View>
 
               <View className="mb-4">
@@ -402,8 +468,17 @@ export function StartReadingModal({
               </View>
 
               <View className="gap-3">
-                <PrimaryButton label="Confirm" onPress={handleConfirm} />
-                <SecondaryButton label="Cancel" onPress={animateClosed} />
+                <PrimaryButton
+                  label={submitting ? 'Submitting…' : 'Confirm'}
+                  onPress={() => {
+                    void handleConfirm();
+                  }}
+                  disabled={submitting}
+                />
+                <SecondaryButton
+                  label="Cancel"
+                  onPress={submitting ? undefined : animateClosed}
+                />
               </View>
             </ScrollView>
           </Animated.View>

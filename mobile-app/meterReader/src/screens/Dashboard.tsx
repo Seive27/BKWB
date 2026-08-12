@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,7 +11,10 @@ import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 import { useAssignments } from '@/hooks/useAssignments';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useReadingHistory } from '@/hooks/useReadingHistory';
-import { getCurrentReaderProfile } from '@/services/meterReadingService';
+import {
+  getCurrentReaderProfile,
+  submitReadingByMeterNumber,
+} from '@/services/meterReadingService';
 
 type DashboardProps = {
   activeTab?: NavTab;
@@ -73,6 +77,21 @@ export default function Dashboard({
       if (active && profile?.first_name) {
         setReaderName(profile.first_name);
       }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Android may destroy the activity after the camera closes, which closes the
+  // Start Reading sheet. Re-open it when a pending camera result exists.
+  useEffect(() => {
+    let active = true;
+    void ImagePicker.getPendingResultAsync().then((pending) => {
+      if (!active || !pending || !('assets' in pending) || !pending.assets?.[0]) {
+        return;
+      }
+      setShowStartReading(true);
     });
     return () => {
       active = false;
@@ -263,10 +282,30 @@ export default function Dashboard({
       <StartReadingModal
         visible={showStartReading}
         onClose={() => setShowStartReading(false)}
-        onConfirm={(payload) => {
+        onConfirm={async (payload) => {
+          const current = Number(payload.currentReading.replace(/,/g, ''));
+          if (!Number.isFinite(current)) {
+            throw new Error('Please enter a valid current reading.');
+          }
+
+          const submitted = await submitReadingByMeterNumber({
+            meterNumber: payload.meterNumber,
+            sitio: payload.sitio,
+            currentReading: current,
+            remarks: payload.notes,
+            photoUri: payload.photoUri,
+            photoBase64: payload.photoBase64,
+          });
+
+          await refresh();
+
+          const residentName = submitted.resident
+            ? `${submitted.resident.first_name} ${submitted.resident.last_name}`.trim()
+            : submitted.account?.account_number ?? 'the matched account';
+
           Alert.alert(
-            'Reading recorded',
-            `Meter ${payload.meterNumber} in ${payload.sitio}: ${payload.currentReading} m³`,
+            'Submitted',
+            `Matched ${payload.meterNumber} to ${residentName}. The reading is pending review.`,
           );
         }}
       />

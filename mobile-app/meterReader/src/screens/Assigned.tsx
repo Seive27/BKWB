@@ -1,22 +1,27 @@
-import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AssignedReadingCard } from '@/components/assigned/AssignedReadingCard';
 import { SearchBar } from '@/components/assigned/SearchBar';
 import { SyncAllButton } from '@/components/assigned/SyncAllButton';
+import { StartReadingModal } from '@/components/modals/StartReadingModal';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
+import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
 import { useAssignments } from '@/hooks/useAssignments';
-import RecordReading from '@/screens/RecordReading';
+import { submitReadingByMeterNumber } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 
 type AssignedProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
 };
+
+/** Survives Android activity recreation after the camera closes. */
+let lastStartedSitio: string | null = null;
 
 type SitioGroup = {
   sitio: string;
@@ -39,7 +44,15 @@ function SkeletonCard() {
   );
 }
 
-function SitioProgressCard({ group }: { group: SitioGroup }) {
+function SitioProgressCard({
+  group,
+  onStartReading,
+}: {
+  group: SitioGroup;
+  onStartReading: (sitio: string) => void;
+}) {
+  const canStart = group.remaining > 0;
+
   return (
     <View className="mb-3 rounded-[18px] bg-white p-4" style={cardShadow}>
       <View className="mb-2 flex-row items-start justify-between gap-3">
@@ -61,11 +74,26 @@ function SitioProgressCard({ group }: { group: SitioGroup }) {
         />
       </View>
 
-      <Text className="text-[13px] text-navy-muted">
+      <Text className="mb-3 text-[13px] text-navy-muted">
         {group.completed} of {group.total} completed · {group.remaining} remaining
       </Text>
+
+      <PrimaryButton
+        label="Start Reading"
+        onPress={() => onStartReading(group.sitio)}
+        disabled={!canStart}
+        icon={<Text className="text-sm text-white">▶</Text>}
+      />
     </View>
   );
+}
+
+function residentLabel(reading: MeterReading): string {
+  if (reading.resident) {
+    const name = `${reading.resident.first_name} ${reading.resident.last_name}`.trim();
+    if (name) return name;
+  }
+  return reading.account?.account_number ?? 'the matched account';
 }
 
 export default function Assigned({
@@ -78,7 +106,22 @@ export default function Assigned({
   const { assignments, sitioRoutes, loading, refreshing, error, refresh } =
     useAssignments();
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeReading, setActiveReading] = useState<MeterReading | null>(null);
+  const [activeSitio, setActiveSitio] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void ImagePicker.getPendingResultAsync().then((pending) => {
+      if (!active || !pending || !('assets' in pending) || !pending.assets?.[0]) {
+        return;
+      }
+      if (lastStartedSitio) {
+        setActiveSitio(lastStartedSitio);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredGroups = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -115,44 +158,8 @@ export default function Assigned({
 
     if (!query) return baseGroups;
 
-    return baseGroups
-      .map((group) => {
-        const sitioMatches = group.sitio.toLowerCase().includes(query);
-        const readings = sitioMatches
-          ? group.readings
-          : group.readings.filter((reading) => {
-              const name = reading.resident
-                ? `${reading.resident.first_name} ${reading.resident.last_name}`.toLowerCase()
-                : '';
-              const account = (reading.account?.account_number ?? '').toLowerCase();
-              const meter = (reading.meter?.meter_number ?? '').toLowerCase();
-              const address = (reading.account?.service_address ?? '').toLowerCase();
-              return (
-                name.includes(query) ||
-                account.includes(query) ||
-                meter.includes(query) ||
-                address.includes(query)
-              );
-            });
-
-        if (!sitioMatches && readings.length === 0) return null;
-
-        return { ...group, readings };
-      })
-      .filter((group): group is SitioGroup => group !== null);
+    return baseGroups.filter((group) => group.sitio.toLowerCase().includes(query));
   }, [assignments, searchQuery, sitioRoutes]);
-
-  if (activeReading) {
-    return (
-      <RecordReading
-        reading={activeReading}
-        activeTab={activeTab}
-        onTabPress={onTabPress}
-        onBack={() => setActiveReading(null)}
-        onSubmitted={() => setActiveReading(null)}
-      />
-    );
-  }
 
   return (
     <View className="flex-1 bg-surface">
@@ -175,7 +182,11 @@ export default function Assigned({
           right={<CloudStatusIcon />}
         />
 
-        <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
+        <SearchBar
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search assigned sitios..."
+        />
 
         {loading ? (
           <View>
@@ -201,7 +212,7 @@ export default function Assigned({
           <View className="mt-10 items-center px-6">
             <Text className="text-center text-[15px] text-navy-muted">
               {searchQuery.trim()
-                ? 'No assigned readings match your search.'
+                ? 'No assigned sitios match your search.'
                 : 'You have no assigned readings right now.'}
             </Text>
             {searchQuery.trim() ? (
@@ -216,21 +227,48 @@ export default function Assigned({
           </View>
         ) : (
           filteredGroups.map((group) => (
-            <View key={group.sitio} className="mb-4">
-              <SitioProgressCard group={group} />
-              {group.readings.map((reading) => (
-                <AssignedReadingCard
-                  key={reading.id}
-                  reading={reading}
-                  onStartReading={setActiveReading}
-                />
-              ))}
-            </View>
+            <SitioProgressCard
+              key={group.sitio}
+              group={group}
+              onStartReading={(sitio) => {
+                lastStartedSitio = sitio;
+                setActiveSitio(sitio);
+              }}
+            />
           ))
         )}
       </ScrollView>
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
+
+      <StartReadingModal
+        visible={activeSitio !== null}
+        defaultSitio={activeSitio ?? undefined}
+        lockSitio
+        onClose={() => setActiveSitio(null)}
+        onConfirm={async (payload) => {
+          const current = Number(payload.currentReading.replace(/,/g, ''));
+          if (!Number.isFinite(current)) {
+            throw new Error('Please enter a valid current reading.');
+          }
+
+          const submitted = await submitReadingByMeterNumber({
+            meterNumber: payload.meterNumber,
+            sitio: payload.sitio,
+            currentReading: current,
+            remarks: payload.notes,
+            photoUri: payload.photoUri,
+            photoBase64: payload.photoBase64,
+          });
+
+          await refresh();
+
+          Alert.alert(
+            'Submitted',
+            `Matched ${payload.meterNumber} to ${residentLabel(submitted)}. The reading is pending review.`,
+          );
+        }}
+      />
     </View>
   );
 }

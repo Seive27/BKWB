@@ -110,7 +110,6 @@ This section explains the repository layout focused on the desktop and mobile ap
 
 For the rest of setup (backend/Supabase configuration, environment variables, and deployment steps), consult the specific app README files and the `supabase/` directory for database and auth configuration.
 
-If you'd like, I can: add links to the READMEs in this file, or expand the file-structure section with verbatim tree outputs for each role. Tell me which you'd prefer and I'll update the README accordingly.
 
 ## Contact
 

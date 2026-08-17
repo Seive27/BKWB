@@ -58,3 +58,56 @@ Make sure the following are installed on your computer:
 ```bash
 git clone https://github.com/Seive27/BKWB.git
 cd BKWB
+```
+
+## File Structure Explanation
+
+This section explains the repository layout focused on the desktop and mobile applications grouped by roles. Each role has a dedicated folder under `desktop-app/` or `mobile-app/` with its own README and code.
+
+### desktop-app / roles
+
+- desktop-app/staff/
+  - Purpose: Desktop dashboard for Barangay staff to manage residents, meter readings, billing, payments, announcements and reports.
+  - Key files and folders:
+    - `src/components/` — Reusable UI components (Sidebar.tsx, Header.tsx, StatCard.tsx, RevenueChart.tsx, MeterReadingsTable.tsx, AnnouncementsPanel.tsx)
+    - `src/pages/` — Page components (Dashboard.tsx)
+    - `electron/` — Electron main and preload scripts (main.js, preload.js)
+    - `public/` — Static assets
+  - How to run: See `desktop-app/staff/README.md` (npm install, npm run dev, npm run electron:dev)
+
+- desktop-app/super-admin/
+  - Purpose: Super Admin dashboard for system-wide management: users, analytics, audit logs, and global settings.
+  - Key files and folders:
+    - `src/components/` — Admin UI (Sidebar, Dashboard views)
+    - `src/pages/` — Dashboard and admin pages
+    - Config files: `package.json`, `tsconfig.json`, `vite.config.ts`, `tailwind.config.js`
+  - How to run: See `desktop-app/super-admin/README.md` (npm install, npm run dev, npm run build)
+
+> Note: Additional desktop roles (if added later) should follow the same pattern: `desktop-app/<role>/` with a README and `src/`.
+
+### mobile-app / roles
+
+- mobile-app/residents/
+  - Purpose: Expo-based mobile app for residents to view bills, payments, announcements, and manage their account.
+  - Key files and folders:
+    - `app/` — App entry and file-based routing (follow Expo Router conventions)
+    - `package.json` — Project scripts and dependencies
+    - `README.md` — Quick-start and Expo instructions
+  - How to run: See `mobile-app/residents/README.md` (npm install, npx expo start)
+
+- mobile-app/meterReader/
+  - Purpose: Expo-based mobile app for meter readers to receive assigned readings and submit meter data.
+  - Key files and folders:
+    - `app/` — App entry and screens for meter-reading workflows
+    - `package.json` — Project scripts and dependencies
+    - `README.md` — Quick-start and Expo instructions
+  - How to run: See `mobile-app/meterReader/README.md` (npm install, npx expo start)
+
+> Note: Both mobile apps are created from the Expo template and use file-based routing. Follow the per-app README for development and testing guidance.
+
+
+## (Original) Remaining Setup and Contributing
+
+For the rest of setup (backend/Supabase configuration, environment variables, and deployment steps), consult the specific app README files and the `supabase/` directory for database and auth configuration.
+
+If you'd like, I can: add links to the READMEs in this file, or expand the file-structure section with verbatim tree outputs for each role. Tell me which you'd prefer and I'll update the README accordingly.

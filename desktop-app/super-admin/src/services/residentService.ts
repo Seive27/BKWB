@@ -16,7 +16,11 @@ export interface ResidentRecord {
   accountNumber: string | null;
   serviceAddress: string | null;
   sitio: string | null;
-  connectionStatus: 'active' | 'inactive' | 'disconnected' | null;
+  connectionStatus: 'active' | 'inactive' | 'disconnected' | 'applicant' | null;
+  /** Latest-reading snapshot imported from the masterlist. */
+  previousReading: number | null;
+  currentReading: number | null;
+  previousReadingDate: string | null;
   meterId: string | null;
   meterNumber: string | null;
   createdAt: string;
@@ -142,7 +146,10 @@ interface ResidentRow {
     account_number: string;
     service_address: string | null;
     sitio: string | null;
-    connection_status: 'active' | 'inactive' | 'disconnected';
+    connection_status: 'active' | 'inactive' | 'disconnected' | 'applicant';
+    previous_reading: number | null;
+    current_reading: number | null;
+    previous_reading_date: string | null;
     meter: { meter_number: string } | null;
   }[];
 }
@@ -162,6 +169,9 @@ function mapRow(row: ResidentRow): ResidentRecord {
     serviceAddress: account?.service_address ?? null,
     sitio: account?.sitio ?? null,
     connectionStatus: account?.connection_status ?? null,
+    previousReading: account?.previous_reading ?? null,
+    currentReading: account?.current_reading ?? null,
+    previousReadingDate: account?.previous_reading_date ?? null,
     meterId: account?.meter?.meter_number ?? null,
     meterNumber: account?.meter?.meter_number ?? null,
     createdAt: row.created_at,
@@ -177,7 +187,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, meter:meters(meter_number))'
+      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -190,6 +200,29 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   return (data ?? [])
     .filter((r) => (r as unknown as { role?: { name?: string } }).role?.name === 'resident')
     .map((r) => mapRow(r as unknown as ResidentRow));
+}
+
+/**
+ * Sitio options are loaded from the database (distinct resident_accounts.sitio)
+ * so newly added sitios appear automatically without redeploying constants.
+ */
+export async function getSitioOptions(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('resident_accounts')
+    .select('sitio')
+    .not('sitio', 'is', null)
+    .order('sitio', { ascending: true });
+
+  if (error) {
+    throw new Error(getResidentServiceErrorMessage(error));
+  }
+  return [
+    ...new Set(
+      (data ?? [])
+        .map((d) => (d as { sitio: string | null }).sitio)
+        .filter((s): s is string => !!s)
+    ),
+  ];
 }
 
 /** Aggregate resident + account stats (resident role only). */

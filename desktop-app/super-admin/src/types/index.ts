@@ -30,7 +30,7 @@ export interface ResidentAccount {
   account_number: string;
   meter_id: string | null;
   service_address: string | null;
-  connection_status: 'active' | 'inactive' | 'disconnected';
+  connection_status: 'active' | 'inactive' | 'disconnected' | 'applicant';
   created_at: string;
   updated_at: string;
   resident?: TicketPerson | null;

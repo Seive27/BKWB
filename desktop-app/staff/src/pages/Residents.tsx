@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Pencil,
   UserX,
+  UserPlus,
 } from 'lucide-react';
 import {
   getResidents,
@@ -23,6 +24,7 @@ import {
   createResident,
   updateResident,
   setResidentStatus,
+  getSitioOptions,
   generateTemporaryPassword,
   validatePhone,
   type ResidentRecord,
@@ -39,6 +41,9 @@ interface AddResidentForm {
   serviceAddress: string;
   sitio: string;
   meterNumber: string;
+  previousReading: string;
+  currentReading: string;
+  previousReadingDate: string;
 }
 
 const EMPTY_FORM: AddResidentForm = {
@@ -51,10 +56,20 @@ const EMPTY_FORM: AddResidentForm = {
   serviceAddress: '',
   sitio: '',
   meterNumber: '',
+  previousReading: '',
+  currentReading: '',
+  previousReadingDate: '',
 };
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value.length === 10 ? value + 'T00:00:00' : value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString();
 }
 
 function getStatusBadge(status: string | null) {
@@ -65,6 +80,8 @@ function getStatusBadge(status: string | null) {
       return 'bg-gray-100 text-gray-700';
     case 'disconnected':
       return 'bg-red-100 text-red-700';
+    case 'applicant':
+      return 'bg-amber-100 text-amber-700';
     default:
       return 'bg-gray-100 text-gray-700';
   }
@@ -76,6 +93,8 @@ function getStatusText(status: string | null) {
       return 'Active';
     case 'disconnected':
       return 'Disconnected';
+    case 'applicant':
+      return 'Applicant';
     default:
       return 'Inactive';
   }
@@ -84,7 +103,8 @@ function getStatusText(status: string | null) {
 const AddResidentModal: React.FC<{
   onClose: () => void;
   onCreated: () => void;
-}> = ({ onClose, onCreated }) => {
+  sitioOptions: string[];
+}> = ({ onClose, onCreated, sitioOptions }) => {
   const [form, setForm] = useState<AddResidentForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -336,7 +356,7 @@ const AddResidentModal: React.FC<{
                     className={`${inputClass} appearance-none bg-white text-gray-900 pr-10 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
                   >
                     <option value="">Select a sitio</option>
-                    {SITIO_OPTIONS.map((sitio) => (
+                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
                       <option key={sitio} value={sitio}>
                         {sitio}
                       </option>
@@ -474,7 +494,8 @@ const EditResidentModal: React.FC<{
   resident: ResidentRecord;
   onClose: () => void;
   onSaved: () => void;
-}> = ({ resident, onClose, onSaved }) => {
+  sitioOptions: string[];
+}> = ({ resident, onClose, onSaved, sitioOptions }) => {
   const [form, setForm] = useState<AddResidentForm>({
     firstName: resident.firstName,
     middleName: resident.middleName ?? '',
@@ -485,6 +506,9 @@ const EditResidentModal: React.FC<{
     serviceAddress: resident.serviceAddress ?? '',
     sitio: resident.sitio ?? '',
     meterNumber: resident.meterNumber ?? '',
+    previousReading: resident.previousReading !== null ? String(resident.previousReading) : '',
+    currentReading: resident.currentReading !== null ? String(resident.currentReading) : '',
+    previousReadingDate: (resident.previousReadingDate ?? '').slice(0, 10),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -517,6 +541,9 @@ const EditResidentModal: React.FC<{
         serviceAddress: form.serviceAddress,
         sitio: form.sitio,
         meterNumber: form.meterNumber,
+        previousReading: form.previousReading.trim() === '' ? null : Number(form.previousReading),
+        currentReading: form.currentReading.trim() === '' ? null : Number(form.currentReading),
+        previousReadingDate: form.previousReadingDate || null,
       });
       onSaved();
       onClose();
@@ -618,6 +645,48 @@ const EditResidentModal: React.FC<{
           </div>
 
           <div>
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Latest Meter Readings</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Latest readings from the masterlist. Leave Current Reading blank when the latest reading has
+              not been recorded yet — it stays blank and is never converted to zero.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Previous Period</label>
+                <input
+                  type="date"
+                  value={form.previousReadingDate}
+                  onChange={(e) => set('previousReadingDate', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Previous Reading</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="e.g. 1617"
+                  value={form.previousReading}
+                  onChange={(e) => set('previousReading', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Current / Latest Reading</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Leave blank if not yet recorded"
+                  value={form.currentReading}
+                  onChange={(e) => set('currentReading', e.target.value)}
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-gray-400">Blank current reading = valid active consumer awaiting a meter reading.</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
             <h3 className="text-base font-semibold text-gray-900 mb-4">Service Account</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -648,7 +717,7 @@ const EditResidentModal: React.FC<{
                     className={`${inputClass} appearance-none bg-white text-gray-900 pr-10 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
                   >
                     <option value="">Select a sitio</option>
-                    {SITIO_OPTIONS.map((sitio) => (
+                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
                       <option key={sitio} value={sitio}>
                         {sitio}
                       </option>
@@ -698,6 +767,9 @@ const EditResidentModal: React.FC<{
 
 const Residents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [sitioFilter, setSitioFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sitioOptions, setSitioOptions] = useState<string[]>([]);
   const [residents, setResidents] = useState<ResidentRecord[]>([]);
   const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, inactiveAccounts: 0 });
   const [loading, setLoading] = useState(true);
@@ -710,9 +782,14 @@ const Residents: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [residentData, statData] = await Promise.all([getResidents(), getResidentStats()]);
+      const [residentData, statData, sitioData] = await Promise.all([
+        getResidents(),
+        getResidentStats(),
+        getSitioOptions().catch(() => [] as string[]),
+      ]);
       setResidents(residentData);
       setStats(statData);
+      if (sitioData.length > 0) setSitioOptions(sitioData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load residents.');
     } finally {
@@ -726,18 +803,20 @@ const Residents: React.FC = () => {
 
   const filteredResidents = residents.filter((r) => {
     const q = searchQuery.toLowerCase();
-    return (
+    const matchesSearch =
       r.fullName.toLowerCase().includes(q) ||
       (r.accountNumber ?? '').toLowerCase().includes(q) ||
       (r.meterNumber ?? '').toLowerCase().includes(q) ||
       (r.sitio ?? '').toLowerCase().includes(q) ||
-      r.email.toLowerCase().includes(q)
-    );
+      (r.email ?? '').toLowerCase().includes(q);
+    const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
+    const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+    return matchesSearch && matchesSitio && matchesStatus;
   });
 
   const handleStatusChange = async (
     resident: ResidentRecord,
-    status: 'active' | 'inactive'
+    status: 'active' | 'inactive' | 'applicant'
   ) => {
     if (resident.connectionStatus === status) return;
     setActioningId(resident.id);
@@ -754,7 +833,7 @@ const Residents: React.FC = () => {
 
   const handleExport = () => {
     if (filteredResidents.length === 0) return;
-    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Status', 'Created'];
+    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created'];
     const rows = filteredResidents.map((r) => [
       r.fullName,
       r.email,
@@ -763,6 +842,9 @@ const Residents: React.FC = () => {
       r.meterNumber ?? '',
       r.serviceAddress ?? '',
       r.sitio ?? '',
+      r.previousReadingDate ?? '',
+      r.previousReading !== null ? String(r.previousReading) : '',
+      r.currentReading !== null ? String(r.currentReading) : '',
       getStatusText(r.connectionStatus),
       new Date(r.createdAt).toLocaleDateString(),
     ]);
@@ -849,6 +931,27 @@ const Residents: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
+                  <select
+                    value={sitioFilter}
+                    onChange={(e) => setSitioFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    title="Filter by sitio">
+                    <option value="">All Sitios</option>
+                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
+                      <option key={sitio} value={sitio}>{sitio}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    title="Filter by status">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="applicant">Applicant</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
                 </div>
 
                 <div className="flex items-center space-x-3">
@@ -888,6 +991,9 @@ const Residents: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter ID</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sitio</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Period</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Reading</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Current Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                   </tr>
@@ -895,7 +1001,7 @@ const Residents: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={10} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
@@ -904,7 +1010,7 @@ const Residents: React.FC = () => {
                     </tr>
                   ) : filteredResidents.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={10} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">No residents found.</p>
                       </td>
@@ -936,6 +1042,19 @@ const Residents: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {resident.sitio ?? '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {formatDate(resident.previousReadingDate)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {resident.previousReading !== null ? resident.previousReading : '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {resident.currentReading !== null ? (
+                            resident.currentReading
+                          ) : (
+                            <span className="text-gray-400 italic">Not yet recorded</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
@@ -977,6 +1096,18 @@ const Residents: React.FC = () => {
                               <UserX className="w-3.5 h-3.5" />
                               <span>{actioningId === resident.id ? '…' : 'Deactivate'}</span>
                             </button>
+                            <button
+                              onClick={() => handleStatusChange(resident, 'applicant')}
+                              disabled={
+                                actioningId === resident.id ||
+                                resident.connectionStatus === 'applicant'
+                              }
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Mark as applicant (applying for first meter connection)"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>{actioningId === resident.id ? '…' : 'Applicant'}</span>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1001,6 +1132,7 @@ const Residents: React.FC = () => {
         <AddResidentModal
           onClose={() => setShowAddModal(false)}
           onCreated={load}
+          sitioOptions={sitioOptions}
         />
       )}
 
@@ -1009,6 +1141,7 @@ const Residents: React.FC = () => {
           resident={editingResident}
           onClose={() => setEditingResident(null)}
           onSaved={load}
+          sitioOptions={sitioOptions}
         />
       )}
     </>

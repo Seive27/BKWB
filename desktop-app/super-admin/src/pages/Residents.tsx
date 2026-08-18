@@ -19,6 +19,7 @@ import {
   getResidents,
   getResidentStats,
   createResident,
+  getSitioOptions,
   generateTemporaryPassword,
   validatePhone,
   type ResidentRecord,
@@ -53,6 +54,13 @@ function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }
 
+function formatDate(value: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value.length === 10 ? value + 'T00:00:00' : value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString();
+}
+
 function getStatusBadge(status: string | null) {
   switch (status) {
     case 'active':
@@ -61,6 +69,8 @@ function getStatusBadge(status: string | null) {
       return 'bg-gray-100 text-gray-700';
     case 'disconnected':
       return 'bg-red-100 text-red-700';
+    case 'applicant':
+      return 'bg-amber-100 text-amber-700';
     default:
       return 'bg-gray-100 text-gray-700';
   }
@@ -72,6 +82,8 @@ function getStatusText(status: string | null) {
       return 'Active';
     case 'disconnected':
       return 'Disconnected';
+    case 'applicant':
+      return 'Applicant';
     default:
       return 'Inactive';
   }
@@ -80,7 +92,8 @@ function getStatusText(status: string | null) {
 const AddResidentModal: React.FC<{
   onClose: () => void;
   onCreated: () => void;
-}> = ({ onClose, onCreated }) => {
+  sitioOptions: string[];
+}> = ({ onClose, onCreated, sitioOptions }) => {
   const [form, setForm] = useState<AddResidentForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -332,7 +345,7 @@ const AddResidentModal: React.FC<{
                     className={`${inputClass} appearance-none bg-white text-gray-900 pr-10 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
                   >
                     <option value="">Select a sitio</option>
-                    {SITIO_OPTIONS.map((sitio) => (
+                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
                       <option key={sitio} value={sitio}>
                         {sitio}
                       </option>
@@ -468,6 +481,9 @@ const SuccessView: React.FC<{
 
 const Residents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [sitioFilter, setSitioFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sitioOptions, setSitioOptions] = useState<string[]>([]);
   const [residents, setResidents] = useState<ResidentRecord[]>([]);
   const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, inactiveAccounts: 0 });
   const [loading, setLoading] = useState(true);
@@ -478,9 +494,14 @@ const Residents: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [residentData, statData] = await Promise.all([getResidents(), getResidentStats()]);
+      const [residentData, statData, sitioData] = await Promise.all([
+        getResidents(),
+        getResidentStats(),
+        getSitioOptions().catch(() => [] as string[]),
+      ]);
       setResidents(residentData);
       setStats(statData);
+      if (sitioData.length > 0) setSitioOptions(sitioData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load residents.');
     } finally {
@@ -494,18 +515,20 @@ const Residents: React.FC = () => {
 
   const filteredResidents = residents.filter((r) => {
     const q = searchQuery.toLowerCase();
-    return (
+    const matchesSearch =
       r.fullName.toLowerCase().includes(q) ||
       (r.accountNumber ?? '').toLowerCase().includes(q) ||
       (r.meterNumber ?? '').toLowerCase().includes(q) ||
       (r.sitio ?? '').toLowerCase().includes(q) ||
-      r.email.toLowerCase().includes(q)
-    );
+      (r.email ?? '').toLowerCase().includes(q);
+    const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
+    const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+    return matchesSearch && matchesSitio && matchesStatus;
   });
 
   const handleExport = () => {
     if (filteredResidents.length === 0) return;
-    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Status', 'Created'];
+    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created'];
     const rows = filteredResidents.map((r) => [
       r.fullName,
       r.email,
@@ -514,6 +537,9 @@ const Residents: React.FC = () => {
       r.meterNumber ?? '',
       r.serviceAddress ?? '',
       r.sitio ?? '',
+      r.previousReadingDate ?? '',
+      r.previousReading !== null ? String(r.previousReading) : '',
+      r.currentReading !== null ? String(r.currentReading) : '',
       getStatusText(r.connectionStatus),
       new Date(r.createdAt).toLocaleDateString(),
     ]);
@@ -600,6 +626,27 @@ const Residents: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
+                  <select
+                    value={sitioFilter}
+                    onChange={(e) => setSitioFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    title="Filter by sitio">
+                    <option value="">All Sitios</option>
+                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
+                      <option key={sitio} value={sitio}>{sitio}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    title="Filter by status">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="applicant">Applicant</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
                 </div>
 
                 <div className="flex items-center space-x-3">
@@ -639,13 +686,16 @@ const Residents: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter ID</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sitio</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Period</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Reading</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Current Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center">
+                      <td colSpan={9} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
@@ -654,7 +704,7 @@ const Residents: React.FC = () => {
                     </tr>
                   ) : filteredResidents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center">
+                      <td colSpan={9} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">No residents found.</p>
                       </td>
@@ -687,6 +737,19 @@ const Residents: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {resident.sitio ?? '—'}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {formatDate(resident.previousReadingDate)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {resident.previousReading !== null ? resident.previousReading : '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {resident.currentReading !== null ? (
+                            resident.currentReading
+                          ) : (
+                            <span className="text-gray-400 italic">Not yet recorded</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
                             {getStatusText(resident.connectionStatus)}
@@ -714,6 +777,7 @@ const Residents: React.FC = () => {
         <AddResidentModal
           onClose={() => setShowAddModal(false)}
           onCreated={load}
+          sitioOptions={sitioOptions}
         />
       )}
     </>

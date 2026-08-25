@@ -13,6 +13,7 @@ export function DetailModal({
   title,
   subtitle,
   children,
+  secondaryAction,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -21,6 +22,13 @@ export function DetailModal({
   title: string;
   subtitle?: string;
   children: ReactNode;
+  /** Optional action above Close (e.g. Download PDF). */
+  secondaryAction?: {
+    label: string;
+    onPress: () => void;
+    loading?: boolean;
+    disabled?: boolean;
+  };
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -56,7 +64,20 @@ export function DetailModal({
             {children}
           </ScrollView>
 
-          <View className="px-5 pb-6 pt-4">
+          <View className="gap-2.5 px-5 pb-6 pt-4">
+            {secondaryAction ? (
+              <Pressable
+                onPress={secondaryAction.onPress}
+                disabled={secondaryAction.disabled || secondaryAction.loading}
+                className="items-center rounded-xl border-2 border-brand bg-white py-3.5 active:bg-slate-50 disabled:opacity-50"
+                accessibilityRole="button"
+                accessibilityLabel={secondaryAction.label}
+              >
+                <Text className="text-base font-semibold text-brand">
+                  {secondaryAction.loading ? 'Preparing PDF…' : secondaryAction.label}
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={onClose}
               className="items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"

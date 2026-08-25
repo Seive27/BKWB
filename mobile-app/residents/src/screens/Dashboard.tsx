@@ -11,7 +11,15 @@ import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
 import { useNotifications } from '@/hooks/useNotifications';
 import { getCurrentProfile } from '@/services/authService';
+import {
+  formatBillDate,
+  formatPeriod,
+  formatPeso,
+  getMyBills,
+  type ResidentBill,
+} from '@/services/billService';
 import NotificationsScreen from '@/screens/Notifications';
+import PaymentsScreen from '@/screens/Payments';
 import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
@@ -24,6 +32,7 @@ type DashboardProps = {
 
 type QuickActionScreen =
   | 'viewBills'
+  | 'payments'
   | 'waterSchedule'
   | 'tickets'
   | 'notifications'
@@ -38,6 +47,8 @@ export default function Dashboard({
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
   const [residentName, setResidentName] = useState('Resident');
+  const [currentBill, setCurrentBill] = useState<ResidentBill | null>(null);
+  const [billLoading, setBillLoading] = useState(true);
 
   // Greet the resident by their real first name from the profiles table.
   useEffect(() => {
@@ -48,9 +59,43 @@ export default function Dashboard({
       .catch(() => {});
   }, []);
 
+  // Mirror Bills → Current Bill: newest unpaid, else newest overall.
+  useEffect(() => {
+    let cancelled = false;
+    getMyBills()
+      .then((bills) => {
+        if (cancelled) return;
+        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
+        setCurrentBill(unpaid ?? bills[0] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentBill(null);
+      })
+      .finally(() => {
+        if (!cancelled) setBillLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (quickActionScreen === 'viewBills') {
     return (
       <ViewBillsScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
+
+  if (quickActionScreen === 'payments' && currentBill) {
+    return (
+      <PaymentsScreen
+        bill={currentBill}
         activeTab={activeTab}
         onTabPress={(tab) => {
           setQuickActionScreen(null);
@@ -118,31 +163,12 @@ export default function Dashboard({
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-6 px-4 pt-5">
-          <View
-            className="rounded-2xl bg-white p-5"
-            style={{
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
-          >
-            <View className="mb-3 flex-row items-center justify-between">
-              <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
-              <View className="rounded-md bg-red-400 px-2.5 py-1">
-                <Text className="text-xs font-semibold text-white">Unpaid</Text>
-              </View>
-            </View>
-
-            <Text className="text-sm text-slate-400">January 2026</Text>
-            <Text className="mt-1 text-3xl font-bold text-brand">₱450.00</Text>
-            <Text className="mt-1 text-sm text-slate-400">Due: February 15, 2026</Text>
-
-            <Pressable className="mt-5 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark">
-              <Text className="text-base font-semibold text-white">Pay Now</Text>
-            </Pressable>
-          </View>
+          <CurrentWaterBillCard
+            bill={currentBill}
+            loading={billLoading}
+            onViewBill={() => setQuickActionScreen('viewBills')}
+            onPayNow={() => setQuickActionScreen('payments')}
+          />
 
           <QuickActions
             onViewBills={() => setQuickActionScreen('viewBills')}
@@ -164,6 +190,117 @@ export default function Dashboard({
 function formatDateShort(iso: string): string {
   const date = new Date(iso);
   return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function statusBadge(status: ResidentBill['status']): { label: string; className: string } {
+  if (status === 'paid') return { label: 'Paid', className: 'bg-emerald-500' };
+  if (status === 'overdue') return { label: 'Overdue', className: 'bg-red-400' };
+  if (status === 'void') return { label: 'Void', className: 'bg-slate-400' };
+  return { label: 'Unpaid', className: 'bg-amber-400' };
+}
+
+function CurrentWaterBillCard({
+  bill,
+  loading,
+  onViewBill,
+  onPayNow,
+}: {
+  bill: ResidentBill | null;
+  loading: boolean;
+  onViewBill: () => void;
+  onPayNow: () => void;
+}) {
+  if (loading) {
+    return (
+      <View
+        className="rounded-2xl bg-white p-5"
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+          elevation: 3,
+        }}
+      >
+        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
+        <Text className="mt-3 text-sm text-slate-400">Loading your latest bill…</Text>
+      </View>
+    );
+  }
+
+  if (!bill) {
+    return (
+      <View
+        className="rounded-2xl bg-white p-5"
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+          elevation: 3,
+        }}
+      >
+        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
+        <Text className="mt-3 text-sm leading-5 text-slate-400">
+          No bill yet. Your first bill appears here once a meter reading for your account has
+          been recorded and approved.
+        </Text>
+      </View>
+    );
+  }
+
+  const badge = statusBadge(bill.status);
+  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+
+  return (
+    <View
+      className="rounded-2xl bg-white p-5"
+      style={{
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 3,
+      }}
+    >
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
+        <View className={`rounded-md px-2.5 py-1 ${badge.className}`}>
+          <Text className="text-xs font-semibold text-white">{badge.label}</Text>
+        </View>
+      </View>
+
+      <Text className="text-sm text-slate-400">{formatPeriod(bill.billing_period)}</Text>
+      <Text className="mt-1 text-3xl font-bold text-brand">{formatPeso(bill.amount_due)}</Text>
+      {bill.due_date ? (
+        <Text className="mt-1 text-sm text-slate-400">Due: {formatBillDate(bill.due_date)}</Text>
+      ) : null}
+
+      <View className="mt-5 gap-2.5">
+        <Pressable
+          onPress={onViewBill}
+          className="items-center rounded-xl border-2 border-brand bg-white py-3.5 active:bg-slate-50"
+          accessibilityRole="button"
+          accessibilityLabel={unpaid ? 'View current bill' : 'View bill details'}
+        >
+          <Text className="text-base font-semibold text-brand">
+            {unpaid ? 'View Bill' : 'View Details'}
+          </Text>
+        </Pressable>
+
+        {unpaid ? (
+          <Pressable
+            onPress={onPayNow}
+            className="items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
+            accessibilityRole="button"
+            accessibilityLabel="Pay now"
+          >
+            <Text className="text-base font-semibold text-white">Pay Now</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 /** Header bell with a live unread badge that opens the notifications screen. */

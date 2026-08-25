@@ -34,7 +34,10 @@ export function CurrentBill() {
     let cancelled = false;
     getMyBills()
       .then((bills) => {
-        if (!cancelled) setBill(bills.length > 0 ? bills[0] : null);
+        if (cancelled) return;
+        // Prefer newest unpaid bill; otherwise newest bill overall.
+        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
+        setBill(unpaid ?? bills[0] ?? null);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -131,7 +134,7 @@ export function CurrentBill() {
         </View>
 
         <View className="mt-5 items-center rounded-xl border-2 border-brand bg-white py-3.5 active:bg-slate-50">
-          <Text className="text-base font-semibold text-brand">View Bill Details</Text>
+          <Text className="text-base font-semibold text-brand">View / Download PDF</Text>
         </View>
 
         {unpaid ? (

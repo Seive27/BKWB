@@ -1,7 +1,9 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Text, View } from 'react-native';
 
 import { DetailModal } from '@/components/ui/DetailModal';
 import {
+  downloadBillPdf,
   formatBillDate,
   formatPeriod,
   formatPeso,
@@ -34,6 +36,7 @@ function StatusPill({ status }: { status: ResidentBill['status'] }) {
 /**
  * Expanded bill view opened by tapping any bill card. Shows only the data
  * that actually exists in Supabase for this bill — nothing invented.
+ * Download PDF uses the barangay printed-receipt layout.
  */
 export function BillDetailModal({
   visible,
@@ -44,9 +47,26 @@ export function BillDetailModal({
   onClose: () => void;
   bill: ResidentBill | null;
 }) {
+  const [downloading, setDownloading] = useState(false);
+
   if (!bill) return null;
 
   const extras = bill.extra_components ?? [];
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadBillPdf(bill);
+    } catch (err) {
+      Alert.alert(
+        'Download failed',
+        err instanceof Error ? err.message : 'Could not create the PDF receipt.'
+      );
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <DetailModal
@@ -55,6 +75,12 @@ export function BillDetailModal({
       badge={<StatusPill status={bill.status} />}
       title={formatPeriod(bill.billing_period)}
       subtitle={`${bill.bill_number}${bill.account?.account_number ? ` · Account ${bill.account.account_number}` : ''}`}
+      secondaryAction={{
+        label: 'Download PDF',
+        onPress: handleDownload,
+        loading: downloading,
+        disabled: downloading,
+      }}
     >
       <View className="rounded-2xl bg-brand/5 px-4 py-4">
         <Text className="text-center text-xs uppercase tracking-wide text-slate-400">

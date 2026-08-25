@@ -1,5 +1,5 @@
-﻿import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import {
@@ -55,7 +55,7 @@ function HistoryBillCard({ bill, onPress }: { bill: ResidentBill; onPress: () =>
       </View>
 
       <View className="mt-4 items-center rounded-xl border border-brand bg-white py-3 active:bg-slate-50">
-        <Text className="text-base font-semibold text-brand">View Bill Details</Text>
+        <Text className="text-base font-semibold text-brand">View / Download PDF</Text>
       </View>
     </Pressable>
   );
@@ -66,6 +66,7 @@ export function BillingHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ResidentBill | null>(null);
+  const [monthFilter, setMonthFilter] = useState<string | 'all'>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +86,16 @@ export function BillingHistory() {
       cancelled = true;
     };
   }, []);
+
+  const periods = useMemo(
+    () => [...new Set(bills.map((b) => b.billing_period))],
+    [bills]
+  );
+
+  const filtered = useMemo(() => {
+    if (monthFilter === 'all') return bills;
+    return bills.filter((b) => b.billing_period === monthFilter);
+  }, [bills, monthFilter]);
 
   if (loading) {
     return (
@@ -119,7 +130,45 @@ export function BillingHistory() {
   return (
     <>
       <View className="gap-4 pb-2">
-        {bills.map((bill) => (
+        <View>
+          <Text className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+            View by month
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            <Pressable
+              onPress={() => setMonthFilter('all')}
+              className={`rounded-full px-4 py-2 ${monthFilter === 'all' ? 'bg-brand' : 'bg-slate-200'}`}
+            >
+              <Text
+                className={`text-sm font-semibold ${monthFilter === 'all' ? 'text-white' : 'text-slate-700'}`}
+              >
+                All months
+              </Text>
+            </Pressable>
+            {periods.map((period) => {
+              const active = monthFilter === period;
+              return (
+                <Pressable
+                  key={period}
+                  onPress={() => setMonthFilter(period)}
+                  className={`rounded-full px-4 py-2 ${active ? 'bg-brand' : 'bg-slate-200'}`}
+                >
+                  <Text
+                    className={`text-sm font-semibold ${active ? 'text-white' : 'text-slate-700'}`}
+                  >
+                    {formatPeriod(period)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {filtered.map((bill) => (
           <HistoryBillCard
             key={bill.id}
             bill={bill}

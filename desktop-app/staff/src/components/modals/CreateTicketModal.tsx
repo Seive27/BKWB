@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Upload, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Upload, FileText, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
 import { getResidents } from '../../services/ticketService';
 import {
   ResidentOption,
@@ -117,21 +117,24 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Resident <span className="text-red-500">*</span>
               </label>
-              <select
-                value={residentId}
-                onChange={(e) => setResidentId(e.target.value)}
-                disabled={loadingResidents}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white disabled:bg-gray-50"
-              >
-                <option value="">
-                  {loadingResidents ? 'Loading residents…' : 'Select a resident'}
-                </option>
-                {residents.map((resident) => (
-                  <option key={resident.id} value={resident.id}>
-                    {resident.first_name} {resident.last_name} — {resident.email}
+              <div className="relative">
+                <select
+                  value={residentId}
+                  onChange={(e) => setResidentId(e.target.value)}
+                  disabled={loadingResidents}
+                  className="w-full appearance-none pl-4 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-900 disabled:bg-gray-50"
+                >
+                  <option value="">
+                    {loadingResidents ? 'Loading residents…' : 'Select a resident'}
                   </option>
-                ))}
-              </select>
+                  {residents.map((resident) => (
+                    <option key={resident.id} value={resident.id}>
+                      {resident.first_name} {resident.last_name} — {resident.email}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
 
             {/* Category and Priority Row */}
@@ -140,36 +143,42 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Category
                 </label>
-                <select
-                  value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value as TicketCategory);
-                    setSubject('');
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {TICKET_CATEGORY_LABELS[cat]}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value as TicketCategory);
+                      setSubject('');
+                    }}
+                    className="w-full appearance-none pl-4 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-900"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {TICKET_CATEGORY_LABELS[cat]}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Priority
                 </label>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as TicketPriority)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      {TICKET_PRIORITY_LABELS[p]}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as TicketPriority)}
+                    className="w-full appearance-none pl-4 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-900"
+                  >
+                    {PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {TICKET_PRIORITY_LABELS[p]}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
               </div>
             </div>
 
@@ -178,18 +187,21 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Subject <span className="text-red-500">*</span>
               </label>
-              <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
-              >
-                <option value="">Select a subject</option>
-                {TICKET_SUBJECTS[category].map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="w-full appearance-none pl-4 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-900"
+                >
+                  <option value="">Select a subject</option>
+                  {TICKET_SUBJECTS[category].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
 
             {/* Description */}

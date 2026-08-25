@@ -118,15 +118,17 @@ export interface Bill {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
-  /** Joined resident_accounts row (account number + sitio). */
+  /** Joined resident_accounts row (account number + sitio + meter). */
   account?: {
     id: string;
     account_number: string;
+    service_address?: string | null;
     sitio: string | null;
     connection_status: string;
+    meter?: { meter_number: string } | null;
   } | null;
   /** Joined profiles row for the bill owner. */
-  resident?: TicketPerson | null;
+  resident?: (TicketPerson & { middle_name?: string | null }) | null;
 }
 
 export const BILL_STATUS_LABELS: Record<BillStatus, string> = {

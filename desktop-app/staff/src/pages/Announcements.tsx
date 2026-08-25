@@ -298,39 +298,48 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Category</label>
-              <select
-                value={draft.category}
-                onChange={(e) => set('category', e.target.value as AnnouncementCategory)}
-                className={inputClass(false)}
-              >
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={draft.category}
+                  onChange={(e) => set('category', e.target.value as AnnouncementCategory)}
+                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
+                >
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Priority</label>
-              <select
-                value={draft.priority}
-                onChange={(e) => set('priority', e.target.value as AnnouncementPriority)}
-                className={inputClass(false)}
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={draft.priority}
+                  onChange={(e) => set('priority', e.target.value as AnnouncementPriority)}
+                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
+                >
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Target Audience</label>
-              <select
-                value={draft.target_audience}
-                onChange={(e) => set('target_audience', e.target.value as AnnouncementAudience)}
-                className={inputClass(false)}
-              >
-                {AUDIENCE_OPTIONS.map((a) => (
-                  <option key={a.value} value={a.value}>{a.label}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={draft.target_audience}
+                  onChange={(e) => set('target_audience', e.target.value as AnnouncementAudience)}
+                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
+                >
+                  {AUDIENCE_OPTIONS.map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
           </div>
 

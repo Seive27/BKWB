@@ -17,7 +17,12 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useMeterReadings } from '../hooks/useMeterReadings';
-import { generateBillForReading } from '../services/billService';
+import GenerateBillModal from '../components/modals/GenerateBillModal';
+import {
+  generateBillForReading,
+  getBillReceiptData,
+  type BillReceiptData,
+} from '../services/billService';
 import {
   approveReading,
   createSitioAssignment,
@@ -98,6 +103,11 @@ const MeterReadings: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showGenerateBillModal, setShowGenerateBillModal] = useState(false);
+  const [billReceipt, setBillReceipt] = useState<BillReceiptData | null>(null);
+  const [billReceiptLoading, setBillReceiptLoading] = useState(false);
+  const [billReceiptError, setBillReceiptError] = useState<string | null>(null);
+  const [generatedBillNumber, setGeneratedBillNumber] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
   // ── Assign modal ──
@@ -199,21 +209,45 @@ const MeterReadings: React.FC = () => {
     setPage(1);
   }, [searchQuery, statusFilter, sitioFilter, sortKey]);
 
-  // Load picker data when the assign modal opens.
+  // Load meter readers once when the assign modal opens.
   useEffect(() => {
     if (!showAssignModal) return;
+    setPickerError(null);
+    getMeterReaders()
+      .then(setMeterReaders)
+      .catch((err) =>
+        setPickerError(err instanceof Error ? err.message : 'Failed to load meter readers.')
+      );
+  }, [showAssignModal]);
+
+  // Refresh sitio availability whenever the modal opens or the assignment month changes.
+  useEffect(() => {
+    if (!showAssignModal) return;
+    let cancelled = false;
     setPickerLoading(true);
     setPickerError(null);
-    Promise.all([getSitioOptions(), getMeterReaders()])
-      .then(([sitioOptions, readers]) => {
+    getSitioOptions(assignmentDate)
+      .then((sitioOptions) => {
+        if (cancelled) return;
         setSitios(sitioOptions);
-        setMeterReaders(readers);
+        // Clear selection if that sitio is already assigned for the selected month.
+        setSelectedSitio((current) => {
+          if (!current) return current;
+          const match = sitioOptions.find((s) => s.name === current);
+          return match && !match.isAssigned ? current : '';
+        });
       })
-      .catch((err) =>
-        setPickerError(err instanceof Error ? err.message : 'Failed to load picker data.')
-      )
-      .finally(() => setPickerLoading(false));
-  }, [showAssignModal]);
+      .catch((err) => {
+        if (cancelled) return;
+        setPickerError(err instanceof Error ? err.message : 'Failed to load sitios.');
+      })
+      .finally(() => {
+        if (!cancelled) setPickerLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showAssignModal, assignmentDate]);
 
   const actorId = user?.id ?? '';
 
@@ -240,13 +274,9 @@ const MeterReadings: React.FC = () => {
       setSelectedSitio('');
       setSelectedReaderId('');
       setAssignmentDate(todayISO());
-      const skipNote =
-        result.skipped > 0
-          ? ` (${result.skipped} already assigned skipped)`
-          : '';
       showToast(
         'success',
-        `Assigned ${result.created} reading${result.created === 1 ? '' : 's'} in ${selectedSitio}${skipNote}.`
+        `Assigned ${result.created} reading${result.created === 1 ? '' : 's'} in ${selectedSitio}.`
       );
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to assign reading.');
@@ -267,30 +297,44 @@ const MeterReadings: React.FC = () => {
       await refresh();
       setShowReviewModal(false);
 
-      // Billing workflow: an approved reading immediately produces the bill
-      // for its period. The water rate comes from Configure Bills; when it
-      // has not been configured the reading is still approved but no bill
-      // is invented.
+      // Billing workflow: approved reading → generate bill → show receipt modal.
+      setBillReceipt(null);
+      setBillReceiptError(null);
+      setGeneratedBillNumber(null);
+      setBillReceiptLoading(true);
+      setShowGenerateBillModal(true);
+
       try {
         const result = await generateBillForReading(selectedReading.id);
-        if (result.generated) {
-          showToast(
-            'success',
-            `Reading approved. Bill ${result.bill_number ?? ''} (${result.billing_period ?? ''}) generated.`.trim()
+        const billId = result.bill_id ?? null;
+        setGeneratedBillNumber(result.bill_number ?? null);
+
+        if (!billId) {
+          setBillReceiptError(
+            result.message ?? 'A bill for this billing period already exists, but it could not be loaded.'
           );
-        } else {
           showToast(
             'success',
             `Reading approved. ${result.message ?? 'A bill for this billing period already exists.'}`
           );
+          return;
         }
-      } catch (billErr) {
+
+        const receipt = await getBillReceiptData(billId);
+        setBillReceipt(receipt);
         showToast(
-          'error',
-          `Reading approved, but the bill was not generated: ${
-            billErr instanceof Error ? billErr.message : 'unknown error'
-          }`
+          'success',
+          result.generated
+            ? `Reading approved. Bill ${result.bill_number ?? ''} generated.`.trim()
+            : `Reading approved. ${result.message ?? 'Showing existing bill.'}`
         );
+      } catch (billErr) {
+        const message =
+          billErr instanceof Error ? billErr.message : 'Failed to generate the bill.';
+        setBillReceiptError(message);
+        showToast('error', `Reading approved, but the bill was not generated: ${message}`);
+      } finally {
+        setBillReceiptLoading(false);
       }
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to approve reading.');
@@ -716,9 +760,16 @@ const MeterReadings: React.FC = () => {
                       {pickerLoading ? 'Loading sitios…' : 'Select a sitio'}
                     </option>
                     {sitios.map((sitio) => (
-                      <option key={sitio.name} value={sitio.name}>
-                        {sitio.name} ({sitio.activeAccountCount} account
-                        {sitio.activeAccountCount === 1 ? '' : 's'})
+                      <option
+                        key={sitio.name}
+                        value={sitio.name}
+                        disabled={sitio.isAssigned || sitio.activeAccountCount === 0}
+                      >
+                        {sitio.isAssigned
+                          ? `${sitio.name} — already assigned to ${sitio.assignedReaderName ?? 'a meter reader'}`
+                          : `${sitio.name} (${sitio.activeAccountCount} account${
+                              sitio.activeAccountCount === 1 ? '' : 's'
+                            })`}
                       </option>
                     ))}
                   </select>
@@ -753,7 +804,11 @@ const MeterReadings: React.FC = () => {
                     className={`${fieldStyles} pr-10`}
                   >
                     <option value="">
-                      {pickerLoading ? 'Loading readers…' : 'Select a meter reader'}
+                      {pickerLoading
+                        ? 'Loading readers…'
+                        : meterReaders.length === 0
+                          ? 'No meter readers available'
+                          : 'Select a meter reader'}
                     </option>
                     {meterReaders.map((reader) => (
                       <option key={reader.id} value={reader.id}>
@@ -763,6 +818,11 @@ const MeterReadings: React.FC = () => {
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 </div>
+                {!pickerLoading && meterReaders.length === 0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    No active meter readers found. Create a user with the Meter Reader role first.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -780,9 +840,10 @@ const MeterReadings: React.FC = () => {
               <div className="flex items-start space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <Calendar className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-blue-800">
-                  Every active account in the selected sitio is assigned at once. Accounts that
-                  already have an open assignment are skipped. Previous readings are filled from
-                  each account&apos;s latest approved reading.
+                  Every active account in the selected sitio is assigned at once. Sitios with open
+                  assignments for the selected month cannot be selected again; a new month starts
+                  fresh. Previous readings are filled from each account&apos;s latest approved
+                  reading.
                 </p>
               </div>
             </div>
@@ -800,6 +861,7 @@ const MeterReadings: React.FC = () => {
                   !selectedSitio ||
                   !selectedReaderId ||
                   actionBusy ||
+                  selectedSitioOption?.isAssigned === true ||
                   (selectedSitioOption?.activeAccountCount ?? 0) === 0
                 }
                 className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
@@ -1016,6 +1078,21 @@ const MeterReadings: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Generate Bill Modal (after approve) ── */}
+      <GenerateBillModal
+        isOpen={showGenerateBillModal}
+        onClose={() => {
+          setShowGenerateBillModal(false);
+          setBillReceipt(null);
+          setBillReceiptError(null);
+          setGeneratedBillNumber(null);
+        }}
+        receipt={billReceipt}
+        loading={billReceiptLoading}
+        error={billReceiptError}
+        billNumber={generatedBillNumber}
+      />
 
       {/* ── Toast ── */}
       {toast && (

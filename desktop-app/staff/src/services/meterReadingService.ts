@@ -30,6 +30,28 @@ export interface AccountOption {
 export interface SitioAssignOption {
   name: string;
   activeAccountCount: number;
+  /** True when the sitio already has open reading assignments for the target month. */
+  isAssigned: boolean;
+  /** Reader currently covering this sitio (when isAssigned). */
+  assignedReaderName: string | null;
+}
+
+/** Inclusive start + exclusive end (YYYY-MM-DD) for the calendar month of a date. */
+function assignmentMonthBounds(assignmentDate: string): { start: string; endExclusive: string } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(assignmentDate.trim());
+  if (!match) {
+    throw new Error('Assignment date must be a valid YYYY-MM-DD value.');
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]); // 1–12
+  if (month < 1 || month > 12) {
+    throw new Error('Assignment date must be a valid YYYY-MM-DD value.');
+  }
+  const start = `${match[1]}-${match[2]}-01`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endExclusive = `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
+  return { start, endExclusive };
 }
 
 /** Result of a bulk sitio assignment. */
@@ -179,36 +201,77 @@ export async function getResidentAccounts(): Promise<AccountOption[]> {
   });
 }
 
-/** Fetch sitios with active account counts for the assign-reading picker. */
-export async function getSitioOptions(): Promise<SitioAssignOption[]> {
-  const { data, error } = await supabase
-    .from('resident_accounts')
-    .select('sitio')
-    .eq('connection_status', 'active')
-    .not('sitio', 'is', null);
+/**
+ * Fetch sitios with active account counts for the assign-reading picker.
+ * Open assignments only block a sitio for the same calendar month as
+ * `assignmentDate` — a new month starts fresh.
+ */
+export async function getSitioOptions(assignmentDate: string): Promise<SitioAssignOption[]> {
+  const { start, endExclusive } = assignmentMonthBounds(assignmentDate);
 
-  if (error) {
-    throw new Error(getMeterReadingErrorMessage(error));
+  const [accountsResult, openResult] = await Promise.all([
+    supabase
+      .from('resident_accounts')
+      .select('sitio')
+      .eq('connection_status', 'active')
+      .not('sitio', 'is', null),
+    // Open assignments in this month mark a sitio as already assigned.
+    supabase
+      .from('meter_readings')
+      .select(
+        'meter_reader_id, account:resident_accounts!meter_readings_account_id_fkey(sitio), meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)'
+      )
+      .in('status', ['assigned', 'pending_review'])
+      .gte('assignment_date', start)
+      .lt('assignment_date', endExclusive)
+      .is('deleted_at', null),
+  ]);
+
+  if (accountsResult.error) {
+    throw new Error(getMeterReadingErrorMessage(accountsResult.error));
+  }
+  if (openResult.error) {
+    throw new Error(getMeterReadingErrorMessage(openResult.error));
   }
 
   const counts = new Map<string, number>();
-  for (const row of data ?? []) {
+  for (const row of accountsResult.data ?? []) {
     const name = (row.sitio ?? '').trim();
     if (!name) continue;
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
 
+  const assignedBySitio = new Map<string, string>();
+  for (const row of openResult.data ?? []) {
+    const r = row as unknown as {
+      account?: { sitio: string | null } | null;
+      meter_reader?: { first_name: string; last_name: string } | null;
+    };
+    const sitio = (r.account?.sitio ?? '').trim();
+    if (!sitio || assignedBySitio.has(sitio)) continue;
+    const reader = r.meter_reader
+      ? `${r.meter_reader.first_name} ${r.meter_reader.last_name}`.trim()
+      : 'a meter reader';
+    assignedBySitio.set(sitio, reader || 'a meter reader');
+  }
+
   // Prefer the canonical list so the dropdown stays stable, then append any
   // unexpected sitios that already exist on accounts.
   const known = new Set<string>(SITIO_OPTIONS);
-  const options: SitioAssignOption[] = SITIO_OPTIONS.map((name) => ({
+  const toOption = (name: string, activeAccountCount: number): SitioAssignOption => ({
     name,
-    activeAccountCount: counts.get(name) ?? 0,
-  }));
+    activeAccountCount,
+    isAssigned: assignedBySitio.has(name),
+    assignedReaderName: assignedBySitio.get(name) ?? null,
+  });
+
+  const options: SitioAssignOption[] = SITIO_OPTIONS.map((name) =>
+    toOption(name, counts.get(name) ?? 0)
+  );
 
   for (const [name, activeAccountCount] of counts) {
     if (!known.has(name)) {
-      options.push({ name, activeAccountCount });
+      options.push(toOption(name, activeAccountCount));
     }
   }
 
@@ -217,9 +280,11 @@ export async function getSitioOptions(): Promise<SitioAssignOption[]> {
 
 /** Fetch active meter reader profiles for the assign-reading picker. */
 export async function getMeterReaders(): Promise<MeterReaderOption[]> {
+  // `roles!inner` is required: filtering on an outer-joined embed does not
+  // remove parent rows, so staff/residents would otherwise leak into the list.
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
+    .select('id, first_name, last_name, email, role:roles!inner(name)')
     .eq('is_active', true)
     .eq('role.name', 'meter_reader')
     .order('last_name');
@@ -326,8 +391,9 @@ export async function createAssignment(
 
 /**
  * Assign every active account in a sitio to a meter reader.
- * Accounts that already have an open assignment (assigned / pending_review)
- * are skipped so staff can safely re-run the action.
+ * A sitio that already has open assignments (assigned / pending_review)
+ * for the same calendar month cannot be selected again until those
+ * readings are finished. A different month is treated as a new cycle.
  */
 export async function createSitioAssignment(
   input: {
@@ -341,6 +407,8 @@ export async function createSitioAssignment(
   if (!sitio) {
     throw new Error('Please select a sitio.');
   }
+
+  const { start, endExclusive } = assignmentMonthBounds(input.assignment_date);
 
   const { data: accounts, error: accountsError } = await supabase
     .from('resident_accounts')
@@ -361,30 +429,34 @@ export async function createSitioAssignment(
 
   const { data: openRows, error: openError } = await supabase
     .from('meter_readings')
-    .select('account_id')
+    .select('account_id, meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)')
     .in('account_id', accountIds)
     .in('status', ['assigned', 'pending_review'])
+    .gte('assignment_date', start)
+    .lt('assignment_date', endExclusive)
     .is('deleted_at', null);
 
   if (openError) {
     throw new Error(getMeterReadingErrorMessage(openError));
   }
 
-  const blocked = new Set((openRows ?? []).map((r) => r.account_id));
-  const eligible = accounts.filter((a) => !blocked.has(a.id));
-  const skipped = accounts.length - eligible.length;
-
-  if (eligible.length === 0) {
+  if (openRows && openRows.length > 0) {
+    const first = openRows[0] as unknown as {
+      meter_reader?: { first_name: string; last_name: string } | null;
+    };
+    const reader = first.meter_reader
+      ? `${first.meter_reader.first_name} ${first.meter_reader.last_name}`.trim()
+      : 'a meter reader';
     throw new Error(
-      `All accounts in ${sitio} already have an open reading assignment.`
+      `${sitio} is already assigned to ${reader || 'a meter reader'} for this month. Finish or clear those readings before reassigning.`
     );
   }
 
   const previousReadings = await Promise.all(
-    eligible.map((account) => getPreviousReading(account.id))
+    accounts.map((account) => getPreviousReading(account.id))
   );
 
-  const rows = eligible.map((account, index) => ({
+  const rows = accounts.map((account, index) => ({
     account_id: account.id,
     resident_id: account.resident_id,
     meter_id: account.meter_id,
@@ -406,7 +478,7 @@ export async function createSitioAssignment(
 
   return {
     created: data?.length ?? 0,
-    skipped,
+    skipped: 0,
     readings: (data ?? []).map((row) => mapRow(row as unknown as MeterReadingRow)),
   };
 }

@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Clock,
   Layers,
+  ChevronDown,
 } from 'lucide-react';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { getBills } from '../services/billService';
@@ -386,11 +387,11 @@ const Payments: React.FC = () => {
               </div>
 
               {/* Sitio Filter */}
-              <div>
+              <div className="relative">
                 <select
                   value={sitioFilter}
                   onChange={(e) => setSitioFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   title="Filter by Sitio"
                 >
                   <option value="">All Sitios</option>
@@ -400,14 +401,15 @@ const Payments: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               </div>
 
               {/* Status Filter */}
-              <div>
+              <div className="relative">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   title="Filter by payment status"
                 >
                   <option value="unpaid">Pending / Unpaid Bills</option>
@@ -415,6 +417,7 @@ const Payments: React.FC = () => {
                   <option value="paid">Paid Bills</option>
                   <option value="all">All Bills</option>
                 </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               </div>
             </div>
 
@@ -529,11 +532,11 @@ const Payments: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="relative">
                       <select
                         value={periodFilter}
                         onChange={(e) => setPeriodFilter(e.target.value)}
-                        className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="appearance-none pl-2.5 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         title="Filter period"
                       >
                         <option value="">All Periods</option>
@@ -543,6 +546,7 @@ const Payments: React.FC = () => {
                           </option>
                         ))}
                       </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                     </div>
                   </div>
 

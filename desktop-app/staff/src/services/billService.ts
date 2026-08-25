@@ -7,6 +7,34 @@ export interface BillQueryOptions {
   status?: BillStatus | null;
   /** Maximum number of rows to return (optional; list is bounded by readings). */
   limit?: number;
+  accountId?: string;
+}
+
+/** One WATER FEE (or extra component) line on the printed bill receipt. */
+export interface BillReceiptLine {
+  accountName: string;
+  billPeriod: string;
+  previousReading: number | null;
+  currentReading: number | null;
+  consumption: number | null;
+  amount: number;
+}
+
+/** Data needed to render the Generate Bill / billing receipt modal. */
+export interface BillReceiptData {
+  bill: Bill;
+  consCode: string;
+  residentName: string;
+  address: string;
+  meterSerial: string;
+  prevBillPeriod: string | null;
+  prevConsumption: number | null;
+  billPeriod: string;
+  dueDate: string | null;
+  lastPayment: { date: string; amount: number } | null;
+  waterRate: number;
+  lines: BillReceiptLine[];
+  totalAmountDue: number;
 }
 
 /** Error handling ─ mirrors the other BKWB services. */
@@ -54,7 +82,7 @@ function mapRow(row: BillRow): Bill {
 }
 
 const BILL_SELECT =
-  '*, account:resident_accounts!bills_account_id_fkey(id, account_number, sitio, connection_status), resident:profiles!bills_resident_id_fkey(id, first_name, last_name)';
+  '*, account:resident_accounts!bills_account_id_fkey(id, account_number, service_address, sitio, connection_status, meter:meters(meter_number)), resident:profiles!bills_resident_id_fkey(id, first_name, middle_name, last_name)';
 
 // ─── Queries ───
 
@@ -74,6 +102,9 @@ export async function getBills(options: BillQueryOptions = {}): Promise<Bill[]> 
   if (options.status) {
     query = query.eq('status', options.status);
   }
+  if (options.accountId) {
+    query = query.eq('account_id', options.accountId);
+  }
   if (options.limit) {
     query = query.limit(options.limit);
   }
@@ -84,6 +115,25 @@ export async function getBills(options: BillQueryOptions = {}): Promise<Bill[]> 
   }
 
   return (data ?? []).map((row) => mapRow(row as unknown as BillRow));
+}
+
+/** Fetch a single bill by id (with account + resident joins). */
+export async function getBillById(billId: string): Promise<Bill> {
+  const { data, error } = await supabase
+    .from('bills')
+    .select(BILL_SELECT)
+    .eq('id', billId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(getBillErrorMessage(error));
+  }
+  if (!data) {
+    throw new Error('Bill not found.');
+  }
+
+  return mapRow(data as unknown as BillRow);
 }
 
 /** Fetch every bill of one resident (used by the Resident Overview modal). */
@@ -100,6 +150,137 @@ export async function getBillsByResident(residentId: string): Promise<Bill[]> {
   }
 
   return (data ?? []).map((row) => mapRow(row as unknown as BillRow));
+}
+
+/** Unpaid (pending / overdue) bills for an account, newest period first. */
+export async function getUnpaidBillsByAccount(accountId: string): Promise<Bill[]> {
+  const { data, error } = await supabase
+    .from('bills')
+    .select(BILL_SELECT)
+    .eq('account_id', accountId)
+    .in('status', ['pending', 'overdue'])
+    .is('deleted_at', null)
+    .order('billing_period', { ascending: false });
+
+  if (error) {
+    throw new Error(getBillErrorMessage(error));
+  }
+
+  return (data ?? []).map((row) => mapRow(row as unknown as BillRow));
+}
+
+function formatResidentName(resident: Bill['resident']): string {
+  if (!resident) return '—';
+  const first = [resident.first_name, (resident as { middle_name?: string | null }).middle_name]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const last = resident.last_name?.trim() ?? '';
+  if (last && first) return `${last.toUpperCase()}, ${first.toUpperCase()}`;
+  return (last || first || '—').toUpperCase();
+}
+
+function previousPeriod(period: string): string | null {
+  const m = period.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  let year = Number(m[1]);
+  let month = Number(m[2]) - 1;
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
+ * Assemble the billing-receipt payload used by the Generate Bill modal
+ * after a meter reading is approved and billed.
+ */
+export async function getBillReceiptData(billId: string): Promise<BillReceiptData> {
+  const bill = await getBillById(billId);
+
+  const unpaid = await getUnpaidBillsByAccount(bill.account_id);
+  const lineBills =
+    unpaid.length > 0
+      ? unpaid
+      : [bill];
+
+  // Ensure the just-generated bill is present even if status filters miss it.
+  if (!lineBills.some((b) => b.id === bill.id)) {
+    lineBills.unshift(bill);
+  }
+
+  const lines: BillReceiptLine[] = [];
+  for (const b of lineBills) {
+    const waterAmount = Math.max(
+      0,
+      Number(b.amount_due) -
+        (b.extra_components ?? []).reduce((sum, c) => sum + (Number(c.price) || 0), 0)
+    );
+    lines.push({
+      accountName: 'WATER FEE',
+      billPeriod: b.billing_period,
+      previousReading: b.previous_reading,
+      currentReading: b.current_reading,
+      consumption: b.consumption,
+      amount: waterAmount,
+    });
+    for (const c of b.extra_components ?? []) {
+      if (!c.category?.trim()) continue;
+      lines.push({
+        accountName: c.category.trim().toUpperCase(),
+        billPeriod: b.billing_period,
+        previousReading: null,
+        currentReading: null,
+        consumption: null,
+        amount: Number(c.price) || 0,
+      });
+    }
+  }
+
+  const totalAmountDue = lineBills.reduce((sum, b) => sum + (Number(b.amount_due) || 0), 0);
+
+  let lastPayment: BillReceiptData['lastPayment'] = null;
+  const { data: paymentRows, error: paymentError } = await supabase
+    .from('payments')
+    .select('payment_date, amount, status')
+    .eq('account_id', bill.account_id)
+    .eq('status', 'completed')
+    .is('deleted_at', null)
+    .order('payment_date', { ascending: false })
+    .limit(1);
+
+  if (!paymentError && paymentRows && paymentRows.length > 0) {
+    const p = paymentRows[0] as { payment_date: string; amount: number };
+    lastPayment = { date: p.payment_date, amount: Number(p.amount) || 0 };
+  }
+
+  const account = bill.account as Bill['account'] & {
+    service_address?: string | null;
+    meter?: { meter_number: string } | null;
+  };
+
+  const addressParts = [account?.service_address, account?.sitio].filter(Boolean);
+  const address =
+    addressParts.length > 0
+      ? addressParts.join(', ').toUpperCase()
+      : '—';
+
+  return {
+    bill,
+    consCode: account?.account_number ?? '—',
+    residentName: formatResidentName(bill.resident),
+    address,
+    meterSerial: account?.meter?.meter_number ?? '—',
+    prevBillPeriod: previousPeriod(bill.billing_period),
+    prevConsumption: bill.previous_reading,
+    billPeriod: bill.billing_period,
+    dueDate: bill.due_date,
+    lastPayment,
+    waterRate: Number(bill.water_rate) || 0,
+    lines,
+    totalAmountDue,
+  };
 }
 
 // ─── Mutations ───

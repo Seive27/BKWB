@@ -120,7 +120,7 @@ export async function unassignSitio(sitio: string): Promise<void> {
 export async function getAssignableReaders(): Promise<MeterReaderOption[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
+    .select('id, first_name, last_name, email, role:roles!inner(name)')
     .eq('is_active', true)
     .eq('role.name', 'meter_reader')
     .order('last_name');

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   AlertCircle,
   X,
+  ChevronDown,
 } from 'lucide-react';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import {
@@ -429,29 +430,35 @@ const Bills: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
-                  <select
-                    value={periodFilter}
-                    onChange={(e) => setPeriodFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    title="Filter by billing period"
-                  >
-                    <option value="">All Periods</option>
-                    {periods.map((p) => (
-                      <option key={p} value={p}>{formatPeriod(p)}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    title="Filter by status"
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="paid">Paid</option>
-                    <option value="overdue">Overdue</option>
-                    <option value="void">Void</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={periodFilter}
+                      onChange={(e) => setPeriodFilter(e.target.value)}
+                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      title="Filter by billing period"
+                    >
+                      <option value="">All Periods</option>
+                      {periods.map((p) => (
+                        <option key={p} value={p}>{formatPeriod(p)}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      title="Filter by status"
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                      <option value="void">Void</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
                 </div>
 
                 <div className="flex items-center space-x-3">

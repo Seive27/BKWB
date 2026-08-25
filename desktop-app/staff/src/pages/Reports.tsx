@@ -6,6 +6,7 @@ import {
   Loader2,
   RefreshCcw,
   AlertCircle,
+  ChevronDown,
 } from 'lucide-react';
 import {
   REPORT_CATEGORIES,
@@ -148,44 +149,53 @@ const Reports: React.FC = () => {
             {kind === 'monthly' && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Month</label>
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  {MONTHS.map((m, i) => (
-                    <option key={m} value={i + 1}>{m}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={month}
+                    onChange={(e) => setMonth(Number(e.target.value))}
+                    className="appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={m} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
               </div>
             )}
 
             {kind === 'quarterly' && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Quarter</label>
-                <select
-                  value={quarter}
-                  onChange={(e) => setQuarter(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  {[1, 2, 3, 4].map((q) => (
-                    <option key={q} value={q}>Q{q}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={quarter}
+                    onChange={(e) => setQuarter(Number(e.target.value))}
+                    className="appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    {[1, 2, 3, 4].map((q) => (
+                      <option key={q} value={q}>Q{q}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
               </div>
             )}
 
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Year</label>
-              <select
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className="appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
             </div>
 
             <button

@@ -8,6 +8,7 @@ import {
   FileText,
   RefreshCw,
   Database,
+  ChevronDown,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -400,14 +401,17 @@ const DataMigration: React.FC = () => {
                     <Database className="w-5 h-5" />
                     <p className="text-xs uppercase font-semibold">Existing-account handling</p>
                   </div>
-                  <select
-                    value={importMode}
-                    onChange={(e) => setImportMode(e.target.value as 'upsert' | 'skip_existing')}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                  >
-                    <option value="upsert">Update existing cons codes</option>
-                    <option value="skip_existing">Skip existing cons codes</option>
-                  </select>
+                  <div className="relative mt-1">
+                    <select
+                      value={importMode}
+                      onChange={(e) => setImportMode(e.target.value as 'upsert' | 'skip_existing')}
+                      className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    >
+                      <option value="upsert">Update existing cons codes</option>
+                      <option value="skip_existing">Skip existing cons codes</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
                 </div>
               </div>
 

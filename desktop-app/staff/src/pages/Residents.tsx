@@ -1058,27 +1058,35 @@ const Residents: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-72 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
-                  <select
-                    value={sitioFilter}
-                    onChange={(e) => setSitioFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    title="Filter by sitio">
-                    <option value="">All Sitios</option>
-                    {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
-                      <option key={sitio} value={sitio}>{sitio}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    title="Filter by status">
-                    <option value="">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="applicant">Applicant</option>
-                    <option value="disconnected">Disconnected</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={sitioFilter}
+                      onChange={(e) => setSitioFilter(e.target.value)}
+                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      title="Filter by sitio"
+                    >
+                      <option value="">All Sitios</option>
+                      {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
+                        <option key={sitio} value={sitio}>{sitio}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      title="Filter by status"
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="applicant">Applicant</option>
+                      <option value="disconnected">Disconnected</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
                 </div>
 
                 <div className="flex items-center space-x-3">

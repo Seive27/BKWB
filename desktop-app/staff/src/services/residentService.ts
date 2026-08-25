@@ -254,6 +254,42 @@ export async function getResidentStats(): Promise<ResidentStats> {
   return { totalResidents, activeAccounts, inactiveAccounts };
 }
 
+/**
+ * Issue first-time login credentials for a resident identified by their
+ * Account Number / Cons Code, through the `resident-login` edge function.
+ * Used for masterlist records that have no email/password yet. The account
+ * number alone never grants access — a one-time temporary password is
+ * returned so staff can hand it over securely.
+ */
+export async function issueResidentLogin(
+  accountNumber: string
+): Promise<{
+  login_email: string;
+  temporary_password: string;
+  generated_from: 'dob' | 'random';
+  profile_is_active: boolean;
+}> {
+  const { data, error } = await supabase.functions.invoke('resident-login', {
+    body: { account_number: accountNumber.trim() },
+  });
+
+  if (error) {
+    throw new Error(await getCreateUserErrorMessage(error));
+  }
+  if (!data?.ok) {
+    const message =
+      (data as { error?: string } | null)?.error ??
+      'Failed to issue login credentials. Please try again.';
+    throw new Error(message);
+  }
+
+  return {
+    login_email: data.login_email as string,
+    temporary_password: data.temporary_password as string,
+    generated_from: (data.generated_from as 'dob' | 'random') ?? 'random',
+    profile_is_active: data.profile_is_active === true,
+  };
+}
 // ── Resident creation (server-side via edge function) ──
 
 /**

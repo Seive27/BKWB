@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, View, type DimensionValue } from 'react-native';
 
+import type { Announcement } from '@/types/announcements';
 import type { AnnouncementFilter } from '@/components/announcements/AnnouncementFilterTabs';
 import { AnnouncementPriorityBadge } from '@/components/announcements/AnnouncementPriorityBadge';
+import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import {
   ANNOUNCEMENT_CATEGORY_LABELS,
@@ -27,7 +29,7 @@ function formatDate(iso: string): string {
   });
 }
 
-// ── Skeleton ──
+// ──── Skeleton ────
 
 function SkeletonBlock({
   className,
@@ -76,7 +78,7 @@ function SkeletonAnnouncementCard() {
   );
 }
 
-// ── Card ──
+// ──── Card ────
 
 type AnnouncementCardProps = {
   title: string;
@@ -85,14 +87,22 @@ type AnnouncementCardProps = {
   date: string;
   content: string;
   createdBy?: string | null;
+  onPress: () => void;
 };
 
-function AnnouncementCard({ title, category, priority, date, content, createdBy }: AnnouncementCardProps) {
-  const [expanded, setExpanded] = useState(false);
-
+function AnnouncementCard({
+  title,
+  category,
+  priority,
+  date,
+  content,
+  createdBy,
+  onPress,
+}: AnnouncementCardProps) {
   return (
-    <View
-      className="overflow-hidden rounded-2xl bg-white"
+    <Pressable
+      onPress={onPress}
+      className="overflow-hidden rounded-2xl bg-white active:opacity-90"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -100,6 +110,8 @@ function AnnouncementCard({ title, category, priority, date, content, createdBy 
         shadowRadius: 8,
         elevation: 3,
       }}
+      accessibilityRole="button"
+      accessibilityLabel={`Open announcement: ${title}`}
     >
       <View className="flex-row">
         <View className="w-1.5" style={{ backgroundColor: CATEGORY_ACCENTS[category] }} />
@@ -112,33 +124,17 @@ function AnnouncementCard({ title, category, priority, date, content, createdBy 
           </View>
           <Text className="mt-2.5 text-base font-bold leading-5 text-slate-800">{title}</Text>
           <Text className="mt-1 text-sm text-slate-400">{formatDate(date)}</Text>
-          <Text
-            className="mt-2 text-sm leading-5 text-slate-600"
-            numberOfLines={expanded ? undefined : 3}
-          >
+          <Text className="mt-2 text-sm leading-5 text-slate-600" numberOfLines={3}>
             {content}
           </Text>
-          {content.length > 160 && (
-            <Pressable
-              onPress={() => setExpanded((v) => !v)}
-              className="mt-2 self-start active:opacity-70"
-              accessibilityRole="button"
-            >
-              <Text className="text-sm font-semibold text-brand">
-                {expanded ? 'Show less' : 'Read more'}
-              </Text>
-            </Pressable>
-          )}
           {createdBy ? (
             <Text className="mt-3 text-xs text-slate-400">Posted by {createdBy}</Text>
           ) : null}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
-
-// ── List ──
 
 type AnnouncementListProps = {
   filter?: AnnouncementFilter;
@@ -149,6 +145,7 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
   const { announcements, loading, refreshing, error, refresh } = useAnnouncements({
     audience: 'residents',
   });
+  const [selected, setSelected] = useState<Announcement | null>(null);
 
   const items = announcements.filter(
     (item) => filter === 'all' || item.category === filter,
@@ -197,6 +194,7 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
   }
 
   return (
+    <>
     <View className="gap-4 pb-2">
       {visibleItems.map((announcement) => (
         <AnnouncementCard
@@ -211,11 +209,26 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
               ? `${announcement.creator.first_name} ${announcement.creator.last_name}`
               : null
           }
+          onPress={() => setSelected(announcement)}
         />
       ))}
       {refreshing && (
-        <Text className="py-2 text-center text-xs text-slate-400">Refreshing…</Text>
+        <Text className="py-2 text-center text-xs text-slate-400">Refreshing·¦</Text>
       )}
     </View>
+      <AnnouncementDetailModal
+        visible={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.title ?? ''}
+        category={(selected?.category ?? 'general') as AnnouncementCategory}
+        date={selected?.created_at ?? new Date().toISOString()}
+        content={selected?.content ?? ''}
+        createdBy={
+          selected?.creator
+            ? `${selected.creator.first_name} ${selected.creator.last_name}`
+            : null
+        }
+      />
+    </>
   );
 }

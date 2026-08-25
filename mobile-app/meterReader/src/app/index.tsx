@@ -9,6 +9,7 @@ import History from '@/screens/History';
 import Login from '@/screens/Login';
 import Notifications from '@/screens/Notifications';
 import Profile from '@/screens/Profile';
+import Tickets from '@/screens/Tickets';
 
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -74,6 +75,10 @@ export default function HomeScreen() {
 
   if (activeTab === 'assigned') {
     return <Assigned activeTab={activeTab} onTabPress={setActiveTab} />;
+  }
+
+  if (activeTab === 'tickets') {
+    return <Tickets activeTab={activeTab} onTabPress={setActiveTab} />;
   }
 
   if (activeTab === 'history') {

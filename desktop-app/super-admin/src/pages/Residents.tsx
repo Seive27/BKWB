@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   KeyRound,
   ChevronDown,
+  Eye,
 } from 'lucide-react';
 import {
   getResidents,
@@ -25,6 +26,9 @@ import {
   type ResidentRecord,
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
+import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
+
+const PAGE_SIZE = 10;
 
 interface AddResidentForm {
   firstName: string;
@@ -52,13 +56,6 @@ const EMPTY_FORM: AddResidentForm = {
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value.length === 10 ? value + 'T00:00:00' : value);
-  if (isNaN(d.getTime())) return value;
-  return d.toLocaleDateString();
 }
 
 function getStatusBadge(status: string | null) {
@@ -479,6 +476,8 @@ const SuccessView: React.FC<{
   );
 };
 
+
+
 const Residents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sitioFilter, setSitioFilter] = useState('');
@@ -489,6 +488,8 @@ const Residents: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -513,18 +514,31 @@ const Residents: React.FC = () => {
     load();
   }, [load]);
 
-  const filteredResidents = residents.filter((r) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      r.fullName.toLowerCase().includes(q) ||
-      (r.accountNumber ?? '').toLowerCase().includes(q) ||
-      (r.meterNumber ?? '').toLowerCase().includes(q) ||
-      (r.sitio ?? '').toLowerCase().includes(q) ||
-      (r.email ?? '').toLowerCase().includes(q);
-    const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
-    const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
-    return matchesSearch && matchesSitio && matchesStatus;
-  });
+  // Reset pagination whenever search/filters change.
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, sitioFilter, statusFilter]);
+
+  const filteredResidents = useMemo(
+    () =>
+      residents.filter((r) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          r.fullName.toLowerCase().includes(q) ||
+          (r.accountNumber ?? '').toLowerCase().includes(q) ||
+          (r.meterNumber ?? '').toLowerCase().includes(q) ||
+          (r.sitio ?? '').toLowerCase().includes(q) ||
+          (r.email ?? '').toLowerCase().includes(q);
+        const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
+        const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+        return matchesSearch && matchesSitio && matchesStatus;
+      }),
+    [residents, searchQuery, sitioFilter, statusFilter]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredResidents.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredResidents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const handleExport = () => {
     if (filteredResidents.length === 0) return;
@@ -564,7 +578,7 @@ const Residents: React.FC = () => {
           {/* Header */}
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Residents</h1>
-            <p className="text-gray-600">Manage registered residents and their water service accounts.</p>
+            <p className="text-gray-600">Monitor registered residents and their water service accounts.</p>
           </div>
 
           {error && (
@@ -614,16 +628,16 @@ const Residents: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200">
             {/* Table Header */}
             <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="relative flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search by name, account, or meter ID"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="pl-10 pr-4 py-2 w-72 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
                   <select
@@ -651,6 +665,14 @@ const Residents: React.FC = () => {
 
                 <div className="flex items-center space-x-3">
                   <button
+                    onClick={() => setShowAddModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm font-medium">Add Resident</span>
+                  </button>
+
+                  <button
                     onClick={load}
                     className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     title="Refresh"
@@ -659,101 +681,96 @@ const Residents: React.FC = () => {
                   </button>
                   <button
                     onClick={handleExport}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    disabled={filteredResidents.length === 0}
+                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
                     title="Export CSV"
                   >
                     <Download className="w-5 h-5 text-gray-600" />
-                  </button>
-
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm font-medium">Add Resident</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Table */}
+            {/* Table (compact: resident, account, meter, sitio, current reading, status, actions) */}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter No.</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sitio</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Period</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Current Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredResidents.length === 0 ? (
+                  ) : pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">No residents found.</p>
+                        <p className="text-sm text-gray-500">
+                          {residents.length === 0 ? 'No residents found.' : 'No residents match your search or filters.'}
+                        </p>
                       </td>
                     </tr>
                   ) : (
-                    filteredResidents.map((resident) => (
-                      <tr key={resident.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
+                    pageRows.map((resident) => (
+                      <tr
+                        key={resident.id}
+                        onClick={() => setViewingResident(resident)}
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        <td className="px-6 py-3 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
                               <span className="text-xs font-semibold text-blue-600">
                                 {getInitials(resident.firstName, resident.lastName)}
                               </span>
                             </div>
-                            <div>
-                              <span className="text-sm font-medium text-gray-900">{resident.fullName}</span>
-                              <p className="text-xs text-gray-500">{resident.email}</p>
-                            </div>
+                            <span className="text-sm font-medium text-gray-900">{resident.fullName}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
                           {resident.accountNumber ?? '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
                           {resident.meterNumber ?? '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.serviceAddress ?? '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
                           {resident.sitio ?? '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {formatDate(resident.previousReadingDate)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.previousReading !== null ? resident.previousReading : '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900">
                           {resident.currentReading !== null ? (
                             resident.currentReading
                           ) : (
                             <span className="text-gray-400 italic">Not yet recorded</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-3 whitespace-nowrap">
                           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
                             {getStatusText(resident.connectionStatus)}
                           </span>
+                        </td>
+                        <td className="px-6 py-3 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setViewingResident(resident)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -764,21 +781,42 @@ const Residents: React.FC = () => {
 
             {/* Pagination */}
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing {filteredResidents.length} of {stats.totalResidents.toLocaleString()} residents
+              <div className="text-sm text-gray-600 uppercase">
+                Showing{' '}
+                {filteredResidents.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}
+                {' '}to{' '}
+                {Math.min(safePage * PAGE_SIZE, filteredResidents.length)}
+                {' '}of {filteredResidents.length} residents
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setPage(Math.max(1, safePage - 1))}
+                  disabled={safePage <= 1}
+                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                  disabled={safePage >= totalPages}
+                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Add Resident Modal */}
       {showAddModal && (
-        <AddResidentModal
-          onClose={() => setShowAddModal(false)}
-          onCreated={load}
-          sitioOptions={sitioOptions}
-        />
+        <AddResidentModal onClose={() => setShowAddModal(false)} onCreated={load} sitioOptions={sitioOptions} />
+      )}
+      {viewingResident && (
+        <ResidentOverviewModal resident={viewingResident} onClose={() => setViewingResident(null)} />
       )}
     </>
   );

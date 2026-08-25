@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+﻿import { supabase } from '../lib/supabase';
 import type {
   MeterReaderOption,
   MeterReading,
@@ -180,7 +180,23 @@ export async function getMeterReaders(): Promise<MeterReaderOption[]> {
   }));
 }
 
-// ── Mutations ──
+/** Reading history for one account (used by the Resident Overview modal). */
+export async function getAccountReadings(accountId: string): Promise<MeterReading[]> {
+  const { data, error } = await supabase
+    .from('meter_readings')
+    .select(READING_SELECT)
+    .eq('account_id', accountId)
+    .is('deleted_at', null)
+    .order('assignment_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(getMeterReadingErrorMessage(error));
+  }
+
+  return (data ?? []).map((row) => mapRow(row as unknown as MeterReadingRow));
+}
+
 
 /**
  * Resolve the previous reading for an account: the current_reading of its
@@ -331,4 +347,5 @@ export function subscribeToMeterReadings(
     supabase.removeChannel(channel);
   };
 }
+
 

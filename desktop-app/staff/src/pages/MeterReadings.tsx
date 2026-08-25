@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Plus,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useMeterReadings } from '../hooks/useMeterReadings';
+import { generateBillForReading } from '../services/billService';
 import {
   approveReading,
   createSitioAssignment,
@@ -265,7 +266,32 @@ const MeterReadings: React.FC = () => {
       await approveReading(selectedReading.id, actorId);
       await refresh();
       setShowReviewModal(false);
-      showToast('success', 'Reading approved. It is ready for billing.');
+
+      // Billing workflow: an approved reading immediately produces the bill
+      // for its period. The water rate comes from Configure Bills; when it
+      // has not been configured the reading is still approved but no bill
+      // is invented.
+      try {
+        const result = await generateBillForReading(selectedReading.id);
+        if (result.generated) {
+          showToast(
+            'success',
+            `Reading approved. Bill ${result.bill_number ?? ''} (${result.billing_period ?? ''}) generated.`.trim()
+          );
+        } else {
+          showToast(
+            'success',
+            `Reading approved. ${result.message ?? 'A bill for this billing period already exists.'}`
+          );
+        }
+      } catch (billErr) {
+        showToast(
+          'error',
+          `Reading approved, but the bill was not generated: ${
+            billErr instanceof Error ? billErr.message : 'unknown error'
+          }`
+        );
+      }
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to approve reading.');
     } finally {
@@ -1025,3 +1051,4 @@ function EyeIcon() {
 }
 
 export default MeterReadings;
+

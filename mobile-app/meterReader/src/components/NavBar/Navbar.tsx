@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export type NavTab = 'dashboard' | 'assigned' | 'history' | 'profile';
+export type NavTab = 'dashboard' | 'assigned' | 'tickets' | 'history' | 'profile';
 
 type NavbarProps = {
   activeTab?: NavTab;
@@ -27,6 +27,11 @@ const tabs: {
     key: 'assigned',
     label: 'ASSIGNED',
     icon: require('../../../assets/Nav.icon/assigned.png'),
+  },
+  {
+    key: 'tickets',
+    label: 'TICKETS',
+    icon: require('../../../assets/totalAssigned.png'),
   },
   {
     key: 'history',

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { useAnnouncements } from '@/hooks/useAnnouncements';
-import type { Announcement } from '@/types/announcements';
+import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
+import type { Announcement, AnnouncementCategory } from '@/types/announcements';
 
 type ScheduleStatus = 'available' | 'interruption-pink' | 'interruption-amber';
 
@@ -124,11 +125,15 @@ function accentColor(status: ScheduleStatus) {
   return 'bg-brand';
 }
 
-function AnnouncementCard({ announcement }: { announcement: Announcement }) {
+function AnnouncementCard({
+  announcement,
+  onPress,
+}: { announcement: Announcement; onPress: () => void }) {
   const status = toStatus(announcement);
   return (
-    <View
-      className="overflow-hidden rounded-2xl bg-white"
+    <Pressable
+      onPress={onPress}
+      className="overflow-hidden rounded-2xl bg-white active:opacity-90"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -160,7 +165,7 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
           </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -200,6 +205,7 @@ function WeekendMaintenance() {
 export function WaterSchedule() {
   const { announcements, loading, error } = useAnnouncements({ audience: 'residents', limit: 20 });
   const [items, setItems] = useState<Announcement[]>([]);
+  const [selected, setSelected] = useState<Announcement | null>(null);
 
   // Filter to schedule-related categories, keeping the newest first.
   useEffect(() => {
@@ -227,6 +233,7 @@ export function WaterSchedule() {
   }
 
   return (
+    <>
     <View className="gap-4">
       {items.length === 0 ? (
         <View className="rounded-2xl bg-white px-5 py-10">
@@ -236,10 +243,28 @@ export function WaterSchedule() {
         </View>
       ) : (
         items.map((announcement) => (
-          <AnnouncementCard key={announcement.id} announcement={announcement} />
+          <AnnouncementCard
+            key={announcement.id}
+            announcement={announcement}
+            onPress={() => setSelected(announcement)}
+          />
         ))
       )}
       <WeekendMaintenance />
     </View>
+      <AnnouncementDetailModal
+        visible={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.title ?? ''}
+        category={(selected?.category ?? 'schedule') as AnnouncementCategory}
+        date={selected?.created_at ?? new Date().toISOString()}
+        content={selected?.content ?? ''}
+        createdBy={
+          selected?.creator
+            ? `${selected.creator.first_name} ${selected.creator.last_name}`
+            : null
+        }
+      />
+    </>
   );
 }

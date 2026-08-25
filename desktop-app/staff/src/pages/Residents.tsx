@@ -17,12 +17,14 @@ import {
   Pencil,
   UserX,
   UserPlus,
+  MoreVertical,
+  Eye,
 } from 'lucide-react';
 import {
   getResidents,
-  getResidentStats,
   createResident,
   updateResident,
+  issueResidentLogin,
   setResidentStatus,
   getSitioOptions,
   generateTemporaryPassword,
@@ -30,6 +32,10 @@ import {
   type ResidentRecord,
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
+import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
+import { useAuth } from '../hooks/useAuth';
+
+const PAGE_SIZE = 10;
 
 interface AddResidentForm {
   firstName: string;
@@ -63,13 +69,6 @@ const EMPTY_FORM: AddResidentForm = {
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value.length === 10 ? value + 'T00:00:00' : value);
-  if (isNaN(d.getTime())) return value;
-  return d.toLocaleDateString();
 }
 
 function getStatusBadge(status: string | null) {
@@ -766,29 +765,41 @@ const EditResidentModal: React.FC<{
 };
 
 const Residents: React.FC = () => {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [sitioFilter, setSitioFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [sitioOptions, setSitioOptions] = useState<string[]>([]);
   const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, inactiveAccounts: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingResident, setEditingResident] = useState<ResidentRecord | null>(null);
+  const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [issuingLoginId, setIssuingLoginId] = useState<string | null>(null);
+  const [issuedCredentials, setIssuedCredentials] = useState<{
+    accountNumber: string;
+    temporaryPassword: string;
+    generatedFrom: 'dob' | 'random';
+    profileIsActive: boolean;
+  } | null>(null);
+
+  // Staff hold write permissions on residents (RLS is_staff()); other roles
+  // viewing this page get read-only access.
+  const canManageResidents = user?.role === 'staff';
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [residentData, statData, sitioData] = await Promise.all([
+      const [residentData, sitioData] = await Promise.all([
         getResidents(),
-        getResidentStats(),
         getSitioOptions().catch(() => [] as string[]),
       ]);
       setResidents(residentData);
-      setStats(statData);
       if (sitioData.length > 0) setSitioOptions(sitioData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load residents.');
@@ -801,18 +812,48 @@ const Residents: React.FC = () => {
     load();
   }, [load]);
 
-  const filteredResidents = residents.filter((r) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      r.fullName.toLowerCase().includes(q) ||
-      (r.accountNumber ?? '').toLowerCase().includes(q) ||
-      (r.meterNumber ?? '').toLowerCase().includes(q) ||
-      (r.sitio ?? '').toLowerCase().includes(q) ||
-      (r.email ?? '').toLowerCase().includes(q);
-    const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
-    const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
-    return matchesSearch && matchesSitio && matchesStatus;
-  });
+  // Close any open row menu when clicking elsewhere.
+  useEffect(() => {
+    if (!openMenuId) return;
+    const close = () => setOpenMenuId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [openMenuId]);
+
+  // Reset pagination whenever search/filters change.
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, sitioFilter, statusFilter]);
+
+  const stats = useMemo(
+    () => ({
+      totalResidents: residents.length,
+      activeAccounts: residents.filter((r) => r.connectionStatus === 'active').length,
+      inactiveAccounts: residents.filter((r) => r.connectionStatus !== 'active').length,
+    }),
+    [residents]
+  );
+
+  const filteredResidents = useMemo(
+    () =>
+      residents.filter((r) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          r.fullName.toLowerCase().includes(q) ||
+          (r.accountNumber ?? '').toLowerCase().includes(q) ||
+          (r.meterNumber ?? '').toLowerCase().includes(q) ||
+          (r.sitio ?? '').toLowerCase().includes(q) ||
+          (r.email ?? '').toLowerCase().includes(q);
+        const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
+        const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+        return matchesSearch && matchesSitio && matchesStatus;
+      }),
+    [residents, searchQuery, sitioFilter, statusFilter]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredResidents.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredResidents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const handleStatusChange = async (
     resident: ResidentRecord,
@@ -820,6 +861,7 @@ const Residents: React.FC = () => {
   ) => {
     if (resident.connectionStatus === status) return;
     setActioningId(resident.id);
+    setOpenMenuId(null);
     setError(null);
     try {
       await setResidentStatus(resident, status);
@@ -860,6 +902,91 @@ const Residents: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  /** Login credentials can be issued while a record has no real contact */
+  /** email yet (masterlist imports), or still uses the internal handle. */
+  const canIssueLogin = (r: ResidentRecord): boolean =>
+    canManageResidents &&
+    !!r.accountNumber &&
+    (!r.email || /^acc-[a-z0-9-]+@example\.com$/i.test(r.email));
+
+  const handleIssueLogin = async (resident: ResidentRecord) => {
+    if (!resident.accountNumber) return;
+    setOpenMenuId(null);
+    setIssuingLoginId(resident.id);
+    setError(null);
+    try {
+      const result = await issueResidentLogin(resident.accountNumber);
+      setIssuedCredentials({
+        accountNumber: resident.accountNumber,
+        temporaryPassword: result.temporary_password,
+        generatedFrom: result.generated_from,
+        profileIsActive: result.profile_is_active,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to issue login credentials.');
+    } finally {
+      setIssuingLoginId(null);
+    }
+  };
+
+  /** Valid actions for one resident, based on status + permissions. */
+  const getMenuItems = (resident: ResidentRecord) => {
+    const items: { label: string; icon: React.FC<{ className?: string }>; danger?: boolean; onClick: () => void; disabled?: boolean }[] = [
+      {
+        label: 'View Details',
+        icon: Eye,
+        onClick: () => {
+          setOpenMenuId(null);
+          setViewingResident(resident);
+        },
+      },
+    ];
+    if (!canManageResidents) return items;
+
+    items.push({
+      label: 'Edit',
+      icon: Pencil,
+      onClick: () => {
+        setOpenMenuId(null);
+        setEditingResident(resident);
+      },
+    });
+    if (canIssueLogin(resident)) {
+      items.push({
+        label: issuingLoginId === resident.id ? 'Issuing…' : 'Issue Login',
+        icon: KeyRound,
+        onClick: () => handleIssueLogin(resident),
+        disabled: issuingLoginId === resident.id,
+      });
+    }
+    if (resident.connectionStatus !== 'active') {
+      items.push({
+        label: 'Activate',
+        icon: UserCheck,
+        onClick: () => handleStatusChange(resident, 'active'),
+        disabled: actioningId === resident.id,
+      });
+    }
+    if (resident.connectionStatus === 'active') {
+      items.push({
+        label: 'Deactivate',
+        icon: UserX,
+        danger: true,
+        onClick: () => handleStatusChange(resident, 'inactive'),
+        disabled: actioningId === resident.id,
+      });
+    }
+    if (resident.connectionStatus !== 'applicant') {
+      items.push({
+        label: 'Mark as Applicant',
+        icon: UserPlus,
+        onClick: () => handleStatusChange(resident, 'applicant'),
+        disabled: actioningId === resident.id,
+      });
+    }
+    return items;
   };
 
   return (
@@ -919,16 +1046,16 @@ const Residents: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200">
             {/* Table Header */}
             <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="relative flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search by name, account, or meter ID"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="pl-10 pr-4 py-2 w-72 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
                   <select
@@ -964,7 +1091,8 @@ const Residents: React.FC = () => {
                   </button>
                   <button
                     onClick={handleExport}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    disabled={filteredResidents.length === 0}
+                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
                     title="Export CSV"
                   >
                     <Download className="w-5 h-5 text-gray-600" />
@@ -981,18 +1109,15 @@ const Residents: React.FC = () => {
               </div>
             </div>
 
-            {/* Table */}
+            {/* Table (compact: resident, account, meter, sitio, current reading, status, actions) */}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter No.</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sitio</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Period</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Previous Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Current Reading</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
@@ -1001,117 +1126,98 @@ const Residents: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredResidents.length === 0 ? (
+                  ) : pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">No residents found.</p>
+                        <p className="text-sm text-gray-500">
+                          {residents.length === 0 ? 'No residents found.' : 'No residents match your search or filters.'}
+                        </p>
                       </td>
                     </tr>
                   ) : (
-                    filteredResidents.map((resident) => (
-                      <tr key={resident.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                              <span className="text-xs font-semibold text-blue-600">
-                                {getInitials(resident.firstName, resident.lastName)}
-                              </span>
+                    pageRows.map((resident) => {
+                      const menuItems = getMenuItems(resident);
+                      return (
+                        <tr
+                          key={resident.id}
+                          onClick={() => setViewingResident(resident)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-6 py-3 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                                <span className="text-xs font-semibold text-blue-600">
+                                  {getInitials(resident.firstName, resident.lastName)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-900">{resident.fullName}</span>
+                              </div>
                             </div>
-                            <div>
-                              <span className="text-sm font-medium text-gray-900">{resident.fullName}</span>
-                              <p className="text-xs text-gray-500">{resident.email}</p>
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {resident.accountNumber ?? '—'}
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {resident.meterNumber ?? '—'}
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {resident.sitio ?? '—'}
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {resident.currentReading !== null ? (
+                              resident.currentReading
+                            ) : (
+                              <span className="text-gray-400 italic">Not yet recorded</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap">
+                            <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
+                              {getStatusText(resident.connectionStatus)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="relative inline-block">
+                              <button
+                                onClick={() => setOpenMenuId(openMenuId === resident.id ? null : resident.id)}
+                                disabled={actioningId === resident.id}
+                                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40"
+                                title="Actions"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                              {openMenuId === resident.id && (
+                                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                                  {menuItems.map((item) => (
+                                    <button
+                                      key={item.label}
+                                      onClick={item.onClick}
+                                      disabled={item.disabled}
+                                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm text-left transition-colors disabled:opacity-40 ${
+                                        item.danger
+                                          ? 'text-red-600 hover:bg-red-50'
+                                          : 'text-gray-700 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <item.icon className="w-4 h-4" />
+                                      <span>{item.label}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.accountNumber ?? '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.meterNumber ?? '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.serviceAddress ?? '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.sitio ?? '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {formatDate(resident.previousReadingDate)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.previousReading !== null ? resident.previousReading : '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {resident.currentReading !== null ? (
-                            resident.currentReading
-                          ) : (
-                            <span className="text-gray-400 italic">Not yet recorded</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
-                            {getStatusText(resident.connectionStatus)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end space-x-1.5">
-                            <button
-                              onClick={() => setEditingResident(resident)}
-                              disabled={actioningId === resident.id}
-                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                              title="Edit"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(resident, 'active')}
-                              disabled={
-                                actioningId === resident.id ||
-                                resident.connectionStatus === 'active'
-                              }
-                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Activate"
-                            >
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>{actioningId === resident.id ? '…' : 'Activate'}</span>
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(resident, 'inactive')}
-                              disabled={
-                                actioningId === resident.id ||
-                                resident.connectionStatus === 'inactive'
-                              }
-                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Deactivate"
-                            >
-                              <UserX className="w-3.5 h-3.5" />
-                              <span>{actioningId === resident.id ? '…' : 'Deactivate'}</span>
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(resident, 'applicant')}
-                              disabled={
-                                actioningId === resident.id ||
-                                resident.connectionStatus === 'applicant'
-                              }
-                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Mark as applicant (applying for first meter connection)"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>{actioningId === resident.id ? '…' : 'Applicant'}</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1119,23 +1225,40 @@ const Residents: React.FC = () => {
 
             {/* Pagination */}
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing {filteredResidents.length} of {stats.totalResidents.toLocaleString()} residents
+              <div className="text-sm text-gray-600 uppercase">
+                Showing{' '}
+                {filteredResidents.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}
+                {' '}to{' '}
+                {Math.min(safePage * PAGE_SIZE, filteredResidents.length)}
+                {' '}of {filteredResidents.length} residents
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setPage(Math.max(1, safePage - 1))}
+                  disabled={safePage <= 1}
+                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                  disabled={safePage >= totalPages}
+                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Add Resident Modal */}
       {showAddModal && (
-        <AddResidentModal
-          onClose={() => setShowAddModal(false)}
-          onCreated={load}
-          sitioOptions={sitioOptions}
-        />
+        <AddResidentModal onClose={() => setShowAddModal(false)} onCreated={load} sitioOptions={sitioOptions} />
       )}
-
       {editingResident && (
         <EditResidentModal
           resident={editingResident}
@@ -1144,8 +1267,112 @@ const Residents: React.FC = () => {
           sitioOptions={sitioOptions}
         />
       )}
+      {viewingResident && (
+        <ResidentOverviewModal resident={viewingResident} onClose={() => setViewingResident(null)} />
+      )}
+      {issuedCredentials && (
+        <IssuedCredentialsModal
+          accountNumber={issuedCredentials.accountNumber}
+          temporaryPassword={issuedCredentials.temporaryPassword}
+          generatedFrom={issuedCredentials.generatedFrom}
+          profileIsActive={issuedCredentials.profileIsActive}
+          onClose={() => setIssuedCredentials(null)}
+        />
+      )}
     </>
+  );
+};
+// Shown once after issuing first-time login credentials so staff can hand
+// them to the resident securely.
+const IssuedCredentialsModal: React.FC<{
+  accountNumber: string;
+  temporaryPassword: string;
+  generatedFrom: 'dob' | 'random';
+  profileIsActive: boolean;
+  onClose: () => void;
+}> = ({ accountNumber, temporaryPassword, generatedFrom, profileIsActive, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — the password stays visible for manual copy
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md">
+        <div className="border-b border-gray-200 px-8 py-6 flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Login Credentials Issued</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Share these with the resident. The password is shown only once.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-8 py-6 space-y-4">
+          {!profileIsActive && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+              This resident's profile is deactivated. Activate the account from the Actions menu,
+              otherwise signing in will be refused.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number</label>
+            <div className="w-full px-4 py-2 border border-gray-200 bg-gray-50 rounded-lg font-mono text-sm text-gray-900">
+              {accountNumber}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Temporary Password</label>
+            <div className="flex items-center space-x-2">
+              <div className="flex-1 px-4 py-2 border border-gray-200 bg-gray-50 rounded-lg font-mono text-sm text-gray-900 break-all">
+                {temporaryPassword}
+              </div>
+              <button
+                onClick={handleCopy}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Copy password"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Copy className="w-4 h-4 text-gray-600" />
+                )}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              {generatedFrom === 'dob'
+                ? 'Generated from the resident\'s date of birth (LastNameFirstNameMMDDYYYY).'
+                : 'Randomly generated because no date of birth is on record.'}
+              {' '}The resident signs in with their Account Number + this password, then can update their profile.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
 export default Residents;
+
+

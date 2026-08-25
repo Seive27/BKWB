@@ -4,6 +4,7 @@ import {
   Plus,
   User,
   FileText,
+  Calendar,
   Clock,
   AlertCircle,
   CheckCircle,
@@ -25,6 +26,7 @@ import {
   assignTicket,
   createTicket,
   deleteTicket,
+  getMeterReaderProfiles,
   getStaffProfiles,
   getTicketById,
   updateStatus,
@@ -44,15 +46,20 @@ import {
 
 type CategoryFilter = 'all' | TicketCategory;
 type StatusFilter = 'all' | TicketStatus;
+
+/** A staff member OR meter reader selectable in the assign-ticket picker. */
+type AssignOption = StaffOption & { role: 'staff' | 'meter_reader' };
 type PriorityFilter = 'all' | TicketPriority;
 type SortKey = 'newest' | 'oldest' | 'priority' | 'status';
 
 const STATUS_ORDER: Record<TicketStatus, number> = {
   open: 0,
-  assigned: 1,
-  in_progress: 2,
-  resolved: 3,
-  closed: 4,
+  acknowledged: 1,
+  assigned: 2,
+  scheduled: 3,
+  in_progress: 4,
+  resolved: 5,
+  closed: 6,
 };
 
 const PRIORITY_ORDER: Record<TicketPriority, number> = {
@@ -63,7 +70,9 @@ const PRIORITY_ORDER: Record<TicketPriority, number> = {
 
 const statusStyles: Record<TicketStatus, { bg: string; text: string; dot: string }> = {
   open: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  acknowledged: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
   assigned: { bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
+  scheduled: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
   in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
   resolved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
   closed: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
@@ -143,31 +152,31 @@ const Tickets: React.FC = () => {
   const { user } = useAuth();
   const { tickets, loading, refreshing, error, refresh } = useTickets();
 
-  // ── Filters / sort ──
+  // ──── Filters / sort ────
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('newest');
 
-  // ── Selection / details ──
+  // ──── Selection / details ────
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<TicketTimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
 
-  // ── Modals / actions ──
+  // ──── Modals / actions ────
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  const [staffOptions, setStaffOptions] = useState<AssignOption[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
 
-  // ── Toasts ──
+  // ──── Toasts ────
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -188,12 +197,19 @@ const Tickets: React.FC = () => {
 
   const selectedTicket = tickets.find((t) => t.id === selectedId) ?? null;
 
-  // Load staff options once (for the assign picker).
+  // Load staff + meter reader options once (for the assign picker).
   useEffect(() => {
-    getStaffProfiles()
-      .then(setStaffOptions)
+    Promise.all([getStaffProfiles(), getMeterReaderProfiles()])
+      .then(([staff, readers]) =>
+        setStaffOptions(
+          [
+            ...staff.map((s) => ({ ...s, role: 'staff' as const })),
+            ...readers.map((r) => ({ ...r, role: 'meter_reader' as const })),
+          ].sort((a, b) => a.last_name.localeCompare(b.last_name))
+        )
+      )
       .catch(() => {
-        // Non-fatal — the assign modal will show an error when used.
+        // Non-fatal - the assign modal will show an error when used.
       });
   }, []);
 
@@ -258,7 +274,7 @@ const Tickets: React.FC = () => {
     });
   }, [tickets, searchQuery, categoryFilter, statusFilter, priorityFilter, sortKey]);
 
-  // ── Actions ──
+  // ──── Actions ────
   const actorId = user?.id ?? '';
 
   const handleCreate = async (draft: TicketDraft) => {
@@ -386,7 +402,7 @@ const Tickets: React.FC = () => {
 
   return (
     <div className="flex-1 flex h-screen overflow-hidden bg-gray-50">
-      {/* ── Left Panel – Ticket List ── */}
+      {/* ──── Left Panel —œ Ticket List ──── */}
       <div className="w-[30%] min-w-[300px] max-w-[420px] bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
         {/* Search & Create */}
         <div className="p-4 border-b border-gray-200 space-y-3">
@@ -394,7 +410,7 @@ const Tickets: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search tickets…"
+              placeholder="Search tickets·¦"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
@@ -521,10 +537,10 @@ const Tickets: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Right Panel – Ticket Details ── */}
+      {/* ──── Right Panel —œ Ticket Details ──── */}
       {selectedTicket ? (
         <div className="flex-1 flex flex-col bg-gray-50 min-w-0 relative overflow-hidden">
-          {/* ── Ticket Header ── */}
+          {/* ──── Ticket Header ──── */}
           <div className="bg-white border-b border-gray-200 px-8 py-5">
             <div className="flex items-start justify-between mb-3">
               <h1 className="text-xl font-bold text-gray-900 leading-tight">
@@ -538,62 +554,72 @@ const Tickets: React.FC = () => {
                   <User className="w-3.5 h-3.5" />
                   <span>{selectedTicket.assigned_staff_id ? 'Reassign' : 'Assign'}</span>
                 </button>
-                {(selectedTicket.status === 'open' || selectedTicket.status === 'assigned') && (
-                  <button
-                    onClick={() => handleStatusChange('in_progress')}
-                    disabled={actionBusy}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>In Progress</span>
-                  </button>
-                )}
-                {(selectedTicket.status === 'open' ||
-                  selectedTicket.status === 'assigned' ||
-                  selectedTicket.status === 'in_progress') && (
-                  <button
-                    onClick={() => setShowResolveModal(true)}
-                    disabled={actionBusy}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Resolve</span>
-                  </button>
-                )}
-                {selectedTicket.status === 'resolved' && (
-                  <button
-                    onClick={() => handleStatusChange('closed')}
-                    disabled={actionBusy}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-white hover:bg-gray-900 transition-all shadow-sm hover:shadow disabled:opacity-50"
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>Close</span>
-                  </button>
-                )}
-                {(selectedTicket.status === 'resolved' || selectedTicket.status === 'closed') && (
-                  <button
-                    onClick={() => handleStatusChange('in_progress')}
-                    disabled={actionBusy}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-sm hover:shadow disabled:opacity-50"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reopen</span>
-                  </button>
-                )}
-                {/* Full status override (covers Open/Assigned/In Progress/Resolved/Closed + admin override) */}
-                <select
-                  value={selectedTicket.status}
-                  onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
-                  disabled={actionBusy}
-                  className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
-                  title="Override status"
-                >
-                  {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map((st) => (
-                    <option key={st} value={st}>
-                      {TICKET_STATUS_LABELS[st]}
-                    </option>
-                  ))}
-                </select>
+                {/* Lifecycle actions — only valid transitions are offered, mirroring the
+    DB transition enforcement. Submitted -> Acknowledged -> Assigned ->
+    Scheduled -> In Progress -> Resolved -> Closed */}
+{selectedTicket.status === 'open' && (
+  <button
+    onClick={() => handleStatusChange('acknowledged')}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600 text-white hover:bg-sky-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <CheckCircle className="w-3.5 h-3.5" />
+    <span>Acknowledge</span>
+  </button>
+)}
+{selectedTicket.status === 'assigned' && (
+  <button
+    onClick={() => handleStatusChange('scheduled')}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <Calendar className="w-3.5 h-3.5" />
+    <span>Schedule</span>
+  </button>
+)}
+{(selectedTicket.status === 'open' ||
+  selectedTicket.status === 'acknowledged' ||
+  selectedTicket.status === 'assigned' ||
+  selectedTicket.status === 'scheduled') && (
+  <button
+    onClick={() => handleStatusChange('in_progress')}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <Clock className="w-3.5 h-3.5" />
+    <span>In Progress</span>
+  </button>
+)}
+{(selectedTicket.status === 'scheduled' || selectedTicket.status === 'in_progress') && (
+  <button
+    onClick={() => setShowResolveModal(true)}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <CheckCircle className="w-3.5 h-3.5" />
+    <span>Resolve</span>
+  </button>
+)}
+{(selectedTicket.status === 'resolved' || selectedTicket.status === 'in_progress') && (
+  <button
+    onClick={() => handleStatusChange('closed')}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-white hover:bg-gray-900 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <XCircle className="w-3.5 h-3.5" />
+    <span>Close</span>
+  </button>
+)}
+{selectedTicket.status === 'resolved' && (
+  <button
+    onClick={() => handleStatusChange('in_progress')}
+    disabled={actionBusy}
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-sm hover:shadow disabled:opacity-50"
+  >
+    <RefreshCw className="w-3.5 h-3.5" />
+    <span>Reopen</span>
+  </button>
+)}
                 <button
                   onClick={() => setShowDeleteModal(true)}
                   disabled={actionBusy}
@@ -653,7 +679,7 @@ const Tickets: React.FC = () => {
             </div>
           </div>
 
-          {/* ── Collapsible Details Drawer ── */}
+          {/* ──── Collapsible Details Drawer ──── */}
           {showDetailsDrawer && (
             <div className="bg-blue-50 border-b border-blue-200 px-8 py-4 animate-slide-down">
               <div className="flex items-center justify-between mb-2">
@@ -691,7 +717,7 @@ const Tickets: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-blue-600 font-medium">Resident</span>
                   <p className="text-sm font-medium text-blue-900 mt-0.5">
-                    {fullName(selectedTicket.resident) || '—'}
+                    {fullName(selectedTicket.resident) || '—'}
                   </p>
                 </div>
                 <div>
@@ -718,7 +744,7 @@ const Tickets: React.FC = () => {
             </div>
           )}
 
-          {/* ── Scrollable content ── */}
+          {/* ──── Scrollable content ──── */}
           <div className="flex-1 overflow-y-auto">
             {/* Description */}
             <div className="mx-8 mt-5 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
@@ -744,7 +770,7 @@ const Tickets: React.FC = () => {
               </div>
             )}
 
-            {/* Internal Notes (staff only — never visible to residents) */}
+            {/* Internal Notes (staff only — never visible to residents) */}
             <div className="mx-8 mt-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-2">
@@ -752,13 +778,13 @@ const Tickets: React.FC = () => {
                   <h3 className="text-sm font-semibold text-gray-700">Internal Notes</h3>
                 </div>
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                  Staff only — never shown to residents
+                  Staff only — never shown to residents
                 </span>
               </div>
               <textarea
                 value={notesDraft}
                 onChange={(e) => setNotesDraft(e.target.value)}
-                placeholder="Add private notes for your team…"
+                placeholder="Add private notes for your team·¦"
                 rows={3}
                 maxLength={2000}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none"
@@ -800,14 +826,14 @@ const Tickets: React.FC = () => {
                           <span className="text-sm font-semibold text-gray-900">
                             {timelineTitle(event)}
                           </span>
-                          <span className="text-xs text-gray-400">•</span>
+                          <span className="text-xs text-gray-400">·¢</span>
                           <span className="text-xs text-gray-400">
                             {formatDateTime(event.created_at)}
                           </span>
                         </div>
                         <p className="text-xs text-gray-500">
                           {fullName(event.performer) || 'System'}
-                          {event.description ? ` — ${event.description}` : ''}
+                          {event.description ? ` — ${event.description}` : ''}
                         </p>
                       </div>
                     </div>
@@ -818,7 +844,7 @@ const Tickets: React.FC = () => {
           </div>
         </div>
       ) : (
-        /* ── Empty State ── */
+        /* ──── Empty State ──── */
         <div className="flex-1 flex items-center justify-center bg-gray-50">
           <div className="text-center max-w-sm">
             <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -834,14 +860,14 @@ const Tickets: React.FC = () => {
         </div>
       )}
 
-      {/* ── Create Ticket Modal ── */}
+      {/* ──── Create Ticket Modal ──── */}
       <CreateTicketModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreate={handleCreate}
       />
 
-      {/* ── Assign Modal ── */}
+      {/* ──── Assign Modal ──── */}
       {showAssignModal && selectedTicket && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -854,22 +880,31 @@ const Tickets: React.FC = () => {
               {selectedTicket.assigned_staff_id ? 'Reassign Ticket' : 'Assign Ticket'}
             </h2>
             <p className="text-sm text-gray-500 mb-5">
-              {selectedTicket.ticket_number} · {selectedTicket.subject}
+              {selectedTicket.ticket_number} Ã‚· {selectedTicket.subject}
             </p>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-              Staff Member
+              Assign To
             </label>
             <select
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white mb-5"
             >
-              <option value="">Select a staff member</option>
-              {staffOptions.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.first_name} {staff.last_name} — {staff.email}
-                </option>
-              ))}
+              <option value="">Select staff or meter reader</option>
+              <optgroup label="Staff">
+                {staffOptions.filter((s) => s.role === 'staff').map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.first_name} {s.last_name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Meter Readers">
+                {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.first_name} {s.last_name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <div className="flex justify-end space-x-3">
               <button
@@ -891,7 +926,7 @@ const Tickets: React.FC = () => {
         </div>
       )}
 
-      {/* ── Resolve Modal ── */}
+      {/* ──── Resolve Modal ──── */}
       {showResolveModal && selectedTicket && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -902,7 +937,7 @@ const Tickets: React.FC = () => {
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-slide-up">
             <h2 className="text-lg font-bold text-gray-900 mb-1">Resolve Ticket</h2>
             <p className="text-sm text-gray-500 mb-5">
-              {selectedTicket.ticket_number} · {selectedTicket.subject}
+              {selectedTicket.ticket_number} Ã‚· {selectedTicket.subject}
             </p>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
               Resolution <span className="text-gray-400">(recommended)</span>
@@ -910,7 +945,7 @@ const Tickets: React.FC = () => {
             <textarea
               value={resolutionDraft}
               onChange={(e) => setResolutionDraft(e.target.value)}
-              placeholder="Describe how this concern was resolved…"
+              placeholder="Describe how this concern was resolved·¦"
               rows={5}
               maxLength={1000}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none mb-5"
@@ -935,7 +970,7 @@ const Tickets: React.FC = () => {
         </div>
       )}
 
-      {/* ── Delete Confirmation ── */}
+      {/* ──── Delete Confirmation ──── */}
       {showDeleteModal && selectedTicket && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -976,7 +1011,7 @@ const Tickets: React.FC = () => {
         </div>
       )}
 
-      {/* ── Toast ── */}
+      {/* ──── Toast ──── */}
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl text-sm font-medium text-white animate-slide-up ${

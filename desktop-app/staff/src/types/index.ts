@@ -93,15 +93,48 @@ export const METER_READING_STATUS_LABELS: Record<MeterReadingStatus, string> = {
   billed: 'Billed',
 };
 
+// Mirrors the Supabase `bills` table.
+export type BillStatus = 'pending' | 'paid' | 'overdue' | 'void';
+
 export interface Bill {
   id: string;
-  residentId: string;
-  residentName: string;
-  amount: number;
-  dueDate: string;
-  status: 'paid' | 'pending' | 'overdue';
-  billingPeriod: string;
+  bill_number: string;
+  account_id: string;
+  resident_id: string;
+  reading_id: string | null;
+  billing_period: string;
+  period_start: string | null;
+  period_end: string | null;
+  previous_reading: number | null;
+  current_reading: number | null;
+  consumption: number | null;
+  water_rate: number;
+  extra_components: { id?: string; category: string; price: number }[] | null;
+  amount_due: number;
+  status: BillStatus;
+  due_date: string | null;
+  paid_at: string | null;
+  generated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  /** Joined resident_accounts row (account number + sitio). */
+  account?: {
+    id: string;
+    account_number: string;
+    sitio: string | null;
+    connection_status: string;
+  } | null;
+  /** Joined profiles row for the bill owner. */
+  resident?: TicketPerson | null;
 }
+
+export const BILL_STATUS_LABELS: Record<BillStatus, string> = {
+  pending: 'Pending',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  void: 'Void',
+};
 
 /** Extra line item on a bill (e.g. maintenance fee, connection fee). */
 export interface BillingComponent {
@@ -118,13 +151,34 @@ export interface BillingConfig {
   components: BillingComponent[];
 }
 
+export type PaymentMethod = 'cash' | 'gcash' | 'bank';
+export type PaymentStatus = 'completed' | 'pending' | 'cancelled' | 'refunded';
+
 export interface Payment {
   id: string;
-  billId: string;
-  residentName: string;
+  bill_id?: string | null;
+  account_id?: string | null;
+  resident_id?: string | null;
   amount: number;
-  date: string;
-  method: 'cash' | 'gcash' | 'bank';
+  payment_method: PaymentMethod;
+  payment_date: string;
+  reference_number?: string | null;
+  notes?: string | null;
+  recorded_by?: string | null;
+  status: PaymentStatus;
+  created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  /** Joined relations */
+  bill?: Bill | null;
+  account?: ResidentAccount | null;
+  resident?: TicketPerson | null;
+  recorder?: TicketPerson | null;
+  /** Legacy field compatibility */
+  billId?: string;
+  residentName?: string;
+  date?: string;
+  method?: PaymentMethod;
 }
 
 // ── Announcement Types ──
@@ -157,16 +211,13 @@ export interface Announcement {
   created_by: string | null;
   is_published: boolean;
   expires_at: string | null;
-  /** Future publish time — hidden from audiences until reached. */
   scheduled_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
-  /** Joined profiles row (from created_by) for display */
   creator?: AnnouncementCreator | null;
 }
 
-/** Data captured by the create/edit announcement form. */
 export interface AnnouncementDraft {
   title: string;
   content: string;
@@ -231,7 +282,14 @@ export type TicketCategory =
   | 'meter_concern'
   | 'other';
 export type TicketPriority = 'low' | 'medium' | 'high';
-export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus =
+  | 'open'
+  | 'acknowledged'
+  | 'assigned'
+  | 'scheduled'
+  | 'in_progress'
+  | 'resolved'
+  | 'closed';
 
 export type TicketTimelineEventType = 'created' | 'assigned' | 'status_change';
 
@@ -308,10 +366,27 @@ export interface ResidentOption {
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   open: 'Open',
+  acknowledged: 'Acknowledged',
   assigned: 'Assigned',
+  scheduled: 'Scheduled',
   in_progress: 'In Progress',
   resolved: 'Resolved',
   closed: 'Closed',
+};
+
+/**
+ * Valid forward transitions (mirrors the DB trigger
+ * `enforce_ticket_status_transition`). Used by the UI so staff only see
+ * actions the database will accept.
+ */
+export const TICKET_STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
+  open: ['acknowledged', 'assigned', 'in_progress'],
+  acknowledged: ['assigned', 'in_progress'],
+  assigned: ['scheduled', 'in_progress'],
+  scheduled: ['in_progress', 'resolved'],
+  in_progress: ['resolved', 'closed'],
+  resolved: ['closed', 'in_progress'],
+  closed: [],
 };
 
 export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
@@ -522,7 +597,9 @@ export interface AuditLogQueryOptions {
 // ── Analytics Types ──
 export interface TicketStatusCount {
   open: number;
+  acknowledged: number;
   assigned: number;
+  scheduled: number;
   in_progress: number;
   resolved: number;
   closed: number;
@@ -559,3 +636,4 @@ export interface AnalyticsData {
   announcementActivity: TrendPoint[];
   residentGrowth: TrendPoint[];
 }
+

@@ -42,10 +42,35 @@ async function getUserProfile(userId: string, email?: string) {
   return null;
 }
 
+/**
+ * Internal login handle for masterlist residents activated through the
+ * `resident-login` edge function. MUST stay in sync with that function:
+ * the resident types their Account Number and the app rebuilds the same
+ * handle (acc-<cons code>@example.com). The handle is not secret, but it
+ * is useless without the temporary password issued by the barangay office.
+ */
+export function looksLikeAccountNumber(username: string): boolean {
+  const trimmed = username.trim();
+  return /^[A-Za-z0-9-]+$/.test(trimmed) && /\d/.test(trimmed);
+}
+
+export function loginHandleForAccount(accountNumber: string): string {
+  const sanitized = accountNumber.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `acc-${sanitized}@example.com`;
+}
+
 export async function login(username: string, password: string): Promise<AuthUser> {
-  const email = username.trim().toLowerCase();
-  if (!email.includes('@')) {
-    throw new Error('Please log in with your email address.');
+  const trimmedUsername = username.trim();
+
+  // Residents may sign in with their email address OR their Account Number /
+  // Cons Code (+ password). An identifier alone never grants access —
+  // Supabase Auth still requires the correct password.
+  const email = trimmedUsername.includes('@')
+    ? trimmedUsername.toLowerCase()
+    : loginHandleForAccount(trimmedUsername);
+
+  if (!trimmedUsername) {
+    throw new Error('Please enter your email address or Account Number.');
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -54,7 +79,13 @@ export async function login(username: string, password: string): Promise<AuthUse
   });
 
   if (error) {
-    throw new Error(error.message || 'Login failed. Please try again.');
+    const rawMessage = error.message || '';
+    if (/invalid login credentials/i.test(rawMessage) && !trimmedUsername.includes('@')) {
+      throw new Error(
+        'Account not found or not activated yet. Get your temporary password at the barangay office.',
+      );
+    }
+    throw new Error(rawMessage || 'Login failed. Please try again.');
   }
 
   if (!data.user) {

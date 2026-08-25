@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+﻿import { supabase } from '../lib/supabase';
 
 // ── Types ──
 
@@ -6,6 +6,7 @@ export interface ResidentRecord {
   /** The resident profile id (profiles.id). */
   id: string;
   firstName: string;
+  middleName: string | null;
   lastName: string;
   fullName: string;
   email: string;
@@ -80,7 +81,7 @@ function parseBirthDate(dateOfBirth: string): { y: number; m: number; d: number 
 
 /**
  * Temporary password format requested by the professor:
- *   LastNameFirstNameMMDDYYYY — "Juan Dela Cruz", DOB 2003-05-12 → "DelaCruzJuan05122003"
+ *   LastNameFirstNameMMDDYYYY — "Juan Dela Cruz", DOB 2003-05-12 â†’ "DelaCruzJuan05122003"
  */
 export function generateTemporaryPassword(
   firstName: string,
@@ -135,6 +136,7 @@ export function getResidentServiceErrorMessage(error: {
 interface ResidentRow {
   id: string;
   first_name: string;
+  middle_name: string | null;
   last_name: string;
   email: string;
   phone: string | null;
@@ -159,6 +161,7 @@ function mapRow(row: ResidentRow): ResidentRecord {
   return {
     id: row.id,
     firstName: row.first_name,
+    middleName: row.middle_name ?? null,
     lastName: row.last_name,
     fullName: `${row.first_name} ${row.last_name}`.trim(),
     email: row.email,
@@ -187,7 +190,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
+      'id, first_name, middle_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -347,3 +350,6 @@ export async function createResident(
       .account_number ?? null,
   };
 }
+
+
+

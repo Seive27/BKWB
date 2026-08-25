@@ -248,7 +248,7 @@ const Bills: React.FC = () => {
                     Billing Period
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Consumption (CU.M)
+                    Consumption
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Amount Due
@@ -289,7 +289,7 @@ const Bills: React.FC = () => {
                       {bill.billingPeriod}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bill.consumption}
+                      {bill.consumption != null ? `${bill.consumption} m³` : '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                       ₱{bill.amountDue.toFixed(2)}

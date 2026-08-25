@@ -11,6 +11,7 @@ import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
+import { getMySitioAssignments } from '@/services/sitioAssignmentService';
 import { useAssignments } from '@/hooks/useAssignments';
 import { submitReadingByMeterNumber } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
@@ -105,6 +106,7 @@ export default function Assigned({
 
   const { assignments, sitioRoutes, loading, refreshing, error, refresh } =
     useAssignments();
+  const [coveredSitios, setCoveredSitios] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSitio, setActiveSitio] = useState<string | null>(null);
 
@@ -118,6 +120,22 @@ export default function Assigned({
         setActiveSitio(lastStartedSitio);
       }
     });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Official sitio coverage (sitio_assignments). RLS returns only this
+  // reader's rows; consumers outside these sitios are hidden server-side.
+  useEffect(() => {
+    let active = true;
+    getMySitioAssignments()
+      .then((rows) => {
+        if (active) setCoveredSitios(rows.map((r) => r.sitio));
+      })
+      .catch(() => {
+        // Non-blocking: route cards still come from assigned readings.
+      });
     return () => {
       active = false;
     };
@@ -187,6 +205,19 @@ export default function Assigned({
           onChangeText={setSearchQuery}
           placeholder="Search assigned sitios..."
         />
+        {coveredSitios.length > 0 ? (
+          <View className="mb-3 rounded-[18px] bg-brand/10 px-4 py-3">
+            <Text className="text-[11px] font-semibold tracking-wider text-navy-soft">
+              YOUR ASSIGNED SITIOS
+            </Text>
+            <Text className="mt-1 text-[14px] font-semibold text-navy">
+              {coveredSitios.join(', ')}
+            </Text>
+            <Text className="mt-1 text-[12px] text-navy-muted">
+              Consumers outside these sitios are not visible to you.
+            </Text>
+          </View>
+        ) : null}
 
         {loading ? (
           <View>

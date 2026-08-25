@@ -3,7 +3,7 @@
  * Mirrors the Supabase `tickets` and `ticket_timeline` tables.
  */
 
-export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus = 'open' | 'acknowledged' | 'assigned' | 'scheduled' | 'in_progress' | 'resolved' | 'closed';
 
 export type TicketPriority = 'low' | 'medium' | 'high';
 
@@ -75,7 +75,9 @@ export interface TicketDraft {
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   open: 'Open',
+  acknowledged: 'Acknowledged',
   assigned: 'Assigned',
+  scheduled: 'Scheduled',
   in_progress: 'In Progress',
   resolved: 'Resolved',
   closed: 'Closed',

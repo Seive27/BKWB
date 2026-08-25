@@ -108,7 +108,9 @@ function TrendCard({
 
 const TICKET_COLORS: Record<TicketStatus, string> = {
   open: '#3b82f6',
+  acknowledged: '#0ea5e9',
   assigned: '#8b5cf6',
+  scheduled: '#a855f7',
   in_progress: '#f59e0b',
   resolved: '#10b981',
   closed: '#6b7280',

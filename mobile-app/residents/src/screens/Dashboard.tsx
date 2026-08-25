@@ -6,7 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { QuickActions } from '@/components/ui/QuickActions';
+import type { Announcement, AnnouncementCategory } from '@/types/announcements';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
+import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
 import { useNotifications } from '@/hooks/useNotifications';
 import { getCurrentProfile } from '@/services/authService';
 import NotificationsScreen from '@/screens/Notifications';
@@ -194,6 +196,7 @@ function NotificationBell({ onPress }: { onPress?: () => void }) {
 function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
   const { announcements, loading } = useAnnouncements({ audience: 'residents', limit: 2 });
   const latest = announcements[0];
+  const [selected, setSelected] = useState<Announcement | null>(null);
 
   return (
     <View>
@@ -206,8 +209,10 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
         )}
       </View>
 
-      <View
-        className="overflow-hidden rounded-2xl bg-white"
+      <Pressable
+        onPress={() => setSelected(latest ?? null)}
+        disabled={!latest}
+        className="overflow-hidden rounded-2xl bg-white active:opacity-90"
         style={{
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 1 },
@@ -233,7 +238,16 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
             <Text className="text-sm text-slate-400">No announcements right now.</Text>
           </View>
         )}
-      </View>
+      </Pressable>
+      <AnnouncementDetailModal
+        visible={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.title ?? ''}
+        category={(selected?.category ?? 'general') as AnnouncementCategory}
+        date={selected?.created_at ?? new Date().toISOString()}
+        content={selected?.content ?? ''}
+        createdBy={null}
+      />
     </View>
   );
 }

@@ -158,6 +158,26 @@ export async function getStaffProfiles(): Promise<StaffOption[]> {
   }));
 }
 
+/** Fetch active meter reader profiles for the assign-ticket picker. */
+export async function getMeterReaderProfiles(): Promise<StaffOption[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, first_name, last_name, email, role:roles(name)')
+    .eq('is_active', true)
+    .eq('role.name', 'meter_reader')
+    .order('last_name');
+
+  if (error) {
+    throw new Error(getTicketErrorMessage(error));
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    first_name: row.first_name,
+    last_name: row.last_name,
+    email: row.email,
+  }));
+}
 /** Fetch active resident profiles for the create-ticket picker. */
 export async function getResidents(): Promise<ResidentOption[]> {
   const { data, error } = await supabase

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+﻿import { supabase } from '../lib/supabase';
 import type {
   AnalyticsData,
   AnalyticsSummary,
@@ -44,10 +44,18 @@ async function countRows(
   return count ?? 0;
 }
 
-const TICKET_STATUSES = ['open', 'assigned', 'in_progress', 'resolved', 'closed'] as const;
+const TICKET_STATUSES = [
+  'open',
+  'acknowledged',
+  'assigned',
+  'scheduled',
+  'in_progress',
+  'resolved',
+  'closed',
+] as const;
 const READING_STATUSES = ['assigned', 'pending_review', 'approved', 'rejected', 'billed'] as const;
 
-/** Fetch role-id → role-name map once for profile role filters. */
+/** Fetch role-id â†’ role-name map once for profile role filters. */
 async function getRoleIdMap(): Promise<Map<string, string>> {
   const { data, error } = await supabase.from('roles').select('id, name');
   if (error) {
@@ -58,7 +66,7 @@ async function getRoleIdMap(): Promise<Map<string, string>> {
   return map;
 }
 
-/** Build a list of day buckets for the last `days` days (oldest → newest). */
+/** Build a list of day buckets for the last `days` days (oldest â†’ newest). */
 function dayBuckets(days: number): { key: string; label: string; date: Date }[] {
   const buckets: { key: string; label: string; date: Date }[] = [];
   const now = new Date();
@@ -123,10 +131,12 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
 
   const tickets = {
     open: ticketCounts[0],
-    assigned: ticketCounts[1],
-    in_progress: ticketCounts[2],
-    resolved: ticketCounts[3],
-    closed: ticketCounts[4],
+    acknowledged: ticketCounts[1],
+    assigned: ticketCounts[2],
+    scheduled: ticketCounts[3],
+    in_progress: ticketCounts[4],
+    resolved: ticketCounts[5],
+    closed: ticketCounts[6],
   };
   const readings = {
     assigned: readingCounts[0],

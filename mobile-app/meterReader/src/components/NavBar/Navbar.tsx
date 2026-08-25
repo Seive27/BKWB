@@ -31,7 +31,7 @@ const tabs: {
   {
     key: 'tickets',
     label: 'TICKETS',
-    icon: require('../../../assets/totalAssigned.png'),
+    icon: require('../../../assets/icons/totalAssigned.png'),
   },
   {
     key: 'history',

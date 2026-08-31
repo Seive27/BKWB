@@ -59,8 +59,9 @@ const STATUS_ORDER: Record<TicketStatus, number> = {
   assigned: 2,
   scheduled: 3,
   in_progress: 4,
-  resolved: 5,
-  closed: 6,
+  work_completed: 5,
+  resolved: 6,
+  closed: 7,
 };
 
 const PRIORITY_ORDER: Record<TicketPriority, number> = {
@@ -75,6 +76,7 @@ const statusStyles: Record<TicketStatus, { bg: string; text: string; dot: string
   assigned: { bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
   scheduled: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
   in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+  work_completed: { bg: 'bg-teal-100', text: 'text-teal-700', dot: 'bg-teal-500' },
   resolved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
   closed: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
 };
@@ -600,10 +602,12 @@ const Tickets: React.FC = () => {
     className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
   >
     <Clock className="w-3.5 h-3.5" />
-    <span>In Progress</span>
+    <span>Ongoing</span>
   </button>
 )}
-{(selectedTicket.status === 'scheduled' || selectedTicket.status === 'in_progress') && (
+{(selectedTicket.status === 'scheduled' ||
+  selectedTicket.status === 'in_progress' ||
+  selectedTicket.status === 'work_completed') && (
   <button
     onClick={() => setShowResolveModal(true)}
     disabled={actionBusy}
@@ -623,7 +627,7 @@ const Tickets: React.FC = () => {
     <span>Close</span>
   </button>
 )}
-{selectedTicket.status === 'resolved' && (
+{(selectedTicket.status === 'resolved' || selectedTicket.status === 'work_completed') && (
   <button
     onClick={() => handleStatusChange('in_progress')}
     disabled={actionBusy}
@@ -906,18 +910,26 @@ const Tickets: React.FC = () => {
               >
                 <option value="">Select staff or meter reader</option>
                 <optgroup label="Staff">
-                  {staffOptions.filter((s) => s.role === 'staff').map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.first_name} {s.last_name}
-                    </option>
-                  ))}
+                  {staffOptions.filter((s) => s.role === 'staff').map((s) => {
+                    const name = `${s.first_name} ${s.last_name}`.trim();
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {name || s.email || 'Unnamed staff'}
+                        {name && s.email ? ` — ${s.email}` : ''}
+                      </option>
+                    );
+                  })}
                 </optgroup>
                 <optgroup label="Meter Readers">
-                  {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.first_name} {s.last_name}
-                    </option>
-                  ))}
+                  {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => {
+                    const name = `${s.first_name} ${s.last_name}`.trim();
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {name || s.email || 'Unnamed meter reader'}
+                        {name && s.email ? ` — ${s.email}` : ''}
+                      </option>
+                    );
+                  })}
                 </optgroup>
               </select>
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />

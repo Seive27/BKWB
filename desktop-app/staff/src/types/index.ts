@@ -290,6 +290,7 @@ export type TicketStatus =
   | 'assigned'
   | 'scheduled'
   | 'in_progress'
+  | 'work_completed'
   | 'resolved'
   | 'closed';
 
@@ -371,7 +372,8 @@ export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   acknowledged: 'Acknowledged',
   assigned: 'Assigned',
   scheduled: 'Scheduled',
-  in_progress: 'In Progress',
+  in_progress: 'Ongoing',
+  work_completed: 'Work Completed',
   resolved: 'Resolved',
   closed: 'Closed',
 };
@@ -385,8 +387,9 @@ export const TICKET_STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   open: ['acknowledged', 'assigned', 'in_progress'],
   acknowledged: ['assigned', 'in_progress'],
   assigned: ['scheduled', 'in_progress'],
-  scheduled: ['in_progress', 'resolved'],
-  in_progress: ['resolved', 'closed'],
+  scheduled: ['in_progress', 'work_completed', 'resolved'],
+  in_progress: ['work_completed', 'resolved', 'closed'],
+  work_completed: ['resolved', 'in_progress'],
   resolved: ['closed', 'in_progress'],
   closed: [],
 };
@@ -603,6 +606,7 @@ export interface TicketStatusCount {
   assigned: number;
   scheduled: number;
   in_progress: number;
+  work_completed: number;
   resolved: number;
   closed: number;
 }

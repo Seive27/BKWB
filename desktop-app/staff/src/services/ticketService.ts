@@ -139,9 +139,11 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
 
 /** Fetch active staff profiles for the assign-ticket picker. */
 export async function getStaffProfiles(): Promise<StaffOption[]> {
+  // `roles!inner` is required: filtering on an outer-joined embed does not
+  // remove parent rows, so other roles would otherwise leak into the list.
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
+    .select('id, first_name, last_name, email, role:roles!inner(name)')
     .eq('is_active', true)
     .eq('role.name', 'staff')
     .order('last_name');
@@ -160,9 +162,11 @@ export async function getStaffProfiles(): Promise<StaffOption[]> {
 
 /** Fetch active meter reader profiles for the assign-ticket picker. */
 export async function getMeterReaderProfiles(): Promise<StaffOption[]> {
+  // `roles!inner` is required: filtering on an outer-joined embed does not
+  // remove parent rows, so other roles would otherwise leak into the list.
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
+    .select('id, first_name, last_name, email, role:roles!inner(name)')
     .eq('is_active', true)
     .eq('role.name', 'meter_reader')
     .order('last_name');
@@ -178,11 +182,14 @@ export async function getMeterReaderProfiles(): Promise<StaffOption[]> {
     email: row.email,
   }));
 }
+
 /** Fetch active resident profiles for the create-ticket picker. */
 export async function getResidents(): Promise<ResidentOption[]> {
+  // `roles!inner` is required: filtering on an outer-joined embed does not
+  // remove parent rows, so staff/meter readers would otherwise leak into the list.
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role:roles(name)')
+    .select('id, first_name, last_name, email, role:roles!inner(name)')
     .eq('is_active', true)
     .eq('role.name', 'resident')
     .order('last_name');

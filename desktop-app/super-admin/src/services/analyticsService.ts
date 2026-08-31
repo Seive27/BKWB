@@ -50,6 +50,7 @@ const TICKET_STATUSES = [
   'assigned',
   'scheduled',
   'in_progress',
+  'work_completed',
   'resolved',
   'closed',
 ] as const;
@@ -135,8 +136,9 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
     assigned: ticketCounts[2],
     scheduled: ticketCounts[3],
     in_progress: ticketCounts[4],
-    resolved: ticketCounts[5],
-    closed: ticketCounts[6],
+    work_completed: ticketCounts[5],
+    resolved: ticketCounts[6],
+    closed: ticketCounts[7],
   };
   const readings = {
     assigned: readingCounts[0],

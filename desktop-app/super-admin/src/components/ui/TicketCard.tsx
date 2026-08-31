@@ -37,7 +37,8 @@ const statusConfig: Record<TicketStatus, { label: string; color: string; dot: st
   acknowledged: { label: 'Acknowledged', color: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
   assigned: { label: 'Assigned', color: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
   scheduled: { label: 'Scheduled', color: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-  in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  in_progress: { label: 'Ongoing', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  work_completed: { label: 'Work Completed', color: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
   resolved: { label: 'Resolved', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
   closed: { label: 'Closed', color: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' },
 };

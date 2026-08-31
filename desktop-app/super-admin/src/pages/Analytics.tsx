@@ -112,6 +112,7 @@ const TICKET_COLORS: Record<TicketStatus, string> = {
   assigned: '#8b5cf6',
   scheduled: '#a855f7',
   in_progress: '#f59e0b',
+  work_completed: '#14b8a6',
   resolved: '#10b981',
   closed: '#6b7280',
 };

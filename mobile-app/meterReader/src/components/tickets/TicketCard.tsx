@@ -12,6 +12,7 @@ const STATUS_STYLES: Record<ReaderTicket['status'], string> = {
   assigned: 'bg-indigo-100 text-indigo-700',
   scheduled: 'bg-violet-100 text-violet-700',
   in_progress: 'bg-amber-100 text-amber-700',
+  work_completed: 'bg-teal-100 text-teal-700',
   resolved: 'bg-emerald-100 text-emerald-700',
   closed: 'bg-slate-100 text-slate-400',
 };
@@ -34,17 +35,18 @@ function formatDate(iso: string): string {
 export function TicketCard({
   ticket,
   onStartWork,
-  onResolve,
+  onMarkWorkCompleted,
   busy,
 }: {
   ticket: ReaderTicket;
   onStartWork: () => void;
-  onResolve: () => void;
+  onMarkWorkCompleted: () => void;
   busy: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const canStart = ticket.status === 'assigned' || ticket.status === 'scheduled';
-  const canResolve = ticket.status === 'scheduled' || ticket.status === 'in_progress';
+  const canComplete = ticket.status === 'scheduled' || ticket.status === 'in_progress';
+  const awaitingResident = ticket.status === 'work_completed';
 
   return (
     <View
@@ -100,12 +102,20 @@ export function TicketCard({
 
           {ticket.resolution ? (
             <>
-              <Text className="mt-3 text-[13px] leading-5 text-navy-muted">Resolution</Text>
+              <Text className="mt-3 text-[13px] leading-5 text-navy-muted">Work Done</Text>
               <Text className="mt-1 text-[14px] leading-5 text-navy">{ticket.resolution}</Text>
             </>
           ) : null}
 
-          {(canStart || canResolve) && (
+          {awaitingResident ? (
+            <View className="mt-4 rounded-xl bg-teal-50 px-3 py-3">
+              <Text className="text-[13px] leading-5 text-teal-800">
+                Waiting for the resident to confirm that the work is completed.
+              </Text>
+            </View>
+          ) : null}
+
+          {(canStart || canComplete) && (
             <View className="mt-4 flex-row gap-3">
               {canStart ? (
                 <Pressable
@@ -114,17 +124,17 @@ export function TicketCard({
                   className="flex-1 items-center rounded-xl bg-brand py-3 active:bg-brand-dark disabled:opacity-50"
                   accessibilityRole="button"
                 >
-                  <Text className="text-sm font-semibold text-white">Start Work</Text>
+                  <Text className="text-sm font-semibold text-white">Ongoing</Text>
                 </Pressable>
               ) : null}
-              {canResolve ? (
+              {canComplete ? (
                 <Pressable
-                  onPress={onResolve}
+                  onPress={onMarkWorkCompleted}
                   disabled={busy}
                   className="flex-1 items-center rounded-xl bg-emerald-600 py-3 active:opacity-85 disabled:opacity-50"
                   accessibilityRole="button"
                 >
-                  <Text className="text-sm font-semibold text-white">Mark Resolved</Text>
+                  <Text className="text-sm font-semibold text-white">Work Completed</Text>
                 </Pressable>
               ) : null}
             </View>

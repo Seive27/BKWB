@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, View, type DimensionValue } from 'react-native';
 
-import { AnnouncementPriorityBadge } from '@/components/announcements/AnnouncementPriorityBadge';
+import type { Announcement } from '@/types/announcements';
 import type { AnnouncementFilter } from '@/components/announcements/AnnouncementFilterTabs';
+import { AnnouncementPriorityBadge } from '@/components/announcements/AnnouncementPriorityBadge';
+import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import {
   ANNOUNCEMENT_CATEGORY_LABELS,
@@ -54,13 +56,13 @@ function SkeletonBlock({
 function SkeletonAnnouncementCard() {
   return (
     <View
-      className="overflow-hidden rounded-[18px] bg-white p-5"
+      className="overflow-hidden rounded-2xl bg-white p-5"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
+        shadowOpacity: 0.08,
         shadowRadius: 8,
-        elevation: 2,
+        elevation: 3,
       }}
     >
       <View className="flex-row items-center gap-2">
@@ -70,6 +72,7 @@ function SkeletonAnnouncementCard() {
       <SkeletonBlock className="mt-4 rounded" style={{ width: '85%', height: 18 }} />
       <SkeletonBlock className="mt-3 rounded" style={{ width: '100%', height: 14 }} />
       <SkeletonBlock className="mt-2 rounded" style={{ width: '70%', height: 14 }} />
+      <SkeletonBlock className="mt-4 rounded" style={{ width: 120, height: 12 }} />
     </View>
   );
 }
@@ -83,21 +86,31 @@ type AnnouncementCardProps = {
   date: string;
   content: string;
   createdBy?: string | null;
+  onPress: () => void;
 };
 
-function AnnouncementCard({ title, category, priority, date, content, createdBy }: AnnouncementCardProps) {
-  const [expanded, setExpanded] = useState(false);
-
+function AnnouncementCard({
+  title,
+  category,
+  priority,
+  date,
+  content,
+  createdBy,
+  onPress,
+}: AnnouncementCardProps) {
   return (
-    <View
-      className="overflow-hidden rounded-[18px] bg-white"
+    <Pressable
+      onPress={onPress}
+      className="overflow-hidden rounded-2xl bg-white active:opacity-90"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
+        shadowOpacity: 0.08,
         shadowRadius: 8,
-        elevation: 2,
+        elevation: 3,
       }}
+      accessibilityRole="button"
+      accessibilityLabel={`Open announcement: ${title}`}
     >
       <View className="flex-row">
         <View className="w-1.5" style={{ backgroundColor: CATEGORY_ACCENTS[category] }} />
@@ -110,29 +123,15 @@ function AnnouncementCard({ title, category, priority, date, content, createdBy 
           </View>
           <Text className="mt-2.5 text-base font-bold leading-5 text-navy">{title}</Text>
           <Text className="mt-1 text-sm text-navy-muted">{formatDate(date)}</Text>
-          <Text
-            className="mt-2 text-sm leading-5 text-navy-soft"
-            numberOfLines={expanded ? undefined : 3}
-          >
+          <Text className="mt-2 text-sm leading-5 text-navy-soft" numberOfLines={3}>
             {content}
           </Text>
-          {content.length > 160 && (
-            <Pressable
-              onPress={() => setExpanded((v) => !v)}
-              className="mt-2 self-start active:opacity-70"
-              accessibilityRole="button"
-            >
-              <Text className="text-sm font-semibold text-brand">
-                {expanded ? 'Show less' : 'Read more'}
-              </Text>
-            </Pressable>
-          )}
           {createdBy ? (
             <Text className="mt-3 text-xs text-navy-muted">Posted by {createdBy}</Text>
           ) : null}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -147,6 +146,7 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
   const { announcements, loading, refreshing, error, refresh } = useAnnouncements({
     audience: 'meter_readers',
   });
+  const [selected, setSelected] = useState<Announcement | null>(null);
 
   const items = announcements.filter(
     (item) => filter === 'all' || item.category === filter,
@@ -165,12 +165,12 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
 
   if (error) {
     return (
-      <View className="items-center rounded-[18px] bg-white px-6 py-10">
+      <View className="items-center rounded-2xl bg-white px-6 py-10">
         <Text className="text-base font-bold text-navy">Unable to load announcements</Text>
         <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-navy-soft">{error}</Text>
         <Pressable
           onPress={() => refresh()}
-          className="mt-5 items-center rounded-xl bg-brand px-8 py-3 active:opacity-85"
+          className="mt-5 items-center rounded-xl bg-brand px-8 py-3 active:bg-brand-dark"
           accessibilityRole="button"
         >
           <Text className="text-base font-semibold text-white">Try Again</Text>
@@ -181,7 +181,7 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
 
   if (visibleItems.length === 0) {
     return (
-      <View className="items-center rounded-[18px] bg-white px-6 py-12">
+      <View className="items-center rounded-2xl bg-white px-6 py-12">
         <Text className="text-xl font-bold text-navy">No announcements yet</Text>
         <Text className="mt-2 max-w-[280px] text-center text-sm leading-5 text-navy-soft">
           {filter === 'all'
@@ -193,23 +193,41 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
   }
 
   return (
-    <View className="gap-4 pb-2">
-      {visibleItems.map((announcement) => (
-        <AnnouncementCard
-          key={announcement.id}
-          title={announcement.title}
-          category={announcement.category}
-          priority={announcement.priority}
-          date={announcement.created_at}
-          content={announcement.content}
-          createdBy={
-            announcement.creator
-              ? `${announcement.creator.first_name} ${announcement.creator.last_name}`
-              : null
-          }
-        />
-      ))}
-      {refreshing && <Text className="py-2 text-center text-xs text-navy-soft">Refreshing…</Text>}
-    </View>
+    <>
+      <View className="gap-4 pb-2">
+        {visibleItems.map((announcement) => (
+          <AnnouncementCard
+            key={announcement.id}
+            title={announcement.title}
+            category={announcement.category}
+            priority={announcement.priority}
+            date={announcement.created_at}
+            content={announcement.content}
+            createdBy={
+              announcement.creator
+                ? `${announcement.creator.first_name} ${announcement.creator.last_name}`
+                : null
+            }
+            onPress={() => setSelected(announcement)}
+          />
+        ))}
+        {refreshing && (
+          <Text className="py-2 text-center text-xs text-navy-soft">Refreshing…</Text>
+        )}
+      </View>
+      <AnnouncementDetailModal
+        visible={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.title ?? ''}
+        category={(selected?.category ?? 'general') as AnnouncementCategory}
+        date={selected?.created_at ?? new Date().toISOString()}
+        content={selected?.content ?? ''}
+        createdBy={
+          selected?.creator
+            ? `${selected.creator.first_name} ${selected.creator.last_name}`
+            : null
+        }
+      />
+    </>
   );
 }

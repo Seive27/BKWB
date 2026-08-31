@@ -7,6 +7,7 @@ export type ReaderTicketStatus =
   | 'assigned'
   | 'scheduled'
   | 'in_progress'
+  | 'work_completed'
   | 'resolved'
   | 'closed';
 
@@ -33,7 +34,8 @@ export const READER_TICKET_STATUS_LABELS: Record<ReaderTicketStatus, string> = {
   acknowledged: 'Acknowledged',
   assigned: 'Assigned',
   scheduled: 'Scheduled',
-  in_progress: 'In Progress',
+  in_progress: 'Ongoing',
+  work_completed: 'Work Completed',
   resolved: 'Resolved',
   closed: 'Closed',
 };
@@ -81,7 +83,7 @@ export async function getMyTickets(): Promise<ReaderTicket[]> {
   return ((data ?? []) as unknown as ReaderTicket[]).map(mapRow);
 }
 
-/** Move an assigned/scheduled ticket into progress. */
+/** Mark an assigned/scheduled ticket as Ongoing (in progress). */
 export async function startTicketWork(ticketId: string): Promise<ReaderTicket> {
   const { data, error } = await supabase
     .from('tickets')
@@ -99,30 +101,28 @@ export async function startTicketWork(ticketId: string): Promise<ReaderTicket> {
     );
   }
 
-  await recordTimeline(ticketId, 'status_change', 'Meter reader started work');
+  await recordTimeline(ticketId, 'status_change', 'Meter reader marked ticket as Ongoing');
   return mapRow(data as unknown as ReaderTicket);
 }
 
 /**
- * Complete the corrective action: mark the ticket resolved with a short
- * resolution note. The resident's ticket view updates automatically via RLS
- * and a notification is emitted by a database trigger.
+ * Mark corrective work as done. Status becomes work_completed so the
+ * resident can confirm before the ticket is resolved.
  */
-export async function resolveMyTicket(
+export async function markWorkCompleted(
   ticketId: string,
   resolution: string
 ): Promise<ReaderTicket> {
   const trimmed = resolution.trim();
   if (!trimmed) {
-    throw new Error('Please describe what was done to resolve the ticket.');
+    throw new Error('Please describe what work was completed.');
   }
 
   const { data, error } = await supabase
     .from('tickets')
     .update({
-      status: 'resolved',
+      status: 'work_completed',
       resolution: trimmed,
-      resolved_at: new Date().toISOString(),
     })
     .eq('id', ticketId)
     .in('status', ['scheduled', 'in_progress'])
@@ -133,11 +133,15 @@ export async function resolveMyTicket(
     throw new Error(
       error.message.includes('Invalid ticket status')
         ? error.message
-        : error.message || 'Could not resolve this ticket.'
+        : error.message || 'Could not mark this ticket as work completed.'
     );
   }
 
-  await recordTimeline(ticketId, 'status_change', `Resolved: ${trimmed}`.slice(0, 300));
+  await recordTimeline(
+    ticketId,
+    'status_change',
+    `Work completed: ${trimmed}`.slice(0, 300)
+  );
   return mapRow(data as unknown as ReaderTicket);
 }
 

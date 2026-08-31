@@ -10,6 +10,7 @@ export interface SitioRouteProgress {
   completed: number;
   remaining: number;
   percent: number;
+  /** Pending + completed readings for this sitio route. */
   readings: MeterReading[];
 }
 
@@ -159,16 +160,65 @@ export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
       const completed = Math.max(0, total - sitioRemaining.length);
       const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
+      // Include both pending and completed so the View Consumers modal can tab them.
+      const readings = [...sitioAll].sort((a, b) => {
+        const nameA = a.resident
+          ? `${a.resident.first_name} ${a.resident.last_name}`.trim()
+          : a.account?.account_number ?? '';
+        const nameB = b.resident
+          ? `${b.resident.first_name} ${b.resident.last_name}`.trim()
+          : b.account?.account_number ?? '';
+        return nameA.localeCompare(nameB);
+      });
+
       return {
         sitio,
         total,
         completed,
         remaining: sitioRemaining.length,
         percent,
-        readings: sitioRemaining,
+        readings,
       };
     })
     .sort((a, b) => a.sitio.localeCompare(b.sitio));
+}
+
+/**
+ * Fetch all readings for one sitio assigned to the current reader.
+ * Used by View Consumers so month filtering can span past reading cycles.
+ */
+export async function getSitioConsumers(sitio: string): Promise<MeterReading[]> {
+  const userId = await requireUserId();
+  const normalized = sitio.trim();
+
+  const { data, error } = await supabase
+    .from('meter_readings')
+    .select(READING_SELECT)
+    .eq('meter_reader_id', userId)
+    .is('deleted_at', null)
+    .order('assignment_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(getMeterReadingErrorMessage(error));
+  }
+
+  return (data ?? [])
+    .map((row) => mapRow(row as unknown as MeterReadingRow))
+    .filter((reading) => {
+      const readingSitio =
+        (reading.account?.sitio ?? '').trim() || 'Unassigned Sitio';
+      return readingSitio === normalized;
+    })
+    .sort((a, b) => {
+      const nameA = a.resident
+        ? `${a.resident.first_name} ${a.resident.last_name}`.trim()
+        : a.account?.account_number ?? '';
+      const nameB = b.resident
+        ? `${b.resident.first_name} ${b.resident.last_name}`.trim()
+        : b.account?.account_number ?? '';
+      return nameA.localeCompare(nameB);
+    });
 }
 
 /** Fetch the reader's submitted readings (history), newest first. */

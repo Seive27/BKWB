@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,9 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SearchBar } from '@/components/assigned/SearchBar';
 import { SyncAllButton } from '@/components/assigned/SyncAllButton';
 import { StartReadingModal } from '@/components/modals/StartReadingModal';
+import { ViewConsumersModal } from '@/components/modals/ViewConsumersModal';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
+import { SecondaryButton } from '@/components/ui/SecondaryButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
 import { getMySitioAssignments } from '@/services/sitioAssignmentService';
@@ -48,9 +50,11 @@ function SkeletonCard() {
 function SitioProgressCard({
   group,
   onStartReading,
+  onViewConsumers,
 }: {
   group: SitioGroup;
   onStartReading: (sitio: string) => void;
+  onViewConsumers: (sitio: string) => void;
 }) {
   const canStart = group.remaining > 0;
 
@@ -85,6 +89,12 @@ function SitioProgressCard({
         disabled={!canStart}
         icon={<Text className="text-sm text-white">▶</Text>}
       />
+      <View className="mt-2">
+        <SecondaryButton
+          label="View Consumers"
+          onPress={() => onViewConsumers(group.sitio)}
+        />
+      </View>
     </View>
   );
 }
@@ -103,12 +113,22 @@ export default function Assigned({
 }: AssignedProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
+  const cardsAnchorRef = useRef<View>(null);
 
   const { assignments, sitioRoutes, loading, refreshing, error, refresh } =
     useAssignments();
   const [coveredSitios, setCoveredSitios] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSitio, setActiveSitio] = useState<string | null>(null);
+  const [consumersSitio, setConsumersSitio] = useState<string | null>(null);
+  const [consumersSheetTop, setConsumersSheetTop] = useState(0);
+
+  const openConsumers = (sitio: string) => {
+    cardsAnchorRef.current?.measureInWindow((_x, y) => {
+      setConsumersSheetTop(y);
+      setConsumersSitio(sitio);
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -205,6 +225,8 @@ export default function Assigned({
           onChangeText={setSearchQuery}
           placeholder="Search assigned sitios..."
         />
+        {/* Anchor: top edge of Assigned Sitio cards / consumers sheet. */}
+        <View ref={cardsAnchorRef} collapsable={false} style={{ height: 0 }} />
         {coveredSitios.length > 0 ? (
           <View className="mb-3 rounded-[18px] bg-brand/10 px-4 py-3">
             <Text className="text-[11px] font-semibold tracking-wider text-navy-soft">
@@ -265,6 +287,7 @@ export default function Assigned({
                 lastStartedSitio = sitio;
                 setActiveSitio(sitio);
               }}
+              onViewConsumers={openConsumers}
             />
           ))
         )}
@@ -299,6 +322,13 @@ export default function Assigned({
             `Matched ${payload.meterNumber} to ${residentLabel(submitted)}. The reading is pending review.`,
           );
         }}
+      />
+
+      <ViewConsumersModal
+        visible={consumersSitio !== null}
+        sitio={consumersSitio}
+        topOffset={consumersSheetTop}
+        onClose={() => setConsumersSitio(null)}
       />
     </View>
   );

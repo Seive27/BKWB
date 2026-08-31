@@ -7,7 +7,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { useReaderTickets } from '@/hooks/useReaderTickets';
 import {
-  resolveMyTicket,
+  markWorkCompleted,
   startTicketWork,
   type ReaderTicket,
 } from '@/services/ticketService';
@@ -25,12 +25,12 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
   const { tickets, loading, refreshing, error, refresh } = useReaderTickets();
   const [filter, setFilter] = useState<Filter>('active');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [resolving, setResolving] = useState<ReaderTicket | null>(null);
-  const [resolutionText, setResolutionText] = useState('');
+  const [completing, setCompleting] = useState<ReaderTicket | null>(null);
+  const [completionText, setCompletionText] = useState('');
 
   const filtered = tickets.filter((t) =>
     filter === 'active'
-      ? ['assigned', 'scheduled', 'in_progress'].includes(t.status)
+      ? ['assigned', 'scheduled', 'in_progress', 'work_completed'].includes(t.status)
       : t.status === 'resolved' || t.status === 'closed'
   );
 
@@ -49,21 +49,21 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
     }
   };
 
-  const handleResolve = async () => {
-    if (!resolving) return;
-    if (!resolutionText.trim()) {
-      Alert.alert('Resolution required', 'Please describe what was done to resolve the ticket.');
+  const handleMarkWorkCompleted = async () => {
+    if (!completing) return;
+    if (!completionText.trim()) {
+      Alert.alert('Details required', 'Please describe what work was completed.');
       return;
     }
-    setBusyId(resolving.id);
+    setBusyId(completing.id);
     try {
-      await resolveMyTicket(resolving.id, resolutionText);
-      setResolving(null);
-      setResolutionText('');
+      await markWorkCompleted(completing.id, completionText);
+      setCompleting(null);
+      setCompletionText('');
       await refresh();
     } catch (err) {
       Alert.alert(
-        'Could not resolve',
+        'Could not update',
         err instanceof Error ? err.message : 'An unexpected error occurred.'
       );
     } finally {
@@ -137,9 +137,9 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
                 ticket={ticket}
                 busy={busyId === ticket.id}
                 onStartWork={() => handleStartWork(ticket)}
-                onResolve={() => {
-                  setResolving(ticket);
-                  setResolutionText('');
+                onMarkWorkCompleted={() => {
+                  setCompleting(ticket);
+                  setCompletionText('');
                 }}
               />
             ))}
@@ -149,22 +149,26 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
 
-      {/* Resolution input modal */}
-      {resolving && (
+      {/* Work completed notes modal */}
+      {completing && (
         <View className="absolute inset-0 justify-end bg-black/50">
-          <Pressable className="flex-1" onPress={() => setResolving(null)} />
+          <Pressable className="flex-1" onPress={() => setCompleting(null)} />
           <View className="rounded-t-3xl bg-white px-5 pb-8 pt-4">
             <View className="items-center pt-1">
               <View className="h-1.5 w-12 rounded-full bg-slate-200" />
             </View>
-            <Text className="mt-3 text-lg font-bold text-slate-800">Resolve Ticket</Text>
+            <Text className="mt-3 text-lg font-bold text-slate-800">Work Completed</Text>
             <Text className="mt-1 text-sm text-slate-400">
-              {resolving.ticket_number} · {resolving.subject}
+              {completing.ticket_number} · {completing.subject}
+            </Text>
+            <Text className="mt-2 text-sm leading-5 text-slate-500">
+              The resident will be asked to confirm that the work is completed before this ticket
+              is resolved.
             </Text>
             <TextInput
-              value={resolutionText}
-              onChangeText={setResolutionText}
-              placeholder="Describe the corrective action taken…"
+              value={completionText}
+              onChangeText={setCompletionText}
+              placeholder="Describe the work that was completed…"
               placeholderTextColor="#9CA3AF"
               multiline
               numberOfLines={4}
@@ -173,20 +177,20 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
             />
             <View className="mt-4 flex-row gap-3">
               <Pressable
-                onPress={() => setResolving(null)}
+                onPress={() => setCompleting(null)}
                 className="flex-1 items-center rounded-xl border border-slate-200 py-3.5 active:bg-slate-50"
                 accessibilityRole="button"
               >
                 <Text className="text-base font-semibold text-slate-600">Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={handleResolve}
-                disabled={busyId === resolving.id}
+                onPress={handleMarkWorkCompleted}
+                disabled={busyId === completing.id}
                 className="flex-1 items-center rounded-xl bg-emerald-600 py-3.5 active:opacity-85 disabled:opacity-50"
                 accessibilityRole="button"
               >
                 <Text className="text-base font-semibold text-white">
-                  {busyId === resolving.id ? 'Saving…' : 'Mark Resolved'}
+                  {busyId === completing.id ? 'Saving…' : 'Submit'}
                 </Text>
               </Pressable>
             </View>

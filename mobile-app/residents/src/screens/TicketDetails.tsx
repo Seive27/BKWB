@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PriorityBadge } from '@/components/tickets/PriorityBadge';
@@ -8,6 +9,10 @@ import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { TicketTimeline } from '@/components/tickets/TicketTimeline';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { useTicketDetails } from '@/hooks/useTicketDetails';
+import {
+  confirmWorkCompleted,
+  rejectWorkCompleted,
+} from '@/services/ticketService';
 import { TICKET_CATEGORY_LABELS } from '@/types/tickets';
 
 type TicketDetailsScreenProps = {
@@ -59,9 +64,54 @@ export default function TicketDetailsScreen({
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const { ticket, timeline, loading, error, refresh } = useTicketDetails(ticketId);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   // Skeleton only on the very first load — background realtime refreshes
   // (loading flips true while ticket already exists) must not flash it.
   const showSkeleton = loading && !ticket;
+  const needsConfirmation = ticket?.status === 'work_completed';
+
+  const handleConfirm = async () => {
+    setConfirmBusy(true);
+    try {
+      await confirmWorkCompleted(ticketId);
+      await refresh();
+    } catch (err) {
+      Alert.alert(
+        'Could not confirm',
+        err instanceof Error ? err.message : 'An unexpected error occurred.'
+      );
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const handleReject = async () => {
+    Alert.alert(
+      'Work not completed?',
+      'This will send the ticket back so the assigned worker can continue.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Not Completed',
+          style: 'destructive',
+          onPress: async () => {
+            setConfirmBusy(true);
+            try {
+              await rejectWorkCompleted(ticketId);
+              await refresh();
+            } catch (err) {
+              Alert.alert(
+                'Could not update',
+                err instanceof Error ? err.message : 'An unexpected error occurred.'
+              );
+            } finally {
+              setConfirmBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <View className="flex-1 bg-slate-50">
@@ -148,7 +198,7 @@ export default function TicketDetailsScreen({
                 {ticket.resolution ? (
                   <View className="mt-4 rounded-xl bg-emerald-50 px-4 py-3">
                     <Text className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                      Resolution
+                      {needsConfirmation ? 'Work Reported Done' : 'Resolution'}
                     </Text>
                     <Text className="mt-0.5 text-sm leading-5 text-emerald-800">
                       {ticket.resolution}
@@ -156,6 +206,47 @@ export default function TicketDetailsScreen({
                   </View>
                 ) : null}
               </View>
+
+              {needsConfirmation ? (
+                <View
+                  className="rounded-2xl bg-white p-5"
+                  style={{
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    elevation: 3,
+                  }}
+                >
+                  <Text className="text-base font-bold text-slate-800">
+                    Is the work completed?
+                  </Text>
+                  <Text className="mt-2 text-sm leading-5 text-slate-500">
+                    The assigned worker marked this request as done. Please confirm so we can
+                    resolve the ticket, or let us know if work is still needed.
+                  </Text>
+                  <View className="mt-4 flex-row gap-3">
+                    <Pressable
+                      onPress={handleReject}
+                      disabled={confirmBusy}
+                      className="flex-1 items-center rounded-xl border border-slate-200 py-3.5 active:bg-slate-50 disabled:opacity-50"
+                      accessibilityRole="button"
+                    >
+                      <Text className="text-base font-semibold text-slate-600">Not Yet</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleConfirm}
+                      disabled={confirmBusy}
+                      className="flex-1 items-center rounded-xl bg-emerald-600 py-3.5 active:opacity-85 disabled:opacity-50"
+                      accessibilityRole="button"
+                    >
+                      <Text className="text-base font-semibold text-white">
+                        {confirmBusy ? 'Saving…' : 'Yes, Completed'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
 
               {/* Timeline card */}
               <View

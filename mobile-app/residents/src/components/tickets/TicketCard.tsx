@@ -16,6 +16,7 @@ const STATUS_ACCENT: Record<Ticket['status'], string> = {
   assigned: 'bg-violet-400',
   scheduled: 'bg-purple-400',
   in_progress: 'bg-amber-400',
+  work_completed: 'bg-teal-400',
   resolved: 'bg-emerald-500',
   closed: 'bg-slate-400',
 };

@@ -218,6 +218,77 @@ export async function createTicket(draft: TicketDraft): Promise<Ticket> {
   return { ...ticket, timeline };
 }
 
+/**
+ * Resident confirms that work marked by the meter reader / staff is done.
+ * Moves work_completed → resolved.
+ */
+export async function confirmWorkCompleted(ticketId: string): Promise<Ticket> {
+  const userId = await requireUserId();
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+    })
+    .eq('id', ticketId)
+    .eq('resident_id', userId)
+    .eq('status', 'work_completed')
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) {
+    throw new Error(getTicketErrorMessage(error));
+  }
+
+  const { error: timelineError } = await supabase.from('ticket_timeline').insert({
+    ticket_id: ticketId,
+    event_type: 'status_change',
+    description: 'Resident confirmed work is completed',
+    performed_by: userId,
+  });
+  if (timelineError) {
+    console.warn('[tickets] timeline insert failed:', timelineError.message);
+  }
+
+  const timeline = await getTicketTimeline(ticketId);
+  return { ...mapRow(data as unknown as TicketRow), timeline };
+}
+
+/**
+ * Resident reports that work is not yet done. Returns the ticket to Ongoing
+ * so the assigned worker can continue.
+ */
+export async function rejectWorkCompleted(ticketId: string): Promise<Ticket> {
+  const userId = await requireUserId();
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({ status: 'in_progress' })
+    .eq('id', ticketId)
+    .eq('resident_id', userId)
+    .eq('status', 'work_completed')
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) {
+    throw new Error(getTicketErrorMessage(error));
+  }
+
+  const { error: timelineError } = await supabase.from('ticket_timeline').insert({
+    ticket_id: ticketId,
+    event_type: 'status_change',
+    description: 'Resident reported that work is not yet completed',
+    performed_by: userId,
+  });
+  if (timelineError) {
+    console.warn('[tickets] timeline insert failed:', timelineError.message);
+  }
+
+  const timeline = await getTicketTimeline(ticketId);
+  return { ...mapRow(data as unknown as TicketRow), timeline };
+}
+
 // ── Realtime ──
 
 /**

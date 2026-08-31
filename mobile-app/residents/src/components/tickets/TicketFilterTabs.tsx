@@ -10,7 +10,8 @@ const FILTERS: { id: TicketFilter; label: string }[] = [
   { id: 'acknowledged', label: 'Acknowledged' },
   { id: 'assigned', label: 'Assigned' },
   { id: 'scheduled', label: 'Scheduled' },
-  { id: 'in_progress', label: 'In Progress' },
+  { id: 'in_progress', label: 'Ongoing' },
+  { id: 'work_completed', label: 'Work Completed' },
   { id: 'resolved', label: 'Resolved' },
   { id: 'closed', label: 'Closed' },
 ];

@@ -3,6 +3,9 @@ project_id = "bkwb"
 [functions.create-user]
 verify_jwt = true
 
+[functions.create-paymongo-checkout]
+verify_jwt = true
+
 [functions.send-email]
 # Internal-only helper, invoked edge-to-edge by create-user with the project
 # secret key. The platform cannot JWT-verify requests made with the new secret

@@ -75,22 +75,28 @@ function ConsumerRow({ reading }: { reading: MeterReading }) {
 
   return (
     <View
-      className="mb-3 overflow-hidden rounded-[18px] bg-white px-4 py-3.5"
+      className="mb-2.5 overflow-hidden rounded-2xl bg-white border border-slate-200 p-4"
       style={cardShadow}
     >
-      <View className="mb-1.5 flex-row items-start justify-between gap-2">
-        <Text className="flex-1 text-[16px] font-bold text-navy" numberOfLines={1}>
-          {residentName}
-        </Text>
+      <View className="flex-row items-start justify-between gap-2 mb-1.5">
+        <View className="flex-1">
+          <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
+            {residentName}
+          </Text>
+          <Text className="text-[11px] font-mono text-slate-400"># {accountNumber}</Text>
+        </View>
         <StatusBadge status={reading.status} />
       </View>
-      <Text className="mb-2 text-[13px] text-navy-muted"># {accountNumber}</Text>
-      <Text className="text-[13px] text-navy-muted" numberOfLines={1}>
-        Meter: {meterNumber}
-      </Text>
-      <Text className="mt-1 text-[13px] text-navy-muted" numberOfLines={1}>
-        Sitio: {sitio}
-      </Text>
+
+      <View className="mt-2 pt-2 border-t border-slate-100 flex-row items-center justify-between">
+        <View>
+          <Text className="text-[10px] font-semibold text-slate-400 uppercase">Meter No.</Text>
+          <Text className="text-base font-extrabold font-mono text-blue-600">{meterNumber}</Text>
+        </View>
+        <View className="rounded-full bg-slate-100 px-2.5 py-1 border border-slate-200/60">
+          <Text className="text-[10px] font-semibold text-slate-700">{sitio}</Text>
+        </View>
+      </View>
     </View>
   );
 }

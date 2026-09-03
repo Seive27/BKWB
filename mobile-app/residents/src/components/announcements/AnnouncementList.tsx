@@ -213,7 +213,7 @@ export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProp
         />
       ))}
       {refreshing && (
-        <Text className="py-2 text-center text-xs text-slate-400">Refreshing·¦</Text>
+        <Text className="py-2 text-center text-xs text-slate-400">Refreshing…</Text>
       )}
     </View>
       <AnnouncementDetailModal

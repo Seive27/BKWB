@@ -43,7 +43,7 @@ export default function WaterScheduleScreen({
           <BackButton onPress={onBack} />
           <View className="flex-1">
             <Text className="text-2xl font-bold text-white">Water Schedule</Text>
-            <Text className="mt-1 text-base text-white/80">Manage and pay your water bills</Text>
+            <Text className="mt-1 text-base text-white/80">Sitio supply distribution schedule</Text>
           </View>
         </View>
       </View>

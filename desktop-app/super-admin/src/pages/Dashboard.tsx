@@ -7,6 +7,8 @@ import {
   Database,
   RefreshCcw,
   ExternalLink,
+  ShieldCheck,
+  Activity,
 } from 'lucide-react';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { getAuditLogs } from '../services/auditLogService';
@@ -90,17 +92,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const getStatusColor = (action: string) => {
     switch (action) {
       case 'login':
-        return 'bg-green-100 text-green-700';
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'logout':
-        return 'bg-blue-100 text-blue-700';
+        return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'create':
-        return 'bg-purple-100 text-purple-700';
+        return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'delete':
-        return 'bg-red-100 text-red-700';
+        return 'bg-rose-50 text-rose-700 border-rose-200';
       case 'update':
-        return 'bg-amber-100 text-amber-700';
+        return 'bg-amber-50 text-amber-700 border-amber-200';
       default:
-        return 'bg-gray-100 text-gray-700';
+        return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
 
@@ -119,19 +121,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
-      <div className="p-8">
+    <div className="flex-1 overflow-y-auto bg-slate-50/50">
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Super Admin Dashboard</h1>
-            <div className="flex items-center space-x-2 text-sm">
-              <div className="flex items-center space-x-1">
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-gray-600">All systems operational</span>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Super Admin Console</h1>
+            <div className="flex items-center space-x-2 text-xs text-slate-500 mt-1">
+              <div className="flex items-center space-x-1.5 text-emerald-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>All subsystems operational</span>
               </div>
-              <span className="text-gray-400">•</span>
-              <span className="text-gray-500">Live data from the current database</span>
+              <span>•</span>
+              <span>Live production telemetry</span>
             </div>
           </div>
           <button
@@ -144,174 +146,178 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 })
                 .catch(() => {});
             }}
-            className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="inline-flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition-colors self-start sm:self-auto"
           >
-            <RefreshCcw className="w-4 h-4" />
-            <span>Refresh</span>
+            <RefreshCcw className="w-3.5 h-3.5 text-slate-500" />
+            <span>Sync Data</span>
           </button>
         </div>
 
         {(error || sectionError) && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2.5 text-xs">
             {error ?? sectionError}
           </div>
         )}
 
         {loading && !data ? (
           <div className="py-20 text-center">
-            <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-              <Database className="w-7 h-7 text-gray-400" />
+            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <Database className="w-6 h-6 text-slate-400" />
             </div>
-            <p className="text-sm font-medium text-gray-900">Loading dashboard…</p>
+            <p className="text-xs font-semibold text-slate-700">Loading system metrics…</p>
           </div>
         ) : (
           <>
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-start justify-between">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Accounts</span>
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">{totalUsers.toLocaleString()}</h2>
+                  <span className="text-[10px] text-slate-400 font-medium">All User Roles</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100 text-center">
                   <div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                        <Users className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <span className="text-sm text-gray-600 uppercase font-medium">Total Users</span>
-                    </div>
-                    <h2 className="text-4xl font-bold text-gray-900">{totalUsers.toLocaleString()}</h2>
-                    <div className="flex items-center space-x-4 mt-3">
-                      <div>
-                        <p className="text-xs text-gray-500">Residents</p>
-                        <p className="text-sm font-semibold text-blue-600">{summary?.totalResidents.toLocaleString() ?? 0}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Staff + Admins</p>
-                        <p className="text-sm font-semibold text-gray-600">{activeStaff.toLocaleString()}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Meter Readers</p>
-                        <p className="text-sm font-semibold text-gray-600">{summary?.totalMeterReaders.toLocaleString() ?? 0}</p>
-                      </div>
-                    </div>
+                    <p className="text-[10px] text-slate-400">Residents</p>
+                    <p className="text-xs font-bold text-blue-600">{summary?.totalResidents.toLocaleString() ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400">Staff</p>
+                    <p className="text-xs font-bold text-slate-700">{activeStaff.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400">Readers</p>
+                    <p className="text-xs font-bold text-slate-700">{summary?.totalMeterReaders.toLocaleString() ?? 0}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
-                        <AlertTriangle className="w-5 h-5 text-red-600" />
-                      </div>
-                      <span className="text-sm text-gray-600 uppercase font-medium">Open Tickets</span>
-                    </div>
-                    <h2 className="text-4xl font-bold text-gray-900">{openTickets.toString().padStart(2, '0')}</h2>
-                    <p className="text-sm text-red-600 mt-3 font-medium">
-                      {totalTickets.toLocaleString()} total tickets in the system
-                    </p>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Open Tickets</span>
+                  <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">{openTickets.toString().padStart(2, '0')}</h2>
+                  <span className="text-[10px] text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200/60">
+                    Needs Action
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-100">
+                  {totalTickets.toLocaleString()} total lifecycle requests
+                </p>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending Readings</span>
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                    <Ticket className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">{pendingReadings.toLocaleString()}</h2>
+                  <span className="text-[10px] text-purple-600 font-semibold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60">
+                    Review Queue
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-xs">
+                  <span className="text-slate-400 text-[11px]">Approved: <strong className="text-emerald-600">{summary?.readings.approved.toLocaleString() ?? 0}</strong></span>
+                  <span className="text-slate-400 text-[11px]">Rejected: <strong className="text-rose-600">{summary?.readings.rejected.toLocaleString() ?? 0}</strong></span>
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-                        <Ticket className="w-5 h-5 text-purple-600" />
-                      </div>
-                      <span className="text-sm text-gray-600 uppercase font-medium">Assigned Readings</span>
-                    </div>
-                    <h2 className="text-4xl font-bold text-gray-900">{pendingReadings.toLocaleString()}</h2>
-                    <div className="flex items-center space-x-4 mt-3">
-                      <div>
-                        <p className="text-xs text-gray-500">Approved</p>
-                        <p className="text-sm font-semibold text-green-600">{summary?.readings.approved.toLocaleString() ?? 0}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Rejected</p>
-                        <p className="text-sm font-semibold text-red-600">{summary?.readings.rejected.toLocaleString() ?? 0}</p>
-                      </div>
-                    </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Bulletins</span>
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4" />
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                      </div>
-                      <span className="text-sm text-gray-600 uppercase font-medium">Announcements</span>
-                    </div>
-                    <h2 className="text-4xl font-bold text-gray-900">{summary?.totalAnnouncements.toLocaleString() ?? 0}</h2>
-                    <p className="text-sm text-gray-500 mt-3 font-medium">Published announcements</p>
-                  </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">{summary?.totalAnnouncements.toLocaleString() ?? 0}</h2>
+                  <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
+                    Active
+                  </span>
                 </div>
+                <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-100">
+                  Published public service advisories
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* User Activity Trends (from audit logs) */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-base font-semibold text-gray-900">System Activity Trends</h3>
-                  <span className="text-xs text-gray-500">Audit events (last 7 days)</span>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">System Activity Trends</h3>
+                    <p className="text-[11px] text-slate-500">Audit logs recorded over the last 7 days</p>
+                  </div>
+                  <Activity className="w-4 h-4 text-slate-400" />
                 </div>
 
-                <div className="h-64 flex items-end justify-between space-x-3">
+                <div className="h-44 flex items-end justify-between gap-2 pt-2">
                   {activityByDay.map((dataPoint, index) => (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div className="w-full relative" style={{ height: '200px' }}>
+                    <div key={index} className="flex-1 flex flex-col items-center h-full justify-end group">
+                      <div className="w-full max-w-[32px] bg-slate-100 rounded-t-md h-full flex items-end overflow-hidden">
                         <div
-                          className="absolute bottom-0 w-full bg-blue-500 rounded-t-lg transition-all duration-300 hover:bg-blue-600"
-                          style={{ height: `${(dataPoint.value / maxActivity) * 100}%` }}
+                          className="w-full bg-blue-600 group-hover:bg-blue-700 transition-all rounded-t-md"
+                          style={{ height: `${Math.max((dataPoint.value / maxActivity) * 100, 4)}%` }}
                         ></div>
                       </div>
-                      <span className="text-xs text-gray-500 mt-2">{dataPoint.label}</span>
+                      <span className="text-[10px] font-mono text-slate-400 mt-2">{dataPoint.label}</span>
                     </div>
                   ))}
                 </div>
 
-                <p className="text-xs text-gray-500 text-center mt-4">
+                <p className="text-[10px] text-slate-400 text-center mt-3 pt-2 border-t border-slate-100">
                   {recentLogs.length === 0
                     ? 'No audit events recorded yet.'
-                    : `Based on the ${recentLogs.length} most recent audit events.`}
+                    : `Aggregated from ${recentLogs.length} recent system audit events.`}
                 </p>
               </div>
 
               {/* Global Settings Status (real system_settings) */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-base font-semibold text-gray-900">System Settings Status</h3>
-                  <span className="text-xs text-gray-500">{settings.length} settings</span>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">System Settings Status</h3>
+                    <p className="text-[11px] text-slate-500">Configured runtime parameters ({settings.length})</p>
+                  </div>
+                  <ShieldCheck className="w-4 h-4 text-slate-400" />
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {settings.length === 0 ? (
-                    <div className="text-center py-10">
-                      <Database className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                      <p className="text-sm text-gray-500">No system settings configured yet.</p>
+                    <div className="text-center py-8">
+                      <Database className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs text-slate-500">No system settings configured yet.</p>
                     </div>
                   ) : (
-                    settings.slice(0, 6).map((setting) => {
+                    settings.slice(0, 5).map((setting) => {
                       const meta = getSettingMeta(setting);
                       return (
-                        <div key={setting.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                              <Database className="w-5 h-5 text-blue-600" />
+                        <div key={setting.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                          <div className="flex items-center space-x-2.5 truncate">
+                            <div className="w-7 h-7 bg-white rounded-md border border-slate-200/80 flex items-center justify-center shrink-0">
+                              <Database className="w-3.5 h-3.5 text-blue-600" />
                             </div>
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900 capitalize">{meta.name}</p>
-                              <p className="text-xs text-gray-500">{meta.description}</p>
+                            <div className="truncate">
+                              <p className="text-xs font-semibold text-slate-800 capitalize truncate">{meta.name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{meta.description}</p>
                             </div>
                           </div>
                           <span
-                            className={`px-3 py-1 text-xs font-semibold rounded-full uppercase ${
-                              meta.isConfigured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                            className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border uppercase shrink-0 ${
+                              meta.isConfigured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
                             }`}
                           >
                             {meta.isConfigured ? 'Configured' : 'Not set'}
@@ -325,53 +331,52 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
 
             {/* Recent Activity Log (real audit_logs) */}
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-gray-900">Recent Activity Log</h3>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Recent Activity Log</h3>
+                  <p className="text-[11px] text-slate-500">Immutable audit ledger events</p>
+                </div>
                 <button
                   onClick={() => onNavigate?.('audit-logs')}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1"
+                  className="inline-flex items-center space-x-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
                 >
                   <span>VIEW ALL LOGS</span>
-                  <ExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/80 border-b border-slate-200/80">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Timestamp</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Module</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Timestamp</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">User</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Action</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Module</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200">
+                  <tbody className="divide-y divide-slate-100 text-xs">
                     {recentLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center">
-                          <p className="text-sm text-gray-500">No audit events recorded yet.</p>
+                        <td colSpan={5} className="px-4 py-10 text-center text-xs text-slate-400">
+                          No audit events recorded yet.
                         </td>
                       </tr>
                     ) : (
                       recentLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatTimestamp(log.created_at)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm text-gray-900">
-                                {log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}
-                              </span>
-                            </div>
+                        <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-[11px] text-slate-500">{formatTimestamp(log.created_at)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900">
+                            {log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-4 py-3 whitespace-nowrap text-slate-800">
                             {log.description ?? log.action}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{log.module}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 text-xs font-semibold rounded-full uppercase ${getStatusColor(log.action)}`}>
+                          <td className="px-4 py-3 whitespace-nowrap text-slate-500 capitalize">{log.module}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border uppercase ${getStatusColor(log.action)}`}>
                               {getStatusText(log)}
                             </span>
                           </td>

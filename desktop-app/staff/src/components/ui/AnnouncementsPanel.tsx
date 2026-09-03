@@ -10,6 +10,7 @@ import {
   Megaphone,
   RefreshCw,
   AlertCircle,
+  ArrowUpRight,
 } from 'lucide-react';
 import { useAnnouncements } from '../../hooks/useAnnouncements';
 import type { AnnouncementCategory } from '../../types';
@@ -20,12 +21,12 @@ interface AnnouncementsPanelProps {
 }
 
 const CATEGORY_META: Record<AnnouncementCategory, { label: string; badge: string; icon: React.ElementType }> = {
-  schedule: { label: 'Water Schedule', badge: 'bg-blue-100 text-blue-700', icon: Calendar },
-  interruption: { label: 'Water Interruption', badge: 'bg-red-100 text-red-700', icon: AlertTriangle },
-  maintenance: { label: 'Maintenance', badge: 'bg-orange-100 text-orange-700', icon: Wrench },
-  billing: { label: 'Billing', badge: 'bg-purple-100 text-purple-700', icon: Receipt },
-  general: { label: 'General Announcement', badge: 'bg-gray-100 text-gray-700', icon: Info },
-  emergency: { label: 'Emergency', badge: 'bg-rose-100 text-rose-700', icon: Siren },
+  schedule: { label: 'Schedule', badge: 'bg-blue-50 text-blue-700 border-blue-200', icon: Calendar },
+  interruption: { label: 'Interruption', badge: 'bg-rose-50 text-rose-700 border-rose-200', icon: AlertTriangle },
+  maintenance: { label: 'Maintenance', badge: 'bg-amber-50 text-amber-700 border-amber-200', icon: Wrench },
+  billing: { label: 'Billing', badge: 'bg-purple-50 text-purple-700 border-purple-200', icon: Receipt },
+  general: { label: 'General', badge: 'bg-slate-100 text-slate-700 border-slate-200', icon: Info },
+  emergency: { label: 'Emergency', badge: 'bg-red-50 text-red-700 border-red-200', icon: Siren },
 };
 
 function formatDate(iso: string | null | undefined): string {
@@ -38,79 +39,91 @@ const AnnouncementsPanel: React.FC<AnnouncementsPanelProps> = ({ onNavigate }) =
   const latest = announcements.slice(0, 5);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 h-full flex flex-col">
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Latest Announcements</h2>
+    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs h-full flex flex-col overflow-hidden">
+      <div className="p-4 border-b border-slate-100 bg-white">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Announcements</h2>
+            <p className="text-[11px] text-slate-500">Public notices & service advisories</p>
+          </div>
           {onNavigate && (
             <button
               onClick={() => onNavigate('announcements')}
-              className="text-sm font-medium text-primary-600 hover:text-primary-700"
+              className="inline-flex items-center space-x-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
             >
-              View All
+              <span>View All</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {onNavigate && (
           <button
             onClick={() => onNavigate('announcements')}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            className="w-full flex items-center justify-center space-x-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            <span className="text-sm font-medium">Add Announcement</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Announcement</span>
           </button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="p-4 border border-gray-200 rounded-lg">
-                <div className="h-3 w-20 animate-pulse rounded bg-gray-200 mb-2" />
-                <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
-                <div className="mt-2 h-3 w-full animate-pulse rounded bg-gray-100" />
+              <div key={i} className="p-3 border border-slate-100 rounded-lg bg-slate-50/50">
+                <div className="h-2.5 w-16 animate-pulse rounded bg-slate-200 mb-2" />
+                <div className="h-3.5 w-3/4 animate-pulse rounded bg-slate-200" />
+                <div className="mt-2 h-2.5 w-full animate-pulse rounded bg-slate-100" />
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="text-center py-8">
-            <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-700">Unable to load announcements</p>
-            <p className="text-xs text-gray-500 mt-1">{error}</p>
+          <div className="text-center py-6">
+            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
+            <p className="text-xs font-semibold text-slate-700">Unable to load announcements</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{error}</p>
             <button
               onClick={() => refresh()}
-              className="mt-4 inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="mt-3 inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-blue-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className="w-3 h-3" />
               <span>Retry</span>
             </button>
           </div>
         ) : latest.length === 0 ? (
-          <div className="text-center py-10">
-            <Megaphone className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-700">No announcements yet</p>
-            <p className="text-xs text-gray-500 mt-1">Create your first announcement to get started.</p>
+          <div className="text-center py-8">
+            <Megaphone className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-xs font-medium text-slate-700">No active announcements</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Notices posted will appear here.</p>
           </div>
         ) : (
           latest.map((announcement) => {
             const Meta = CATEGORY_META[announcement.category];
+            const Icon = Meta.icon;
             return (
               <div
                 key={announcement.id}
-                className="p-4 border border-gray-200 rounded-lg hover:shadow-sm transition-shadow cursor-pointer"
+                onClick={() => onNavigate?.('announcements')}
+                className="p-3 border border-slate-100 rounded-lg hover:border-slate-300 hover:bg-slate-50/70 transition-all cursor-pointer bg-white group"
               >
-                <div className="flex items-start space-x-3">
-                  <div className={`p-2 rounded-lg shrink-0 ${Meta.badge}`}>
-                    <Meta.icon className="w-4 h-4" />
+                <div className="flex items-start space-x-2.5">
+                  <div className={`p-1.5 rounded-md shrink-0 border ${Meta.badge}`}>
+                    <Icon className="w-3.5 h-3.5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-semibold uppercase ${Meta.badge}`}>{Meta.label}</span>
-                      <span className="text-xs text-gray-500">{formatDate(announcement.created_at)}</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded border ${Meta.badge}`}>
+                        {Meta.label}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{formatDate(announcement.created_at)}</span>
                     </div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-1">{announcement.title}</h3>
-                    <p className="text-xs text-gray-600 line-clamp-2">{announcement.content}</p>
+                    <h3 className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                      {announcement.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
+                      {announcement.content}
+                    </p>
                   </div>
                 </div>
               </div>

@@ -147,11 +147,14 @@ export default function Dashboard({
 
   return (
     <View className="flex-1 bg-slate-50">
-      <View className="bg-brand px-5 pb-6" style={{ paddingTop: insets.top + 16 }}>
-        <View className="flex-row items-start justify-between">
+      {/* Brand Header */}
+      <View className="bg-slate-900 px-5 pb-8" style={{ paddingTop: insets.top + 14 }}>
+        <View className="flex-row items-center justify-between">
           <View className="flex-1">
-            <Text className="text-2xl font-bold text-white">Barangay Kalunasan</Text>
-            <Text className="mt-1 text-base text-white/80">Good day, {residentName}</Text>
+            <Text className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Barangay Kalunasan
+            </Text>
+            <Text className="text-xl font-bold text-white mt-0.5">Mabuhay, {residentName}!</Text>
           </View>
           <NotificationBell onPress={() => setQuickActionScreen('notifications')} />
         </View>
@@ -162,7 +165,7 @@ export default function Dashboard({
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="gap-6 px-4 pt-5">
+        <View className="gap-5 px-4 -mt-4">
           <CurrentWaterBillCard
             bill={currentBill}
             loading={billLoading}
@@ -174,7 +177,7 @@ export default function Dashboard({
             onViewBills={() => setQuickActionScreen('viewBills')}
             onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
             onTickets={() => setQuickActionScreen('tickets')}
-            onNotifications={() => setQuickActionScreen('notifications')}
+            onNotifications={() => onTabPress?.('announcements')}
           />
 
           <AnnouncementsPreview onViewAll={() => onTabPress?.('announcements')} />
@@ -189,14 +192,7 @@ export default function Dashboard({
 
 function formatDateShort(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function statusBadge(status: ResidentBill['status']): { label: string; className: string } {
-  if (status === 'paid') return { label: 'Paid', className: 'bg-emerald-500' };
-  if (status === 'overdue') return { label: 'Overdue', className: 'bg-red-400' };
-  if (status === 'void') return { label: 'Void', className: 'bg-slate-400' };
-  return { label: 'Unpaid', className: 'bg-amber-400' };
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function CurrentWaterBillCard({
@@ -212,92 +208,104 @@ function CurrentWaterBillCard({
 }) {
   if (loading) {
     return (
-      <View
-        className="rounded-2xl bg-white p-5"
-        style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 8,
-          elevation: 3,
-        }}
-      >
-        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
-        <Text className="mt-3 text-sm text-slate-400">Loading your latest bill…</Text>
+      <View className="rounded-2xl bg-white p-5 border border-slate-200">
+        <Text className="text-sm font-bold text-slate-800">Current Water Statement</Text>
+        <Text className="mt-2 text-xs text-slate-400">Loading your latest statement…</Text>
       </View>
     );
   }
 
   if (!bill) {
     return (
-      <View
-        className="rounded-2xl bg-white p-5"
-        style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 8,
-          elevation: 3,
-        }}
-      >
-        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
-        <Text className="mt-3 text-sm leading-5 text-slate-400">
-          No bill yet. Your first bill appears here once a meter reading for your account has
-          been recorded and approved.
+      <View className="rounded-2xl bg-white p-5 border border-slate-200">
+        <Text className="text-sm font-bold text-slate-800">No Bill Due</Text>
+        <Text className="mt-1 text-xs leading-relaxed text-slate-400">
+          Your account has no outstanding bills. Your statement will appear here after meter reading.
         </Text>
       </View>
     );
   }
 
-  const badge = statusBadge(bill.status);
   const unpaid = bill.status === 'pending' || bill.status === 'overdue';
 
   return (
     <View
-      className="rounded-2xl bg-white p-5"
+      className="overflow-hidden rounded-2xl bg-white border border-slate-200"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
         elevation: 3,
       }}
     >
-      <View className="mb-3 flex-row items-center justify-between">
-        <Text className="text-base font-bold text-slate-800">Current Water Bill</Text>
-        <View className={`rounded-md px-2.5 py-1 ${badge.className}`}>
-          <Text className="text-xs font-semibold text-white">{badge.label}</Text>
-        </View>
-      </View>
-
-      <Text className="text-sm text-slate-400">{formatPeriod(bill.billing_period)}</Text>
-      <Text className="mt-1 text-3xl font-bold text-brand">{formatPeso(bill.amount_due)}</Text>
-      {bill.due_date ? (
-        <Text className="mt-1 text-sm text-slate-400">Due: {formatBillDate(bill.due_date)}</Text>
-      ) : null}
-
-      <View className="mt-5 gap-2.5">
-        <Pressable
-          onPress={onViewBill}
-          className="items-center rounded-xl border-2 border-brand bg-white py-3.5 active:bg-slate-50"
-          accessibilityRole="button"
-          accessibilityLabel={unpaid ? 'View current bill' : 'View bill details'}
-        >
-          <Text className="text-base font-semibold text-brand">
-            {unpaid ? 'View Bill' : 'View Details'}
+      <View className="p-5">
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            {formatPeriod(bill.billing_period)} Bill
           </Text>
-        </Pressable>
-
-        {unpaid ? (
-          <Pressable
-            onPress={onPayNow}
-            className="items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
-            accessibilityRole="button"
-            accessibilityLabel="Pay now"
+          <View
+            className={`rounded-full px-2.5 py-0.5 border ${
+              bill.status === 'paid'
+                ? 'bg-emerald-50 border-emerald-200'
+                : bill.status === 'overdue'
+                  ? 'bg-rose-50 border-rose-200'
+                  : 'bg-amber-50 border-amber-200'
+            }`}
           >
-            <Text className="text-base font-semibold text-white">Pay Now</Text>
-          </Pressable>
+            <Text
+              className={`text-[10px] font-bold uppercase ${
+                bill.status === 'paid'
+                  ? 'text-emerald-700'
+                  : bill.status === 'overdue'
+                    ? 'text-rose-700'
+                    : 'text-amber-700'
+              }`}
+            >
+              {bill.status === 'paid' ? 'Paid' : bill.status}
+            </Text>
+          </View>
+        </View>
+
+        <Text className="text-3xl font-extrabold text-slate-900">
+          {formatPeso(bill.amount_due)}
+        </Text>
+
+        {bill.due_date ? (
+          <Text className="text-xs text-slate-500 mt-1">
+            Due: <strong className="font-semibold text-slate-800">{formatBillDate(bill.due_date)}</strong>
+          </Text>
         ) : null}
+
+        <View className="mt-4 flex-row gap-2.5">
+          {unpaid ? (
+            <Pressable
+              onPress={onPayNow}
+              className="flex-1 items-center rounded-xl bg-blue-600 py-3 active:bg-blue-700"
+              accessibilityRole="button"
+              accessibilityLabel="Pay now"
+            >
+              <Text className="text-sm font-bold text-white">Pay Now</Text>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            onPress={onViewBill}
+            className={`items-center rounded-xl py-3 border border-slate-200 bg-slate-50 active:bg-slate-100 ${
+              unpaid ? 'flex-1' : 'w-full bg-blue-600 border-blue-600'
+            }`}
+            accessibilityRole="button"
+            accessibilityLabel={unpaid ? 'View current bill' : 'View bill details'}
+          >
+            <Text
+              className={`text-sm font-semibold ${
+                unpaid ? 'text-slate-800' : 'text-white'
+              }`}
+            >
+              {unpaid ? 'View Details' : 'View Statement'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -310,18 +318,18 @@ function NotificationBell({ onPress }: { onPress?: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      className="relative h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
+      className="relative h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20"
       accessibilityRole="button"
       accessibilityLabel={"Notifications" + (unreadCount > 0 ? ', ' + unreadCount + ' unread' : '')}
     >
       <Image
         source={require('../../assets/QuickActionsIcon/Notifications.svg')}
-        style={{ width: 22, height: 22 }}
+        style={{ width: 20, height: 20 }}
         contentFit="contain"
       />
       {unreadCount > 0 ? (
-        <View className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5">
-          <Text className="text-center text-[10px] font-bold text-white">
+        <View className="absolute -right-0.5 -top-0.5 min-w-[16px] h-4 rounded-full bg-rose-500 px-1 items-center justify-center">
+          <Text className="text-center text-[9px] font-bold text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </Text>
         </View>
@@ -337,11 +345,11 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
 
   return (
     <View>
-      <View className="mb-3 flex-row items-center justify-between">
-        <Text className="text-base font-bold text-slate-800">Service Announcements</Text>
+      <View className="mb-2.5 flex-row items-center justify-between">
+        <Text className="text-sm font-bold text-slate-800">Public Advisories</Text>
         {announcements.length > 0 && (
           <Pressable onPress={onViewAll} className="active:opacity-70" accessibilityRole="button">
-            <Text className="text-sm font-semibold text-brand">View all</Text>
+            <Text className="text-xs font-semibold text-blue-600">View all</Text>
           </Pressable>
         )}
       </View>
@@ -349,30 +357,23 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
       <Pressable
         onPress={() => setSelected(latest ?? null)}
         disabled={!latest}
-        className="overflow-hidden rounded-2xl bg-white active:opacity-90"
-        style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.06,
-          shadowRadius: 4,
-          elevation: 2,
-        }}
+        className="overflow-hidden rounded-2xl bg-white border border-slate-200 active:bg-slate-50"
       >
         {loading ? (
-          <View className="px-4 py-5">
-            <Text className="text-sm text-slate-400">Loading announcements…</Text>
+          <View className="p-4">
+            <Text className="text-xs text-slate-400">Loading notices…</Text>
           </View>
         ) : latest ? (
           <View className="flex-row">
-            <View className="w-1.5 bg-brand" />
-            <View className="flex-1 px-4 py-4">
-              <Text className="text-sm text-slate-400">{formatDateShort(latest.created_at)}</Text>
-              <Text className="mt-1 text-base font-bold text-slate-800">{latest.title}</Text>
+            <View className="w-1 bg-blue-600" />
+            <View className="flex-1 p-3.5">
+              <Text className="text-[10px] text-slate-400">{formatDateShort(latest.created_at)}</Text>
+              <Text className="mt-0.5 text-xs font-bold text-slate-900" numberOfLines={1}>{latest.title}</Text>
             </View>
           </View>
         ) : (
-          <View className="px-4 py-5">
-            <Text className="text-sm text-slate-400">No announcements right now.</Text>
+          <View className="p-4">
+            <Text className="text-xs text-slate-400">No announcements right now.</Text>
           </View>
         )}
       </Pressable>

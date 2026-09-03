@@ -26,6 +26,8 @@ declare module 'npm:@supabase/supabase-js@2' {
     insert(values: unknown): QueryBuilder;
     update(values: unknown): QueryBuilder;
     eq(column: string, value: unknown): QueryBuilder;
+    is(column: string, value: unknown): QueryBuilder;
+    in(column: string, values: unknown[]): QueryBuilder;
     maybeSingle(): QueryResult;
     then: Promise<{ data: any; error: { message: string } | null }>['then'];
   }
@@ -38,6 +40,10 @@ declare module 'npm:@supabase/supabase-js@2' {
       }>;
       admin: {
         createUser(attrs: Record<string, unknown>): Promise<{
+          data: { user: { id: string } };
+          error: { message: string } | null;
+        }>;
+        updateUserById(id: string, attrs: Record<string, unknown>): Promise<{
           data: { user: { id: string } };
           error: { message: string } | null;
         }>;

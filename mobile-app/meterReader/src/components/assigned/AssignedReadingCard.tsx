@@ -10,17 +10,6 @@ type AssignedReadingCardProps = {
   onStartReading?: (reading: MeterReading) => void;
 };
 
-function MetaRow({ icon, text }: { icon: string; text: string }) {
-  return (
-    <View className="mb-1.5 flex-row items-center gap-1.5">
-      <Text className="text-[13px] text-navy-soft">{icon}</Text>
-      <Text className="flex-1 text-[13px] text-navy-muted" numberOfLines={1}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
@@ -39,40 +28,56 @@ export function AssignedReadingCard({
   const accountNumber = reading.account?.account_number ?? '—';
   const meterNumber = reading.meter?.meter_number ?? '—';
   const address = reading.account?.service_address ?? 'No address on file';
+  const sitio = reading.account?.sitio?.trim() || 'Unassigned Sitio';
 
   return (
     <View
-      className="mb-3 overflow-hidden rounded-[18px] bg-white"
+      className="mb-3 overflow-hidden rounded-2xl bg-white border border-slate-200 p-4"
       style={cardShadow}
     >
-      <View className="absolute bottom-0 left-0 top-0 w-1 bg-[#7EB8D4]" />
-
-      <View className="px-4 pb-4 pt-4 pl-5">
-        <View className="mb-2 flex-row items-start justify-between gap-2">
-          <Text className="flex-1 text-[17px] font-bold text-navy" numberOfLines={1}>
+      <View className="flex-row items-start justify-between gap-2 mb-2">
+        <View className="flex-1">
+          <Text className="text-base font-bold text-slate-900" numberOfLines={1}>
             {residentName}
           </Text>
-          <StatusBadge status={reading.status} />
+          <Text className="text-[11px] font-mono text-slate-400">Account #{accountNumber}</Text>
         </View>
+        <StatusBadge status={reading.status} />
+      </View>
 
-        <Text className="mb-2 text-[13px] text-navy-muted"># {accountNumber}</Text>
-
-        <MetaRow icon="🔢" text={`Meter: ${meterNumber}`} />
-        <MetaRow
-          icon="🏘️"
-          text={`Sitio: ${reading.account?.sitio?.trim() || 'Unassigned'}`}
-        />
-        <MetaRow icon="📍" text={address} />
-        <MetaRow icon="🕒" text={`Assigned: ${formatDate(reading.assignment_date)}`} />
-
-        <View className="mt-3">
-          <PrimaryButton
-            label="Start Reading"
-            onPress={() => onStartReading?.(reading)}
-            icon={<Text className="text-sm text-white">▶</Text>}
-          />
+      <View className="my-2.5 rounded-xl bg-slate-50 border border-slate-100 p-3 flex-row items-center justify-between">
+        <View>
+          <Text className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Meter Number
+          </Text>
+          <Text className="text-lg font-extrabold font-mono text-blue-600 mt-0.5">
+            {meterNumber}
+          </Text>
+        </View>
+        <View className="items-end">
+          <Text className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Sitio
+          </Text>
+          <View className="mt-0.5 rounded-full bg-slate-200/70 px-2.5 py-0.5">
+            <Text className="text-xs font-bold text-slate-700">{sitio}</Text>
+          </View>
         </View>
       </View>
+
+      <View className="mb-3 space-y-1">
+        <Text className="text-xs text-slate-500" numberOfLines={1}>
+          📍 {address}
+        </Text>
+        <Text className="text-[11px] text-slate-400">
+          🕒 Assigned: {formatDate(reading.assignment_date)}
+        </Text>
+      </View>
+
+      <PrimaryButton
+        label="Record Reading"
+        onPress={() => onStartReading?.(reading)}
+        icon={<Text className="text-sm text-white">▶</Text>}
+      />
     </View>
   );
 }

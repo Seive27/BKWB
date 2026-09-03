@@ -32,10 +32,8 @@ function ActionCard({
         elevation: 2,
       }}
     >
-      <View className="h-11 w-11 items-center justify-center rounded-xl bg-slate-50">
-        {children}
-      </View>
-      <Text className="mt-2 text-center text-xs font-bold text-slate-800">{label}</Text>
+      {children}
+      <Text className="mt-2 text-center text-sm font-bold text-slate-800">{label}</Text>
     </Pressable>
   );
 }
@@ -48,34 +46,34 @@ export function QuickActions({
 }: QuickActionsProps) {
   return (
     <View>
-      <Text className="mb-2.5 text-sm font-bold text-slate-800">Quick Services</Text>
+      <Text className="mb-2 text-base font-bold text-slate-800">Quick Services</Text>
 
       <View className="flex-row gap-2.5">
         <ActionCard label="Bills" onPress={onViewBills} className="flex-1">
           <Image
             source={require('../../../assets/QuickActionsIcon/ViewBills.svg')}
-            style={{ width: 28, height: 28 }}
+            style={{ width: 35, height: 35 }}
             contentFit="contain"
           />
         </ActionCard>
         <ActionCard label="Schedule" onPress={onWaterSchedule} className="flex-1">
           <Image
             source={require('../../../assets/QuickActionsIcon/WaterSchedule.svg')}
-            style={{ width: 28, height: 28 }}
+            style={{ width: 35, height: 35 }}
             contentFit="contain"
           />
         </ActionCard>
-        <ActionCard label="Tickets" onPress={onTickets} className="flex-1">
+        <ActionCard label="Reports" onPress={onTickets} className="flex-1">
           <Image
             source={require('../../../assets/QuickActionsIcon/Tickets.svg')}
-            style={{ width: 28, height: 28 }}
+            style={{ width: 35, height: 35 }}
             contentFit="contain"
           />
         </ActionCard>
         <ActionCard label="Notices" onPress={onNotifications} className="flex-1">
           <Image
             source={require('../../../assets/QuickActionsIcon/Notifications.svg')}
-            style={{ width: 28, height: 28 }}
+            style={{ width: 35, height: 35 }}
             contentFit="contain"
           />
         </ActionCard>

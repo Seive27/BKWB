@@ -147,14 +147,11 @@ export default function Dashboard({
 
   return (
     <View className="flex-1 bg-slate-50">
-      {/* Brand Header */}
-      <View className="bg-slate-900 px-5 pb-8" style={{ paddingTop: insets.top + 14 }}>
+      <View className="bg-brand px-5 pb-6" style={{ paddingTop: insets.top + 16 }}>
         <View className="flex-row items-center justify-between">
-          <View className="flex-1">
-            <Text className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Barangay Kalunasan
-            </Text>
-            <Text className="text-xl font-bold text-white mt-0.5">Mabuhay, {residentName}!</Text>
+          <View className="flex-1 pr-3">
+            <Text className="text-base text-white/80">Barangay Kalunasan</Text>
+            <Text className="mt-1 text-2xl font-bold text-white">Mabuhay, {residentName}!</Text>
           </View>
           <NotificationBell onPress={() => setQuickActionScreen('notifications')} />
         </View>
@@ -165,7 +162,7 @@ export default function Dashboard({
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="gap-5 px-4 -mt-4">
+        <View className="gap-5 px-4 pt-5">
           <CurrentWaterBillCard
             bill={currentBill}
             loading={billLoading}
@@ -209,8 +206,8 @@ function CurrentWaterBillCard({
   if (loading) {
     return (
       <View className="rounded-2xl bg-white p-5 border border-slate-200">
-        <Text className="text-sm font-bold text-slate-800">Current Water Statement</Text>
-        <Text className="mt-2 text-xs text-slate-400">Loading your latest statement…</Text>
+        <Text className="text-base font-bold text-slate-800">Current Water Statement</Text>
+        <Text className="mt-2 text-sm text-slate-500">Loading your latest statement…</Text>
       </View>
     );
   }
@@ -218,8 +215,8 @@ function CurrentWaterBillCard({
   if (!bill) {
     return (
       <View className="rounded-2xl bg-white p-5 border border-slate-200">
-        <Text className="text-sm font-bold text-slate-800">No Bill Due</Text>
-        <Text className="mt-1 text-xs leading-relaxed text-slate-400">
+        <Text className="text-base font-bold text-slate-800">No Bill Due</Text>
+        <Text className="mt-1 text-sm leading-relaxed text-slate-500">
           Your account has no outstanding bills. Your statement will appear here after meter reading.
         </Text>
       </View>
@@ -241,11 +238,11 @@ function CurrentWaterBillCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <Text className="text-sm font-semibold text-slate-500">
             {formatPeriod(bill.billing_period)} Bill
           </Text>
           <View
-            className={`rounded-full px-2.5 py-0.5 border ${
+            className={`rounded-full px-3 py-1 border ${
               bill.status === 'paid'
                 ? 'bg-emerald-50 border-emerald-200'
                 : bill.status === 'overdue'
@@ -254,7 +251,7 @@ function CurrentWaterBillCard({
             }`}
           >
             <Text
-              className={`text-[10px] font-bold uppercase ${
+              className={`text-xs font-bold uppercase ${
                 bill.status === 'paid'
                   ? 'text-emerald-700'
                   : bill.status === 'overdue'
@@ -272,8 +269,9 @@ function CurrentWaterBillCard({
         </Text>
 
         {bill.due_date ? (
-          <Text className="text-xs text-slate-500 mt-1">
-            Due: <strong className="font-semibold text-slate-800">{formatBillDate(bill.due_date)}</strong>
+          <Text className="text-sm text-slate-500 mt-1">
+            Due:{' '}
+            <Text className="font-semibold text-slate-800">{formatBillDate(bill.due_date)}</Text>
           </Text>
         ) : null}
 
@@ -281,24 +279,24 @@ function CurrentWaterBillCard({
           {unpaid ? (
             <Pressable
               onPress={onPayNow}
-              className="flex-1 items-center rounded-xl bg-blue-600 py-3 active:bg-blue-700"
+              className="flex-1 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
               accessibilityRole="button"
               accessibilityLabel="Pay now"
             >
-              <Text className="text-sm font-bold text-white">Pay Now</Text>
+              <Text className="text-base font-bold text-white">Pay Now</Text>
             </Pressable>
           ) : null}
 
           <Pressable
             onPress={onViewBill}
-            className={`items-center rounded-xl py-3 border border-slate-200 bg-slate-50 active:bg-slate-100 ${
-              unpaid ? 'flex-1' : 'w-full bg-blue-600 border-blue-600'
+            className={`items-center rounded-xl py-3.5 border border-slate-200 bg-slate-50 active:bg-slate-100 ${
+              unpaid ? 'flex-1' : 'w-full bg-brand border-brand'
             }`}
             accessibilityRole="button"
             accessibilityLabel={unpaid ? 'View current bill' : 'View bill details'}
           >
             <Text
-              className={`text-sm font-semibold ${
+              className={`text-base font-semibold ${
                 unpaid ? 'text-slate-800' : 'text-white'
               }`}
             >
@@ -345,11 +343,11 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
 
   return (
     <View>
-      <View className="mb-2.5 flex-row items-center justify-between">
-        <Text className="text-sm font-bold text-slate-800">Public Advisories</Text>
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-base font-bold text-slate-800">Public Advisories</Text>
         {announcements.length > 0 && (
           <Pressable onPress={onViewAll} className="active:opacity-70" accessibilityRole="button">
-            <Text className="text-xs font-semibold text-blue-600">View all</Text>
+            <Text className="text-sm font-semibold text-brand">View all</Text>
           </Pressable>
         )}
       </View>
@@ -361,19 +359,21 @@ function AnnouncementsPreview({ onViewAll }: { onViewAll?: () => void }) {
       >
         {loading ? (
           <View className="p-4">
-            <Text className="text-xs text-slate-400">Loading notices…</Text>
+            <Text className="text-sm text-slate-500">Loading notices…</Text>
           </View>
         ) : latest ? (
           <View className="flex-row">
-            <View className="w-1 bg-blue-600" />
-            <View className="flex-1 p-3.5">
-              <Text className="text-[10px] text-slate-400">{formatDateShort(latest.created_at)}</Text>
-              <Text className="mt-0.5 text-xs font-bold text-slate-900" numberOfLines={1}>{latest.title}</Text>
+            <View className="w-1 bg-brand" />
+            <View className="flex-1 p-4">
+              <Text className="text-sm text-slate-500">{formatDateShort(latest.created_at)}</Text>
+              <Text className="mt-1 text-base font-bold text-slate-900" numberOfLines={2}>
+                {latest.title}
+              </Text>
             </View>
           </View>
         ) : (
           <View className="p-4">
-            <Text className="text-xs text-slate-400">No announcements right now.</Text>
+            <Text className="text-sm text-slate-500">No announcements right now.</Text>
           </View>
         )}
       </Pressable>

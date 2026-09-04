@@ -328,3 +328,30 @@ export async function setBillStatus(billId: string, status: BillStatus): Promise
     throw new Error(getBillErrorMessage(error));
   }
 }
+
+// ── Realtime ──
+
+/**
+ * Subscribe to insert/update/delete events on the bills table.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToBills(
+  callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Bill | null) => void
+): () => void {
+  const channel = supabase
+    .channel(`bills-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'bills' },
+      (payload) => {
+        const event = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+        const row = payload.new ? mapRow(payload.new as BillRow) : null;
+        callback(event, row);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

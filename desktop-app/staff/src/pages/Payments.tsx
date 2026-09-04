@@ -20,8 +20,8 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
-import { getBills } from '../services/billService';
-import { recordMultiBillPayment } from '../services/paymentService';
+import { getBills, subscribeToBills } from '../services/billService';
+import { recordMultiBillPayment, subscribeToPayments } from '../services/paymentService';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
 
 function formatPeso(value: number | null | undefined): string {
@@ -125,6 +125,16 @@ const Payments: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const unsubBills = subscribeToBills(() => {
+      getBills().then((b) => setBills(b)).catch(() => {});
+    });
+    const unsubPayments = subscribeToPayments(() => {
+      getBills().then((b) => setBills(b)).catch(() => {});
+    });
+    return () => {
+      unsubBills();
+      unsubPayments();
+    };
   }, [loadData]);
 
   // Distinct billing periods

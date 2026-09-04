@@ -287,6 +287,12 @@ async function handleRequest(req: Request): Promise<Response> {
         show_line_items: true,
         description: `Barangay Kalunasan Water Bill - ${referenceNumber}`,
         reference_number: referenceNumber,
+        metadata: {
+          bill_id: bill.id,
+          bill_number: bill.bill_number ?? "",
+          account_id: bill.account_id,
+          resident_id: bill.resident_id,
+        },
         line_items: [
           {
             name: lineItemName,

@@ -1,4 +1,4 @@
-﻿import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -370,4 +370,36 @@ export async function downloadBillPdf(bill: ResidentBill): Promise<void> {
     UTI: 'com.adobe.pdf',
     dialogTitle: `Bill ${bill.bill_number}`,
   });
+}
+
+// ── Realtime ──
+
+/**
+ * Subscribe to realtime updates on the bills table for the current resident.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToMyBills(
+  onUpdate: () => void
+): () => void {
+  const channel = supabase
+    .channel(`resident-bills-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'bills' },
+      () => {
+        onUpdate();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'payments' },
+      () => {
+        onUpdate();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

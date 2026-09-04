@@ -9,6 +9,7 @@ import {
   formatPeriod,
   formatPeso,
   getMyBills,
+  subscribeToMyBills,
   type ResidentBill,
 } from '@/services/billService';
 
@@ -25,6 +26,22 @@ export function CurrentBill() {
   const [showDetails, setShowDetails] = useState(false);
   const [testingPayMongo, setTestingPayMongo] = useState(false);
 
+  const loadBill = (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
+    getMyBills()
+      .then((bills) => {
+        // Prefer newest unpaid bill; otherwise newest bill overall.
+        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
+        setBill(unpaid ?? bills[0] ?? null);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to load your bill.');
+      })
+      .finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+  };
+
   const handleTestPayMongoCheckout = async () => {
     if (!bill?.id) {
       Alert.alert('No Bill Found', 'There is no bill record available to test.');
@@ -34,10 +51,7 @@ export function CurrentBill() {
 
     setTestingPayMongo(true);
     try {
-      // Obtain the bill ID from the currently displayed bill
       const existingBillId = bill.id;
-
-      // Invoke the deployed Supabase Edge Function with existing authenticated session
       const { data, error: fnError } = await supabase.functions.invoke(
         'create-paymongo-checkout',
         {
@@ -55,7 +69,6 @@ export function CurrentBill() {
         throw new Error(data?.error || 'Payment gateway did not return a checkout URL.');
       }
 
-      // Display/log ONLY safe checkout session response information
       console.log('[PayMongo Test Checkout Result]', {
         success: data.success,
         checkout_session_id: data.checkout_session_id,
@@ -65,7 +78,6 @@ export function CurrentBill() {
         reference_number: data.reference_number,
       });
 
-      // Open the returned checkout_url using WebBrowser / Linking
       if (Platform.OS === 'web') {
         if (typeof window !== 'undefined') {
           window.open(data.checkout_url, '_blank');
@@ -89,24 +101,12 @@ export function CurrentBill() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-    getMyBills()
-      .then((bills) => {
-        if (cancelled) return;
-        // Prefer newest unpaid bill; otherwise newest bill overall.
-        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
-        setBill(unpaid ?? bills[0] ?? null);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load your bill.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    loadBill(true);
+    const unsubscribe = subscribeToMyBills(() => {
+      loadBill(false);
+    });
     return () => {
-      cancelled = true;
+      unsubscribe();
     };
   }, []);
 

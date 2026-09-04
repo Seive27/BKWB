@@ -153,7 +153,7 @@ export interface BillingConfig {
   components: BillingComponent[];
 }
 
-export type PaymentMethod = 'cash' | 'gcash' | 'bank';
+export type PaymentMethod = 'cash' | 'gcash' | 'bank' | 'card' | 'paymaya' | 'grab_pay' | 'online';
 export type PaymentStatus = 'completed' | 'pending' | 'cancelled' | 'refunded';
 
 export interface Payment {

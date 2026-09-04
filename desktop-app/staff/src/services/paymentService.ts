@@ -287,3 +287,30 @@ export async function recordMultiBillPayment(
 
 /** Legacy stub compatibility */
 export async function verifyPayment(_id: string): Promise<void> {}
+
+// ── Realtime ──
+
+/**
+ * Subscribe to insert/update/delete events on the payments table.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToPayments(
+  callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Payment | null) => void
+): () => void {
+  const channel = supabase
+    .channel(`payments-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'payments' },
+      (payload) => {
+        const event = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+        const row = payload.new ? mapPaymentRow(payload.new as unknown as PaymentRow) : null;
+        callback(event, row);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

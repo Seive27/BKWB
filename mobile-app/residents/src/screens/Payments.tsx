@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Image } from 'expo-image';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { useDialog } from '@/components/ui/AppDialog';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import {
   formatBillDate,
@@ -75,7 +76,7 @@ function MethodIcon({
   kind: PaymentMethod['icon'];
   selected: boolean;
 }) {
-  const color = selected ? '#1E5B8C' : '#94A3B8';
+  const color = selected ? '#186252' : '#94A3B8';
   const bg = selected ? 'bg-brand/10' : 'bg-slate-100';
 
   return (
@@ -144,6 +145,7 @@ export default function PaymentsScreen({
 }: PaymentsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
+  const dialog = useDialog();
   const [method, setMethod] = useState<PaymentMethodId>('gcash');
 
   const billAmount = Number(bill.amount_due) || 0;
@@ -152,22 +154,28 @@ export default function PaymentsScreen({
 
   const confirmPayment = () => {
     if (!unpaid) {
-      Alert.alert('Already paid', 'This bill has already been marked as paid.');
+      dialog.alert(
+        'Already Paid',
+        'This bill has already been marked as paid.',
+        { tone: 'info' }
+      );
       return;
     }
 
     if (method === 'cash') {
-      Alert.alert(
+      dialog.alert(
         'Pay at Barangay Hall',
-        `Bring ${formatPeso(billAmount)} for your ${formatPeriod(bill.billing_period)} bill to the Barangay Hall (Mon–Fri, 8AM–5PM) or an authorized payment center.`
+        `Bring ${formatPeso(billAmount)} for your ${formatPeriod(bill.billing_period)} bill to the Barangay Hall (Mon–Fri, 8AM–5PM) or an authorized payment center.`,
+        { tone: 'info' }
       );
       return;
     }
 
     const label = method === 'gcash' ? 'GCash' : 'Maya';
-    Alert.alert(
-      `${label} payment`,
-      `Online ${label} payment is not available in the app yet. Please pay at the Barangay Hall or an authorized payment center.`
+    dialog.alert(
+      `${label} Payment`,
+      `Online ${label} payment is not available in the app yet. Please pay at the Barangay Hall or an authorized payment center.`,
+      { tone: 'info' }
     );
   };
 
@@ -245,7 +253,11 @@ export default function PaymentsScreen({
               <Text className="text-base font-bold text-slate-800">Payment Methods</Text>
               <Pressable
                 onPress={() =>
-                  Alert.alert('Add payment method', 'Adding new payment methods is coming soon.')
+                  dialog.alert(
+                    'Add Payment Method',
+                    'Adding new payment methods is coming soon.',
+                    { tone: 'info' }
+                  )
                 }
                 className="active:opacity-70"
                 accessibilityRole="button"

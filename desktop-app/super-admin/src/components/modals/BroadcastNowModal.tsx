@@ -71,7 +71,7 @@ const BroadcastNowModal: React.FC<BroadcastNowModalProps> = ({
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Warning Message */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <p className="text-sm text-gray-700">
               Are you sure you want to broadcast this message immediately to all active
               dashboards and email channels? This action will trigger{' '}
@@ -109,12 +109,12 @@ const BroadcastNowModal: React.FC<BroadcastNowModalProps> = ({
             <div
               className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 ${
                 dashboardBanner
-                  ? 'border-blue-500 bg-blue-50'
+                  ? 'border-primary-500 bg-primary-50'
                   : 'border-gray-200 bg-gray-50 opacity-50'
               }`}
             >
-              <Smartphone className={`w-5 h-5 mb-2 ${dashboardBanner ? 'text-blue-600' : 'text-gray-400'}`} />
-              <span className={`text-xs font-medium ${dashboardBanner ? 'text-blue-900' : 'text-gray-500'}`}>
+              <Smartphone className={`w-5 h-5 mb-2 ${dashboardBanner ? 'text-primary-600' : 'text-gray-400'}`} />
+              <span className={`text-xs font-medium ${dashboardBanner ? 'text-primary-900' : 'text-gray-500'}`}>
                 UI Notifications
               </span>
             </div>
@@ -123,12 +123,12 @@ const BroadcastNowModal: React.FC<BroadcastNowModalProps> = ({
             <div
               className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 ${
                 emailDispatch
-                  ? 'border-green-500 bg-green-50'
+                  ? 'border-emerald-500 bg-emerald-50'
                   : 'border-gray-200 bg-gray-50 opacity-50'
               }`}
             >
-              <Mail className={`w-5 h-5 mb-2 ${emailDispatch ? 'text-green-600' : 'text-gray-400'}`} />
-              <span className={`text-xs font-medium ${emailDispatch ? 'text-green-900' : 'text-gray-500'}`}>
+              <Mail className={`w-5 h-5 mb-2 ${emailDispatch ? 'text-emerald-600' : 'text-gray-400'}`} />
+              <span className={`text-xs font-medium ${emailDispatch ? 'text-emerald-900' : 'text-gray-500'}`}>
                 Email Channels
               </span>
             </div>
@@ -137,12 +137,12 @@ const BroadcastNowModal: React.FC<BroadcastNowModalProps> = ({
             <div
               className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 ${
                 inAppNotification
-                  ? 'border-purple-500 bg-purple-50'
+                  ? 'border-amber-500 bg-amber-50'
                   : 'border-gray-200 bg-gray-50 opacity-50'
               }`}
             >
-              <MessageSquare className={`w-5 h-5 mb-2 ${inAppNotification ? 'text-purple-600' : 'text-gray-400'}`} />
-              <span className={`text-xs font-medium ${inAppNotification ? 'text-purple-900' : 'text-gray-500'}`}>
+              <MessageSquare className={`w-5 h-5 mb-2 ${inAppNotification ? 'text-amber-600' : 'text-gray-400'}`} />
+              <span className={`text-xs font-medium ${inAppNotification ? 'text-amber-900' : 'text-gray-500'}`}>
                 SMS (Admins)
               </span>
             </div>

@@ -120,7 +120,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ portalName, closing, onLogin })
                 placeholder="Enter your password"
                 disabled={isSubmitting}
                 autoComplete="current-password"
-                className="w-full px-4 py-2.5 pr-12 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2.5 pr-12 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 type="button"
@@ -216,8 +216,8 @@ function ForgotPasswordView({
     <div className="px-10 pt-6 pb-8">
       {sent ? (
         <div className="text-center">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
-            <CheckCircle2 className="w-7 h-7 text-green-600" />
+          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-50 flex items-center justify-center">
+            <CheckCircle2 className="w-7 h-7 text-emerald-600" />
           </div>
           <h2 className="text-lg font-bold text-gray-900">Check your inbox</h2>
           <p className="mt-2 text-sm text-gray-600 leading-6">

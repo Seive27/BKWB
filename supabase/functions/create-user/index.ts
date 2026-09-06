@@ -27,6 +27,19 @@
 //        ▼
 //   (best-effort) send-email → resident gets email + temporary password
 //
+// EMAIL IS OPTIONAL:
+//   Staff may leave the Email Address field blank (e.g. the resident
+//   has no email yet). When email is omitted:
+//     * auth.users gets a unique no-email-<random>@example.com
+//       placeholder identifier (GoTrue requires one; the IANA-reserved
+//       domain can never receive mail),
+//     * profiles.email stays NULL — same convention as the masterlist
+//       import, so staff tooling (canIssueLogin / resident-login)
+//       correctly offers the Issue Login flow,
+//     * no credential email is sent (there is no mailbox to send to).
+//   The resident activates through Issue Login + the mobile Account
+//   Setup flow, where they verify their own real email.
+//
 // Credentials (ALL auto-provisioned by the platform — nothing to set manually):
 //   * Admin client  → SUPABASE_SECRET_KEYS (current architecture:
 //     {"default": "sb_secret_..."}). Falls back to the auto-provisioned
@@ -66,7 +79,9 @@ type RoleName = (typeof VALID_ROLES)[number];
 const PHONE_REGEX = /^09\d{9}$/;
 
 interface CreateUserPayload {
-  email: string;
+  /** Optional for residents: when blank, a no-email placeholder identifier
+   *  is generated for GoTrue and profiles.email stays NULL (see header). */
+  email?: string | null;
   password?: string | null;
   first_name: string;
   middle_name?: string | null;
@@ -183,6 +198,15 @@ function getPublishableKey(): string | undefined {
   return Deno.env.get('SUPABASE_ANON_KEY') ?? undefined;
 }
 
+/** Cryptographically random 16 hex chars for placeholder identifiers. */
+function randomPlaceholderLocalPart(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -244,8 +268,7 @@ async function handleRequest(req: Request): Promise<Response> {
   if (profileQueryError) {
     return fail(500, `Could not verify your role: ${profileQueryError.message}`);
   }
-  const callerRole = (callerProfile as { role?: { name?: string } } | null)
-    ?.role?.name;
+  const callerRole = (callerProfile as { role?: { name?: string } } | null)?.role?.name;
   console.log('[create-user] caller role', { role: callerRole ?? null });
   if (callerRole !== 'staff' && callerRole !== 'super_admin') {
     return fail(403, 'Forbidden: only staff and administrators can create users.');
@@ -259,21 +282,26 @@ async function handleRequest(req: Request): Promise<Response> {
     return fail(400, 'Invalid JSON body.');
   }
 
-  const email = (body.email ?? '').trim().toLowerCase();
   const firstName = (body.first_name ?? '').trim();
   const lastName = (body.last_name ?? '').trim();
   const role = body.role;
   const dateOfBirth = body.date_of_birth?.trim() || null;
   const phone = body.phone?.trim() || null;
 
-  if (!email || !firstName || !lastName) {
-    return fail(400, 'Email, first name and last name are required.');
+  // Email is OPTIONAL: blank/whitespace means "no email yet".
+  const email = (body.email ?? '').trim().toLowerCase() || null;
+
+  if (!firstName || !lastName) {
+    return fail(400, 'First name and last name are required.');
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return fail(400, 'Enter a valid email address.');
   }
   if (!VALID_ROLES.includes(role)) {
     return fail(400, `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}.`);
   }
   console.log('[create-user] payload parsed', {
-    email,
+    email: email ?? '(none — placeholder identifier will be generated)',
     role,
     firstName,
     lastName,
@@ -324,9 +352,18 @@ async function handleRequest(req: Request): Promise<Response> {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  console.log('[create-user] creating auth user...', { email, role });
+  // GoTrue requires an identifier. When staff left the email blank we mint a
+  // unique placeholder on the IANA-reserved example.com domain — it can never
+  // receive mail and is replaced by the resident's real email during the
+  // mobile Account Setup flow (verified via OTP).
+  const authEmail = email ?? `no-email-${randomPlaceholderLocalPart()}@example.com`;
+
+  console.log('[create-user] creating auth user...', {
+    email: email ? email : '(placeholder)',
+    role,
+  });
   const { data: created, error: createError } = await adminClient.auth.admin.createUser({
-    email,
+    email: authEmail,
     password,
     email_confirm: true,
     user_metadata: { first_name: firstName, last_name: lastName },
@@ -366,6 +403,10 @@ async function handleRequest(req: Request): Promise<Response> {
     date_of_birth: dateOfBirth,
     phone,
     role_id: roleRow.id,
+    // Real email when given; NULL when omitted (same convention as the
+    // masterlist import) so canIssueLogin offers the Issue Login flow.
+    // The auth identifier (placeholder) is NOT copied into profiles.
+    email,
   };
 
   const { error: profileError } = await adminClient
@@ -443,9 +484,9 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ── 7. Email the credentials (best-effort — never fails the request) ──
-  //        Only residents receive the temporary password; other roles are
-  //        provisioned by staff who already know the password they set.
-  if (role === 'resident') {
+  //        Only residents with a REAL email receive the temporary password;
+  //        others are provisioned through the Issue Login flow instead.
+  if (role === 'resident' && email) {
     const fullName = `${firstName} ${lastName}`.trim();
     console.log('[create-user] invoking send-email...', { to: email });
     await adminClient.functions.invoke('send-email', {
@@ -471,12 +512,15 @@ async function handleRequest(req: Request): Promise<Response> {
   return json({
     ok: true,
     user_id: userId,
-    email,
+    email: email,
     role,
     account_number: accountNumber,
     // The temporary password is returned so the caller can display it once
     // (it is never stored in plaintext anywhere).
     temporary_password: role === 'resident' ? password : null,
+    // True when no email was provided: the UI should skip "email sent"
+    // messaging and point staff at the Issue Login flow instead.
+    email_skipped: !email,
   });
 }
 

@@ -79,7 +79,7 @@ function EditableField({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor="#94A3B8"
         className="mt-1 text-sm font-semibold text-navy"
         style={{ padding: 0 }}
         keyboardType={keyboardType}
@@ -306,7 +306,7 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
             accessibilityLabel="Change profile picture"
           >
             {uploadingAvatar ? (
-              <ActivityIndicator size="small" color="#208AEF" />
+              <ActivityIndicator size="small" color="#186252" />
             ) : (
               <Image
                 source={require('../../assets/icons/camera.png')}
@@ -414,7 +414,7 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
                         if (passwordError) setPasswordError('');
                       }}
                       placeholder="Enter password"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor="#94A3B8"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-navy"
                       autoCapitalize="none"
@@ -428,7 +428,7 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
                         if (passwordError) setPasswordError('');
                       }}
                       placeholder="Re-enter new password"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor="#94A3B8"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-navy"
                       autoCapitalize="none"

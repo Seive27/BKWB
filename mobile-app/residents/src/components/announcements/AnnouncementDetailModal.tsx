@@ -7,12 +7,12 @@ import {
 } from '@/types/announcements';
 
 const CATEGORY_ACCENTS: Record<AnnouncementCategory, string> = {
-  schedule: '#1E5B8C',
-  interruption: '#EF4444',
-  maintenance: '#F59E0B',
-  billing: '#8B5CF6',
+  schedule: '#186252',
+  interruption: '#DC2626',
+  maintenance: '#D97706',
+  billing: '#059669',
   general: '#64748B',
-  emergency: '#DC2626',
+  emergency: '#E11D48',
 };
 
 function formatFullDate(iso: string): string {

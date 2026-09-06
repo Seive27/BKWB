@@ -71,20 +71,20 @@ const PRIORITY_ORDER: Record<TicketPriority, number> = {
 };
 
 const statusStyles: Record<TicketStatus, { bg: string; text: string; dot: string }> = {
-  open: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
-  acknowledged: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
-  assigned: { bg: 'bg-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
-  scheduled: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
-  in_progress: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
-  work_completed: { bg: 'bg-teal-100', text: 'text-teal-700', dot: 'bg-teal-500' },
-  resolved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+  open: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+  acknowledged: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' },
+  assigned: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
+  scheduled: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
+  in_progress: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-600' },
+  work_completed: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  resolved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   closed: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
 };
 
 const priorityStyles: Record<TicketPriority, { bg: string; text: string; icon: React.ReactNode }> = {
-  low: { bg: 'bg-gray-100', text: 'text-gray-600', icon: <ArrowUpDown className="w-3 h-3" /> },
-  medium: { bg: 'bg-yellow-50', text: 'text-yellow-700', icon: <Clock className="w-3 h-3" /> },
-  high: { bg: 'bg-orange-50', text: 'text-orange-700', icon: <AlertCircle className="w-3 h-3" /> },
+  low: { bg: 'bg-slate-100', text: 'text-slate-500', icon: <ArrowUpDown className="w-3 h-3" /> },
+  medium: { bg: 'bg-orange-100', text: 'text-orange-700', icon: <Clock className="w-3 h-3" /> },
+  high: { bg: 'bg-red-100', text: 'text-red-600', icon: <AlertCircle className="w-3 h-3" /> },
 };
 
 function fullName(person?: { first_name: string; last_name: string } | null): string {
@@ -124,8 +124,8 @@ const TimelineIcon: React.FC<{ type: TicketTimelineEvent['event_type'] }> = ({ t
   }
   if (type === 'assigned') {
     return (
-      <div className="w-9 h-9 bg-violet-100 rounded-full flex items-center justify-center ring-4 ring-white flex-shrink-0">
-        <User className="w-4 h-4 text-violet-600" />
+      <div className="w-9 h-9 bg-primary-100 rounded-full flex items-center justify-center ring-4 ring-white flex-shrink-0">
+        <User className="w-4 h-4 text-primary-600" />
       </div>
     );
   }
@@ -586,7 +586,7 @@ const Tickets: React.FC = () => {
   <button
     onClick={() => handleStatusChange('scheduled')}
     disabled={actionBusy}
-    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
   >
     <Calendar className="w-3.5 h-3.5" />
     <span>Schedule</span>
@@ -611,7 +611,7 @@ const Tickets: React.FC = () => {
   <button
     onClick={() => setShowResolveModal(true)}
     disabled={actionBusy}
-    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
   >
     <CheckCircle className="w-3.5 h-3.5" />
     <span>Resolve</span>
@@ -988,7 +988,7 @@ const Tickets: React.FC = () => {
               <button
                 onClick={handleResolve}
                 disabled={actionBusy}
-                className="px-5 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
+                className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
               >
                 {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                 <span>Mark Resolved</span>
@@ -1043,7 +1043,7 @@ const Tickets: React.FC = () => {
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl text-sm font-medium text-white animate-slide-up ${
-            toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+            toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >
           {toast.message}

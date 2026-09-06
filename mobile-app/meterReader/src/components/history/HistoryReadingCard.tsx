@@ -50,7 +50,7 @@ export function HistoryReadingCard({ reading }: HistoryReadingCardProps) {
     <View className="mb-3 overflow-hidden rounded-[18px] bg-white" style={cardShadow}>
       <View
         className={`absolute bottom-0 left-0 top-0 w-1 ${
-          isRejected ? 'bg-alert' : 'bg-[#7EB8D4]'
+          isRejected ? 'bg-alert' : 'bg-brand-100'
         }`}
       />
 

@@ -10,8 +10,8 @@ type NavbarProps = {
   onTabPress?: (tab: NavTab) => void;
 };
 
-const ACTIVE_COLOR = '#1E5B8C';
-const INACTIVE_COLOR = '#9CA3AF';
+const ACTIVE_COLOR = '#186252';
+const INACTIVE_COLOR = '#94A3B8';
 
 const tabs: {
   key: NavTab;
@@ -73,11 +73,14 @@ function NavItem({
         contentFit="contain"
       />
       <Text
-        className={`text-[11px] ${isHighlighted ? 'font-semibold text-brand' : 'font-medium text-gray-400'}`}
+        className={`text-[11px] ${isHighlighted ? 'font-semibold text-brand' : 'font-medium text-slate-400'}`}
         numberOfLines={1}
       >
         {label}
       </Text>
+      <View
+        className={`h-1 w-1 rounded-full ${isActive ? 'bg-brand' : 'bg-transparent'}`}
+      />
     </Pressable>
   );
 }
@@ -87,10 +90,17 @@ export function Navbar({ activeTab = 'dashboard', onTabPress }: NavbarProps) {
 
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 border-t border-gray-100 bg-white"
-      style={{ paddingBottom: Math.max(insets.bottom, 8) }}
+      className="absolute bottom-0 left-0 right-0 rounded-t-[26px] border-t border-slate-100 bg-white"
+      style={{
+        paddingBottom: Math.max(insets.bottom, 8),
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.06,
+        shadowRadius: 18,
+        elevation: 10,
+      }}
     >
-      <View className="h-16 flex-row items-center px-2 pt-1">
+      <View className="h-[64px] flex-row items-center px-2 pt-1">
         {tabs.map(({ key, label, icon }) => (
           <NavItem
             key={key}

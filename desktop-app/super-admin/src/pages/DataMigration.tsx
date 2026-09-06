@@ -381,8 +381,8 @@ const DataMigration: React.FC = () => {
           {stage === 'preview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white rounded-xl border border-green-200 p-5">
-                  <div className="flex items-center space-x-2 text-green-700 mb-1">
+                <div className="bg-white rounded-xl border border-emerald-200 p-5">
+                  <div className="flex items-center space-x-2 text-emerald-700 mb-1">
                     <CheckCircle2 className="w-5 h-5" />
                     <p className="text-xs uppercase font-semibold">Ready to import</p>
                   </div>

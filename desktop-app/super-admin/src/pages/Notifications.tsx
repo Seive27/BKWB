@@ -30,15 +30,15 @@ const typeConfig: Record<
   NotificationType,
   { icon: React.FC<{ className?: string }>; color: string }
 > = {
-  announcement: { icon: Megaphone, color: 'bg-blue-50 text-blue-600' },
-  ticket_created: { icon: Ticket, color: 'bg-purple-50 text-purple-600' },
-  ticket_assigned: { icon: UserCheck, color: 'bg-indigo-50 text-indigo-600' },
+  announcement: { icon: Megaphone, color: 'bg-primary-50 text-primary-600' },
+  ticket_created: { icon: Ticket, color: 'bg-amber-50 text-amber-600' },
+  ticket_assigned: { icon: UserCheck, color: 'bg-primary-50 text-primary-600' },
   ticket_status: { icon: RefreshCw, color: 'bg-orange-50 text-orange-600' },
   ticket_resolved: { icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
-  reading_assigned: { icon: ClipboardList, color: 'bg-cyan-50 text-cyan-600' },
-  reading_approved: { icon: CheckCircle, color: 'bg-green-50 text-green-600' },
+  reading_assigned: { icon: ClipboardList, color: 'bg-primary-50 text-primary-600' },
+  reading_approved: { icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
   reading_rejected: { icon: XCircle, color: 'bg-red-50 text-red-600' },
-  billing: { icon: Receipt, color: 'bg-yellow-50 text-yellow-600' },
+  billing: { icon: Receipt, color: 'bg-amber-50 text-amber-600' },
   payment: { icon: CreditCard, color: 'bg-emerald-50 text-emerald-600' },
   system: { icon: Wrench, color: 'bg-gray-50 text-gray-600' },
 };
@@ -192,8 +192,8 @@ const Notifications: React.FC = () => {
           </div>
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
               </div>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Unread</p>
@@ -201,8 +201,8 @@ const Notifications: React.FC = () => {
           </div>
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-green-600" />
+              <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
+                <CheckCircle className="w-5 h-5 text-emerald-600" />
               </div>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Read</p>
@@ -305,7 +305,7 @@ const Notifications: React.FC = () => {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+        <div className={`fixed bottom-6 right-6 flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${        toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
           {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
           <span>{toast.message}</span>
         </div>

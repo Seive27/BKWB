@@ -16,14 +16,14 @@ export function SearchBar({
     <View className="mb-4 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3">
       <Image
         source={require('../../../assets/icons/search.png')}
-        style={{ width: 18, height: 18, marginRight: 1, tintColor: '#8FA3B5' }}
+        style={{ width: 18, height: 18, marginRight: 1, tintColor: '#94A3B8' }}
         contentFit="contain"
       />
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#8FA3B5"
+        placeholderTextColor="#94A3B8"
         className="flex-1 text-[15px] text-navy"
         autoCapitalize="none"
         autoCorrect={false}

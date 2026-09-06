@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDialog } from '@/components/ui/AppDialog';
 import { TicketForm } from '@/components/tickets/TicketForm';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import { friendlyErrorMessage } from '@/lib/errors';
 import { createTicket } from '@/services/ticketService';
 import type { Ticket, TicketDraft } from '@/types/tickets';
 
@@ -41,6 +43,7 @@ export default function CreateTicketScreen({
 }: CreateTicketScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
+  const dialog = useDialog();
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (draft: TicketDraft) => {
@@ -50,15 +53,19 @@ export default function CreateTicketScreen({
     setSubmitting(true);
     try {
       const ticket = await createTicket(draft);
-      Alert.alert(
+      dialog.alert(
         'Ticket Submitted',
         `Your ticket ${ticket.ticket_number} has been received. Staff will update you on its progress.`,
-        [{ text: 'View Ticket', onPress: () => onCreated?.(ticket) }]
+        {
+          tone: 'success',
+          actions: [{ label: 'View Ticket', onPress: () => onCreated?.(ticket) }],
+        }
       );
     } catch (error) {
-      Alert.alert(
-        'Submission failed',
-        error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+      dialog.alert(
+        'Submission Failed',
+        friendlyErrorMessage(error, 'An unexpected error occurred. Please try again.'),
+        { tone: 'danger' }
       );
     } finally {
       setSubmitting(false);

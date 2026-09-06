@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
+import { useDialog } from '@/components/ui/AppDialog';
 import { supabase } from '@/lib/supabase';
+import { friendlyErrorMessage } from '@/lib/errors';
 import {
   formatBillDate,
   formatPeriod,
@@ -20,6 +22,7 @@ const PAYMENT_OPTIONS = [
 ];
 
 export function CurrentBill() {
+  const dialog = useDialog();
   const [bill, setBill] = useState<ResidentBill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,11 @@ export function CurrentBill() {
 
   const handleTestPayMongoCheckout = async () => {
     if (!bill?.id) {
-      Alert.alert('No Bill Found', 'There is no bill record available to test.');
+      dialog.alert(
+        'No Bill Found',
+        'There is no bill record available to test.',
+        { tone: 'warning' }
+      );
       return;
     }
     if (testingPayMongo) return;
@@ -92,9 +99,12 @@ export function CurrentBill() {
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-      console.error('[PayMongo Test Error]:', errMsg);
-      Alert.alert('Test Checkout Error', errMsg);
+      console.error('[PayMongo Test Error]:', err);
+      dialog.alert(
+        'Checkout Error',
+        friendlyErrorMessage(err, 'Could not start the payment checkout. Please try again.'),
+        { tone: 'danger' }
+      );
     } finally {
       setTestingPayMongo(false);
     }

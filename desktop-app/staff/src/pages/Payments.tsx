@@ -47,13 +47,13 @@ function formatPeriod(period: string): string {
 function getStatusBadge(status: BillStatus) {
   switch (status) {
     case 'paid':
-      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-700">PAID</span>;
+      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">PAID</span>;
     case 'overdue':
       return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">OVERDUE</span>;
     case 'void':
       return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-500">VOID</span>;
     default:
-      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">UNPAID</span>;
+      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">UNPAID</span>;
   }
 }
 
@@ -455,7 +455,7 @@ const Payments: React.FC = () => {
                         {r.accountNumber ?? 'No Acct'}
                       </span>
                       {resUnpaid > 0 && (
-                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-yellow-300' : 'bg-red-500'}`} title={`${resUnpaid} unpaid bills`} />
+                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-red-500'}`} title={`${resUnpaid} unpaid bills`} />
                       )}
                     </button>
                   );
@@ -686,7 +686,7 @@ const Payments: React.FC = () => {
                           name="paymentMethod"
                           checked={paymentMethod === 'cash'}
                           onChange={() => setPaymentMethod('cash')}
-                          className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                          className="w-4 h-4 text-primary-600 accent-primary-600 focus:ring-primary-500"
                         />
                         <CreditCard className="w-5 h-5 text-primary-600 mx-3 flex-shrink-0" />
                         <div>
@@ -708,9 +708,9 @@ const Payments: React.FC = () => {
                           name="paymentMethod"
                           checked={paymentMethod === 'gcash'}
                           onChange={() => setPaymentMethod('gcash')}
-                          className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                          className="w-4 h-4 text-primary-600 accent-primary-600 focus:ring-primary-500"
                         />
-                        <Smartphone className="w-5 h-5 text-blue-600 mx-3 flex-shrink-0" />
+                        <Smartphone className="w-5 h-5 text-primary-600 mx-3 flex-shrink-0" />
                         <div>
                           <span className="text-sm font-bold block">GCash</span>
                           <span className="text-xs text-gray-500">Mobile wallet reference</span>
@@ -730,9 +730,9 @@ const Payments: React.FC = () => {
                           name="paymentMethod"
                           checked={paymentMethod === 'bank'}
                           onChange={() => setPaymentMethod('bank')}
-                          className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                          className="w-4 h-4 text-primary-600 accent-primary-600 focus:ring-primary-500"
                         />
-                        <Building className="w-5 h-5 text-indigo-600 mx-3 flex-shrink-0" />
+                        <Building className="w-5 h-5 text-primary-600 mx-3 flex-shrink-0" />
                         <div>
                           <span className="text-sm font-bold block">Bank Transfer</span>
                           <span className="text-xs text-gray-500">Bank deposit or online transfer</span>
@@ -1061,8 +1061,8 @@ Thank you for your payment!
           <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <CheckCircle className="w-10 h-10 text-emerald-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900">Payment Successful</h2>
           <p className="text-xs text-gray-500">Transaction recorded in system</p>
@@ -1070,9 +1070,9 @@ Thank you for your payment!
 
         {/* Scrollable Body */}
         <div className="p-6 space-y-5 overflow-y-auto">
-          <div className="p-4 bg-green-50/70 border border-green-200 rounded-xl text-center">
-            <p className="text-xs text-green-700 font-semibold uppercase mb-1">Total Paid</p>
-            <p className="text-3xl font-extrabold text-green-700">{formatPeso(payment.totalPaid)}</p>
+          <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center">
+            <p className="text-xs text-emerald-700 font-semibold uppercase mb-1">Total Paid</p>
+            <p className="text-3xl font-extrabold text-emerald-700">{formatPeso(payment.totalPaid)}</p>
           </div>
 
           <div className="space-y-2.5 text-sm">

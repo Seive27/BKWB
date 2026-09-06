@@ -38,8 +38,8 @@ const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
           >
             <defs>
               <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                <stop offset="5%" stopColor="#1f7a66" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#1f7a66" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -65,7 +65,7 @@ const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
             <Area
               type="monotone"
               dataKey="revenue"
-              stroke="#3b82f6"
+              stroke="#1f7a66"
               strokeWidth={2}
               fillOpacity={1}
               fill="url(#colorRevenue)"

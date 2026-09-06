@@ -169,7 +169,7 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
               value={completionText}
               onChangeText={setCompletionText}
               placeholder="Describe the work that was completed…"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#94A3B8"
               multiline
               numberOfLines={4}
               className="mt-4 min-h-[110px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-800"

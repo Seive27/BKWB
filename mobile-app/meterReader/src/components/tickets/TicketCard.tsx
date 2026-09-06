@@ -7,19 +7,19 @@ import {
 } from '@/services/ticketService';
 
 const STATUS_STYLES: Record<ReaderTicket['status'], string> = {
-  open: 'bg-slate-100 text-slate-600',
-  acknowledged: 'bg-sky-100 text-sky-700',
-  assigned: 'bg-indigo-100 text-indigo-700',
-  scheduled: 'bg-violet-100 text-violet-700',
-  in_progress: 'bg-amber-100 text-amber-700',
-  work_completed: 'bg-teal-100 text-teal-700',
+  open: 'bg-amber-100 text-amber-700',
+  acknowledged: 'bg-slate-100 text-slate-500',
+  assigned: 'bg-brand-100 text-brand-700',
+  scheduled: 'bg-brand-100 text-brand-700',
+  in_progress: 'bg-brand-100 text-brand-700',
+  work_completed: 'bg-emerald-100 text-emerald-700',
   resolved: 'bg-emerald-100 text-emerald-700',
   closed: 'bg-slate-100 text-slate-400',
 };
 
 const PRIORITY_STYLES: Record<ReaderTicket['priority'], string> = {
-  low: 'bg-slate-100 text-slate-600',
-  medium: 'bg-amber-100 text-amber-700',
+  low: 'bg-slate-100 text-slate-500',
+  medium: 'bg-orange-100 text-orange-700',
   high: 'bg-red-100 text-red-600',
 };
 
@@ -108,8 +108,8 @@ export function TicketCard({
           ) : null}
 
           {awaitingResident ? (
-            <View className="mt-4 rounded-xl bg-teal-50 px-3 py-3">
-              <Text className="text-[13px] leading-5 text-teal-800">
+            <View className="mt-4 rounded-xl bg-emerald-50 px-3 py-3">
+              <Text className="text-[13px] leading-5 text-emerald-800">
                 Waiting for the resident to confirm that the work is completed.
               </Text>
             </View>

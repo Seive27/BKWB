@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDialog } from '@/components/ui/AppDialog';
 import { ChatHeader } from '@/components/chatbot/ChatHeader';
 import { ChatInputBar } from '@/components/chatbot/ChatInputBar';
 import { ChatMessageBubble } from '@/components/chatbot/ChatMessageBubble';
@@ -41,6 +41,7 @@ function findFaqMatch(text: string): FaqItem | undefined {
 
 export default function ChatBot({ onBack }: ChatBotProps) {
   const insets = useSafeAreaInsets();
+  const dialog = useDialog();
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -102,7 +103,11 @@ export default function ChatBot({ onBack }: ChatBotProps) {
   const pickFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow photo library access to attach images.');
+      dialog.alert(
+        'Permission Needed',
+        'Please allow photo library access to attach images.',
+        { tone: 'warning' }
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -119,10 +124,13 @@ export default function ChatBot({ onBack }: ChatBotProps) {
   };
 
   const handleAttach = () => {
-    Alert.alert('Attach', 'Choose how to attach a file', [
-      { text: 'Photo Library', onPress: pickFromGallery },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    dialog.actionSheet({
+      title: 'Attach',
+      message: 'Choose how to attach a file.',
+      options: [
+        { label: 'Photo Library', onPress: () => { void pickFromGallery(); } },
+      ],
+    });
   };
 
   return (

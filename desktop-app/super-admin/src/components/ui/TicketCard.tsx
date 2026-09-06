@@ -17,29 +17,29 @@ interface TicketCardProps {
 const priorityConfig: Record<TicketPriority, { label: string; color: string; icon: React.ReactNode }> = {
   low: {
     label: 'Low',
-    color: 'bg-gray-100 text-gray-600 border-gray-200',
+    color: 'bg-slate-100 text-slate-500 border-slate-200',
     icon: null,
   },
   medium: {
     label: 'Medium',
-    color: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    color: 'bg-orange-100 text-orange-700 border-orange-200',
     icon: <Clock className="w-3 h-3" />,
   },
   high: {
     label: 'High',
-    color: 'bg-orange-50 text-orange-700 border-orange-200',
+    color: 'bg-red-100 text-red-600 border-red-200',
     icon: <AlertCircle className="w-3 h-3" />,
   },
 };
 
 const statusConfig: Record<TicketStatus, { label: string; color: string; dot: string }> = {
-  open: { label: 'Open', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  acknowledged: { label: 'Acknowledged', color: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
-  assigned: { label: 'Assigned', color: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
-  scheduled: { label: 'Scheduled', color: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-  in_progress: { label: 'Ongoing', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-  work_completed: { label: 'Work Completed', color: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
-  resolved: { label: 'Resolved', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  open: { label: 'Open', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  acknowledged: { label: 'Acknowledged', color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+  assigned: { label: 'Assigned', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
+  scheduled: { label: 'Scheduled', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
+  in_progress: { label: 'Ongoing', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-600' },
+  work_completed: { label: 'Work Completed', color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+  resolved: { label: 'Resolved', color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   closed: { label: 'Closed', color: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' },
 };
 

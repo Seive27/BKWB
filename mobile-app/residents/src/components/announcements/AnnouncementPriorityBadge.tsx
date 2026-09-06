@@ -9,7 +9,7 @@ const PRIORITY_STYLES: Record<
   AnnouncementPriority,
   { container: string; text: string; dot: string }
 > = {
-  normal: { container: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-700' },
+  normal: { container: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-400' },
   important: { container: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-700' },
   emergency: { container: 'bg-red-100', text: 'text-red-600', dot: 'bg-red-600' },
 };

@@ -11,6 +11,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { AreaChartCard } from '../components/ui/AreaChartCard';
 import { getAuditLogs } from '../services/auditLogService';
 import { getSystemSettings } from '../services/systemSettingsService';
 import type { AuditLogEntry, SystemSetting } from '../types';
@@ -77,8 +78,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return days;
   })();
 
-  const maxActivity = Math.max(...activityByDay.map((d) => d.value), 1);
-
   const getSettingMeta = (setting: SystemSetting) => {
     const value = setting.value as string | number | boolean;
     return {
@@ -94,9 +93,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       case 'login':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'logout':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
+        return 'bg-slate-50 text-slate-700 border-slate-200';
       case 'create':
-        return 'bg-purple-50 text-purple-700 border-purple-200';
+        return 'bg-primary-50 text-primary-700 border-primary-200';
       case 'delete':
         return 'bg-rose-50 text-rose-700 border-rose-200';
       case 'update':
@@ -218,13 +217,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending Readings</span>
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
                     <Ticket className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="mt-2 flex items-baseline justify-between">
                   <h2 className="text-2xl font-bold text-slate-900">{pendingReadings.toLocaleString()}</h2>
-                  <span className="text-[10px] text-purple-600 font-semibold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60">
+                  <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60">
                     Review Queue
                   </span>
                 </div>
@@ -254,36 +253,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* User Activity Trends (from audit logs) */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">System Activity Trends</h3>
-                    <p className="text-[11px] text-slate-500">Audit logs recorded over the last 7 days</p>
-                  </div>
-                  <Activity className="w-4 h-4 text-slate-400" />
-                </div>
-
-                <div className="h-44 flex items-end justify-between gap-2 pt-2">
-                  {activityByDay.map((dataPoint, index) => (
-                    <div key={index} className="flex-1 flex flex-col items-center h-full justify-end group">
-                      <div className="w-full max-w-[32px] bg-slate-100 rounded-t-md h-full flex items-end overflow-hidden">
-                        <div
-                          className="w-full bg-blue-600 group-hover:bg-blue-700 transition-all rounded-t-md"
-                          style={{ height: `${Math.max((dataPoint.value / maxActivity) * 100, 4)}%` }}
-                        ></div>
-                      </div>
-                      <span className="text-[10px] font-mono text-slate-400 mt-2">{dataPoint.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <p className="text-[10px] text-slate-400 text-center mt-3 pt-2 border-t border-slate-100">
-                  {recentLogs.length === 0
-                    ? 'No audit events recorded yet.'
-                    : `Aggregated from ${recentLogs.length} recent system audit events.`}
-                </p>
-              </div>
+              {/* User Activity Trends (from audit logs) — Bklit-style area chart */}
+              <AreaChartCard
+                title="System Activity Trends"
+                subtitle="Audit logs recorded over the last 7 days"
+                data={activityByDay}
+                color="#1F7A66"
+                right={<Activity className="w-4 h-4 text-slate-400" />}
+                footer={
+                  <p className="text-[10px] text-slate-400 text-center">
+                    {recentLogs.length === 0
+                      ? 'No audit events recorded yet.'
+                      : `Aggregated from ${recentLogs.length} recent system audit events.`}
+                  </p>
+                }
+              />
 
               {/* Global Settings Status (real system_settings) */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">

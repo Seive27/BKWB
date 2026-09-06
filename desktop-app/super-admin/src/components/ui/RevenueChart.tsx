@@ -28,8 +28,8 @@ const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
         <svg className="w-full h-full" viewBox="0 0 600 280" preserveAspectRatio="none">
           <defs>
             <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+              <stop offset="0%" stopColor="#1f7a66" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#1f7a66" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -64,7 +64,7 @@ const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
               return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
             }).join(' ')}
             fill="none"
-            stroke="#3b82f6"
+            stroke="#1f7a66"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -76,7 +76,7 @@ const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
             const y = 20 + (chartHeight - 40) * (1 - d.revenue / maxRevenue);
             return (
               <g key={i}>
-                <circle cx={x} cy={y} r="4" fill="#3b82f6" stroke="white" strokeWidth="2" />
+                <circle cx={x} cy={y} r="4" fill="#1f7a66" stroke="white" strokeWidth="2" />
                 <text x={x} y={chartHeight - 5} textAnchor="middle" fill="#6b7280" fontSize="11">{d.month}</text>
               </g>
             );

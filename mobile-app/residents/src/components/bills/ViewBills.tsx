@@ -299,7 +299,7 @@ export function ViewBills({ filter = 'all' }: ViewBillsProps) {
             <Text className="text-xl font-bold text-slate-800">
               {monthFilter === 'all' ? 'Bills' : formatPeriod(monthFilter)}
             </Text>
-            <Text className="rounded-full bg-blue-100 px-4 py-1 text-sm font-bold text-blue-400">
+            <Text className="rounded-full bg-brand-50 px-4 py-1 text-sm font-bold text-brand-700">
               {recordLabel}
             </Text>
           </View>

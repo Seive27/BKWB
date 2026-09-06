@@ -57,13 +57,13 @@ function initialsOf(name: string): string {
 function getStatusColor(status: BillStatus): string {
   switch (status) {
     case 'paid':
-      return 'bg-green-100 text-green-700';
+      return 'bg-emerald-100 text-emerald-700';
     case 'overdue':
       return 'bg-red-100 text-red-700';
     case 'void':
       return 'bg-gray-100 text-gray-500';
     default:
-      return 'bg-yellow-100 text-yellow-700';
+      return 'bg-amber-100 text-amber-700';
   }
 }
 
@@ -352,7 +352,7 @@ const Bills: React.FC = () => {
             <div
               className={`mb-6 rounded-lg px-4 py-3 text-sm ${
                 toast.type === 'success'
-                  ? 'bg-green-50 border border-green-200 text-green-700'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
                   : 'bg-red-50 border border-red-200 text-red-700'
               }`}
             >
@@ -382,8 +382,8 @@ const Bills: React.FC = () => {
 
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-6 h-6 text-green-600" />
+                <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Total Collected Revenue</p>
@@ -393,8 +393,8 @@ const Bills: React.FC = () => {
 
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-yellow-50 rounded-lg flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-yellow-600" />
+                <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-amber-600" />
                 </div>
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Pending Payments</p>
@@ -571,7 +571,7 @@ const Bills: React.FC = () => {
                                 <button
                                   onClick={() => handleMarkPaid(bill)}
                                   disabled={busyId === bill.id}
-                                  className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-40"
+                                  className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-40"
                                   title="Mark as paid"
                                 >
                                   <CheckCircle className="w-4 h-4" />
@@ -581,7 +581,7 @@ const Bills: React.FC = () => {
                                 <button
                                   onClick={() => handleMarkOverdue(bill)}
                                   disabled={busyId === bill.id}
-                                  className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded transition-colors disabled:opacity-40"
+                                  className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors disabled:opacity-40"
                                   title="Mark as overdue"
                                 >
                                   <AlertTriangle className="w-4 h-4" />

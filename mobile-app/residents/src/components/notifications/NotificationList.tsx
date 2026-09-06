@@ -37,8 +37,8 @@ function typeVariant(type: NotificationType): IconVariant {
 }
 
 const VARIANT_BG: Record<IconVariant, string> = {
-  megaphone: 'bg-blue-100',
-  ticket: 'bg-purple-100',
+  megaphone: 'bg-brand-100',
+  ticket: 'bg-brand-100',
   check: 'bg-emerald-100',
   drop: 'bg-orange-100',
   alert: 'bg-red-100',
@@ -48,8 +48,8 @@ const VARIANT_BG: Record<IconVariant, string> = {
 function MegaphoneIcon() {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M3 11l14-6v14L3 13v-2z" fill="#BFDBFE" stroke="#1E5B8C" strokeWidth={1.4} strokeLinejoin="round" />
-      <Path d="M17 8a4 4 0 010 8" stroke="#1E5B8C" strokeWidth={1.4} strokeLinecap="round" />
+      <Path d="M3 11l14-6v14L3 13v-2z" fill="#B0E0D3" stroke="#114C41" strokeWidth={1.4} strokeLinejoin="round" />
+      <Path d="M17 8a4 4 0 010 8" stroke="#114C41" strokeWidth={1.4} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -57,9 +57,9 @@ function MegaphoneIcon() {
 function TicketIcon() {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Rect x={3} y={5} width={18} height={14} rx={3} fill="#DDD6FE" />
-      <Path d="M15 5v14M3 10h12" stroke="#5B21B6" strokeWidth={1.4} strokeLinecap="round" />
-      <Circle cx={18} cy={12} r={1.2} fill="#5B21B6" />
+      <Rect x={3} y={5} width={18} height={14} rx={3} fill="#B0E0D3" />
+      <Path d="M15 5v14M3 10h12" stroke="#114C41" strokeWidth={1.4} strokeLinecap="round" />
+      <Circle cx={18} cy={12} r={1.2} fill="#114C41" />
     </Svg>
   );
 }

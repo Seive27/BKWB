@@ -74,7 +74,7 @@ function getInitials(firstName: string, lastName: string): string {
 function getStatusBadge(status: string | null) {
   switch (status) {
     case 'active':
-      return 'bg-green-100 text-green-700';
+      return 'bg-emerald-100 text-emerald-700';
     case 'inactive':
       return 'bg-gray-100 text-gray-700';
     case 'disconnected':
@@ -146,8 +146,7 @@ const AddResidentModal: React.FC<{
     const errors: Partial<Record<keyof AddResidentForm, string>> = {};
     if (!form.firstName.trim()) errors.firstName = 'First name is required.';
     if (!form.lastName.trim()) errors.lastName = 'Last name is required.';
-    if (!form.email.trim()) errors.email = 'Email address is required.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
       errors.email = 'Enter a valid email address.';
     if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
     const phoneError = validatePhone(form.phone);
@@ -261,7 +260,9 @@ const AddResidentModal: React.FC<{
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Email Address *</label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
+                  Email Address <span className="text-gray-400 normal-case">(optional)</span>
+                </label>
                 <input
                   type="email"
                   placeholder="resident@email.com"
@@ -269,7 +270,13 @@ const AddResidentModal: React.FC<{
                   onChange={(e) => set('email', e.target.value)}
                   className={`${inputClass} ${fieldErrors.email ? 'border-red-400' : ''}`}
                 />
-                {fieldErrors.email && <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>}
+                {fieldErrors.email ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Optional — the resident can add their email during first-login setup.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Date of Birth *</label>
@@ -308,7 +315,7 @@ const AddResidentModal: React.FC<{
                       title="Copy password"
                     >
                       {passwordCopied ? (
-                        <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+                        <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
                       ) : (
                         <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
                       )}
@@ -436,8 +443,8 @@ const SuccessView: React.FC<{
   return (
     <div className="bg-white rounded-2xl w-full max-w-md p-8">
       <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
-          <CheckCircle2 className="w-8 h-8 text-green-600" />
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-50 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold text-gray-900">Resident account created</h2>
         <p className="mt-1 text-sm text-gray-600">
@@ -446,10 +453,19 @@ const SuccessView: React.FC<{
       </div>
 
       <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-          <p className="text-sm font-semibold text-gray-900">{email}</p>
-        </div>
+        {email ? (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+            <p className="text-sm font-semibold text-gray-900">{email}</p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+            <p className="text-sm text-gray-500 italic">
+              Not provided — the resident will add and verify their email during first-login setup.
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
           <div className="flex items-center justify-between gap-2">
@@ -461,14 +477,16 @@ const SuccessView: React.FC<{
               className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
             >
               {copied ? (
-                <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+                <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
               ) : (
                 <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
               )}
             </button>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Resident should change this after their first login.
+            {email
+              ? 'Resident should change this after their first login.'
+              : 'The resident signs in with their Account Number + this password, then completes Account Setup.'}
           </p>
         </div>
         {accountNumber && (
@@ -786,6 +804,9 @@ const Residents: React.FC = () => {
     generatedFrom: 'dob' | 'random';
     profileIsActive: boolean;
   } | null>(null);
+  /** Issue-Login failures show in a modal — the page-top banner is invisible
+   *  when the user is scrolled down at the table row. */
+  const [issueLoginError, setIssueLoginError] = useState<string | null>(null);
 
   // Staff hold write permissions on residents (RLS is_staff()); other roles
   // viewing this page get read-only access.
@@ -915,7 +936,7 @@ const Residents: React.FC = () => {
     if (!resident.accountNumber) return;
     setOpenMenuId(null);
     setIssuingLoginId(resident.id);
-    setError(null);
+    setIssueLoginError(null);
     try {
       const result = await issueResidentLogin(resident.accountNumber);
       setIssuedCredentials({
@@ -925,7 +946,9 @@ const Residents: React.FC = () => {
         profileIsActive: result.profile_is_active,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to issue login credentials.');
+      setIssueLoginError(
+        err instanceof Error ? err.message : 'Failed to issue login credentials.'
+      );
     } finally {
       setIssuingLoginId(null);
     }
@@ -1023,8 +1046,8 @@ const Residents: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-1">ACTIVE ACCOUNTS</p>
                   <h3 className="text-3xl font-bold text-gray-900">{stats.activeAccounts.toLocaleString()}</h3>
                 </div>
-                <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                  <UserCheck className="w-6 h-6 text-green-600" />
+                <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <UserCheck className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
             </div>
@@ -1287,6 +1310,46 @@ const Residents: React.FC = () => {
           onClose={() => setIssuedCredentials(null)}
         />
       )}
+      {issueLoginError && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="border-b border-gray-200 px-8 py-6 flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="w-6 h-6 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Could Not Issue Login</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    The request failed before any password was changed.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIssueLoginError(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="px-8 py-6">
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+                {issueLoginError}
+              </div>
+              <p className="mt-3 text-xs text-gray-400">
+                Check your connection and try again. If the error mentions a missing edge
+                function, ask the administrator to deploy it.
+              </p>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end">
+              <button
+                onClick={() => setIssueLoginError(null)}
+                className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
@@ -1353,7 +1416,7 @@ const IssuedCredentialsModal: React.FC<{
                 title="Copy password"
               >
                 {copied ? (
-                  <Check className="w-4 h-4 text-green-600" />
+                  <Check className="w-4 h-4 text-emerald-600" />
                 ) : (
                   <Copy className="w-4 h-4 text-gray-600" />
                 )}

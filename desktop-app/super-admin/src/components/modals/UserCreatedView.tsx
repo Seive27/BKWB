@@ -39,8 +39,8 @@ const UserCreatedView: React.FC<UserCreatedInfo & { onClose: () => void }> = ({
   return (
     <div className="bg-white rounded-2xl w-full max-w-md p-8">
       <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
-          <CheckCircle2 className="w-8 h-8 text-green-600" />
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-50 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold text-gray-900">User Created Successfully</h2>
         <p className="mt-1 text-sm text-gray-600">
@@ -73,8 +73,8 @@ const UserCreatedView: React.FC<UserCreatedInfo & { onClose: () => void }> = ({
             >
               {copied ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-green-700">Password copied.</span>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700">Password copied.</span>
                 </>
               ) : (
                 <>

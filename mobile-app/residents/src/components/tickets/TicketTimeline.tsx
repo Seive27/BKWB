@@ -4,9 +4,9 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import type { TicketTimelineEvent, TicketTimelineEventType } from '@/types/tickets';
 
 const DOT_COLORS: Record<TicketTimelineEventType, string> = {
-  created: '#1E5B8C',
-  assigned: '#7C3AED',
-  status_change: '#F59E0B',
+  created: '#186252',
+  assigned: '#1F7A66',
+  status_change: '#D97706',
 };
 
 /** Resolved/Closed transitions get a distinct emerald dot. */

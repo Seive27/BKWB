@@ -48,9 +48,9 @@ const PAGE_SIZE = 10;
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; dot: string }> = {
   assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
   pending_review: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
-  approved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+  approved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   rejected: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
-  billed: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
+  billed: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
 };
 
 function fullName(person?: { first_name: string; last_name: string } | null): string {
@@ -433,8 +433,8 @@ const MeterReadings: React.FC = () => {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6 text-green-600" />
+                <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
               <p className="text-sm text-gray-600 mb-1">APPROVED</p>
@@ -1010,7 +1010,7 @@ const MeterReadings: React.FC = () => {
                 <button
                   onClick={handleApprove}
                   disabled={actionBusy}
-                  className="px-6 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
+                  className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
                 >
                   {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                   <CheckCircle className="w-4 h-4" />
@@ -1098,7 +1098,7 @@ const MeterReadings: React.FC = () => {
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-[70] px-5 py-3.5 rounded-xl shadow-2xl text-sm font-medium text-white animate-slide-up ${
-            toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+            toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >
           {toast.message}

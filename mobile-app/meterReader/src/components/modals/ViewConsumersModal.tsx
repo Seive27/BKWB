@@ -410,7 +410,7 @@ export function ViewConsumersModal({
 
           {loading ? (
             <View className="flex-1 items-center justify-center py-10">
-              <ActivityIndicator size="large" color="#0D4F5C" />
+              <ActivityIndicator size="large" color="#186252" />
               <Text className="mt-3 text-[14px] text-navy-muted">Loading consumers…</Text>
             </View>
           ) : error ? (

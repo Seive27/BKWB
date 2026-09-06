@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Svg, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StartReadingModal } from '@/components/modals/StartReadingModal';
@@ -143,7 +144,7 @@ export default function Dashboard({
           <View className="shrink flex-row items-center gap-1.5">
             <Image
               source={require('../../assets/icons/synch.png')}
-              style={{ width: 14, height: 14, tintColor: '#8FA3B5' }}
+              style={{ width: 14, height: 14, tintColor: '#94A3B8' }}
               contentFit="contain"
             />
             <Text className="text-xs text-navy-soft">
@@ -193,7 +194,7 @@ export default function Dashboard({
         >
           <Image
             source={require('../../assets/icons/synch.png')}
-            style={{ width: 20, height: 20, tintColor: '#1A4A6A' }}
+            style={{ width: 20, height: 20, tintColor: '#186252' }}
             contentFit="contain"
           />
           <Text className="text-base font-semibold text-sync-text">Refresh</Text>
@@ -216,7 +217,7 @@ export default function Dashboard({
             />
           </View>
           <View className="mt-2.5 flex-row items-center gap-2">
-            <View className="h-2 w-2 rounded-full bg-[#3B82C4]" />
+            <View className="h-2 w-2 rounded-full bg-brand-500" />
             <Text className="text-[13px] text-navy-muted">Readings to complete</Text>
           </View>
         </View>
@@ -320,13 +321,28 @@ function NotificationBell({ onPress }: { onPress?: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      className="relative h-9 w-9 items-center justify-center rounded-full bg-white active:opacity-70"
+      className="relative h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white active:opacity-70"
       accessibilityRole="button"
       accessibilityLabel={"Notifications" + (unreadCount > 0 ? ', ' + unreadCount + ' unread' : '')}
     >
-      <Text className="text-lg leading-none text-navy">🔔</Text>
+      <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"
+          stroke="#334155"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path
+          d="M10.3 21a1.94 1.94 0 0 0 3.4 0"
+          stroke="#334155"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
       {unreadCount > 0 ? (
-        <View className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5">
+        <View className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-brand px-1.5 py-0.5">
           <Text className="text-center text-[10px] font-bold text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </Text>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Bell } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 
@@ -20,43 +20,35 @@ const Header: React.FC<HeaderProps> = ({ onNavigate }) => {
   const roleLabel =
     user?.role === 'super_admin' ? 'Super Admin' : user?.role === 'staff' ? 'Water Billing Staff' : 'Staff';
 
-  return (
-    <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 h-14 flex items-center justify-between px-6 sticky top-0 z-20">
-      {/* Global Search Bar */}
-      <div className="flex-1 max-w-lg">
-        <div className="relative group">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
-          <input
-            type="text"
-            placeholder="Search residents, bills, meter serials, tickets..."
-            className="w-full pl-9 pr-14 py-1.5 bg-slate-50/80 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-            <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono font-medium text-slate-400 bg-white border border-slate-200 rounded shadow-2xs">
-              Ctrl+K
-            </kbd>
-          </div>
-        </div>
-      </div>
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
 
-      {/* Right Section */}
-      <div className="flex items-center space-x-3 sm:space-x-4">
-        {/* System Status Pill */}
+  return (
+    <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 h-16 flex items-center justify-between px-6 sticky top-0 z-20">
+      {/* Left Section: status + date */}
+      <div className="flex items-center space-x-3">
         <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-700 text-[11px] font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
           <span>System Online</span>
         </div>
+        <p className="hidden lg:block text-xs font-medium text-slate-400">{todayLabel}</p>
+      </div>
 
+      {/* Right Section */}
+      <div className="flex items-center space-x-3 sm:space-x-4">
         {/* Notifications Bell */}
         <button
           onClick={() => onNavigate?.('notifications')}
-          className="relative p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+          className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 transition-colors"
           aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
           title="Notifications"
         >
-          <Bell className="w-4 h-4" />
+          <Bell className="w-[18px] h-[18px]" />
           {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[9px] font-bold leading-none ring-2 ring-white">
+            <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-primary-600 text-white text-[9px] font-bold leading-none ring-2 ring-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
@@ -64,7 +56,7 @@ const Header: React.FC<HeaderProps> = ({ onNavigate }) => {
 
         {/* User Profile Pill */}
         <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-200">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-xs">
+          <div className="w-9 h-9 bg-primary-700 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-xs ring-1 ring-inset ring-white/20">
             {initials}
           </div>
           <div className="hidden sm:block text-left leading-tight">

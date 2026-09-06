@@ -66,7 +66,7 @@ function CreateTicketFab({ onPress }: { onPress: () => void }) {
       onPress={onPress}
       className="absolute bottom-24 right-5 z-10 h-12 w-12 items-center justify-center rounded-xl bg-brand shadow-md"
       style={{
-        shadowColor: '#1E5B8C',
+        shadowColor: '#186252',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 6,
@@ -223,7 +223,7 @@ export default function TicketsScreen({
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#1E5B8C" />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#186252" />
         }
       >
         <View className="px-4 pt-1">
@@ -250,7 +250,7 @@ export default function TicketsScreen({
             <View className="gap-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xl font-bold text-slate-800">Service Requests</Text>
-                <Text className="rounded-full bg-blue-100 px-4 py-1 text-sm font-bold text-blue-400">
+                <Text className="rounded-full bg-brand-50 px-4 py-1 text-sm font-bold text-brand-700">
                   {filtered.length} {filtered.length === 1 ? 'TICKET' : 'TICKETS'}
                 </Text>
               </View>

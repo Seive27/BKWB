@@ -274,7 +274,10 @@ export async function issueResidentLogin(
   });
 
   if (error) {
-    throw new Error(await getCreateUserErrorMessage(error));
+    // Log the full error object (with its Response context) for debugging,
+    // then surface the function's actual error message to the user.
+    console.error('[issueResidentLogin] edge function error:', error);
+    throw new Error(await getCreateUserErrorMessage(error, 'resident-login'));
   }
   if (!data?.ok) {
     const message =
@@ -303,7 +306,10 @@ export async function issueResidentLogin(
  *  - FunctionsFetchError: the request never reached the function — almost
  *    always because the function is not deployed to the Supabase project.
  */
-export async function getCreateUserErrorMessage(error: unknown): Promise<string> {
+export async function getCreateUserErrorMessage(
+  error: unknown,
+  functionName = 'create-user'
+): Promise<string> {
   if (!error || typeof error !== 'object') {
     return 'Failed to create resident. Please try again.';
   }
@@ -345,7 +351,7 @@ export async function getCreateUserErrorMessage(error: unknown): Promise<string>
     e.name === 'FunctionsFetchError' ||
     (e.message ?? '').includes('Failed to send a request to the Edge Function')
   ) {
-    return 'Could not reach the create-user edge function. It may not be deployed — run "supabase functions deploy create-user" and try again.';
+    return `Could not reach the ${functionName} edge function. It may not be deployed — run "supabase functions deploy ${functionName}" and try again.`;
   }
 
   return e.message || 'Failed to create resident. Please try again.';

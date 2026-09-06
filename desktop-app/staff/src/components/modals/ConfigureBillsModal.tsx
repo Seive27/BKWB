@@ -271,9 +271,9 @@ const ConfigureBillsModal: React.FC<ConfigureBillsModalProps> = ({ isOpen, onClo
                 )}
 
                 {success && (
-                  <div className="flex items-start space-x-3 p-4 bg-green-50 rounded-xl border border-green-100">
-                    <AlertCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-green-800">{success}</p>
+                  <div className="flex items-start space-x-3 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <AlertCircle className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-emerald-800">{success}</p>
                   </div>
                 )}
 

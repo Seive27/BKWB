@@ -131,7 +131,7 @@ const Messages: React.FC = () => {
                       <div
                         className={`w-2 h-2 rounded-full ${
                           selectedConversation.status === 'online'
-                            ? 'bg-green-500'
+                            ? 'bg-emerald-500'
                             : 'bg-gray-400'
                         }`}
                       ></div>

@@ -143,25 +143,25 @@ const Users: React.FC = () => {
 
   const getRoleColor = (role: string) => {
     const roleLower = role.toLowerCase();
-    if (roleLower.includes('super admin')) return 'text-purple-600 bg-purple-50';
-    if (roleLower.includes('staff')) return 'text-green-600 bg-green-50';
-    if (roleLower.includes('meter reader')) return 'text-indigo-600 bg-indigo-50';
+    if (roleLower.includes('super admin')) return 'text-amber-600 bg-amber-50';
+    if (roleLower.includes('staff')) return 'text-emerald-600 bg-emerald-50';
+    if (roleLower.includes('meter reader')) return 'text-primary-600 bg-primary-50';
     if (roleLower.includes('resident')) return 'text-gray-600 bg-gray-50';
     return 'text-gray-600 bg-gray-50';
   };
 
   const getStatusIndicator = (isActive: boolean) => {
     return isActive ? (
-      <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+      <Circle className="w-2 h-2 fill-emerald-500 text-emerald-500" />
     ) : (
       <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />
     );
   };
 
   const roleStats = [
-    { label: 'Super Admin', count: counts['Super Admin'], color: 'bg-purple-500' },
-    { label: 'Staff', count: counts.Staff, color: 'bg-green-500' },
-    { label: 'Meter Reader', count: counts['Meter Reader'], color: 'bg-indigo-500' },
+    { label: 'Super Admin', count: counts['Super Admin'], color: 'bg-amber-500' },
+    { label: 'Staff', count: counts.Staff, color: 'bg-emerald-500' },
+    { label: 'Meter Reader', count: counts['Meter Reader'], color: 'bg-primary-500' },
     { label: 'Resident', count: counts.Resident, color: 'bg-gray-500' },
   ];
 
@@ -193,7 +193,7 @@ const Users: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-600 uppercase font-medium">Active Users</span>
-              <UserCheck className="w-4 h-4 text-green-500" />
+              <UserCheck className="w-4 h-4 text-emerald-500" />
             </div>
             <h3 className="text-3xl font-bold text-gray-900">{activeNow.toLocaleString()}</h3>
           </div>
@@ -329,7 +329,7 @@ const Users: React.FC = () => {
                     <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full flex items-center justify-center">
+                          <div className="w-10 h-10 bg-primary-700 rounded-full flex items-center justify-center">
                             <span className="text-xs font-semibold text-white">
                               {getInitials(user.firstName, user.lastName)}
                             </span>

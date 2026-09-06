@@ -34,12 +34,12 @@ export function getPasswordStrength(checks: PasswordChecks): {
   const score = Object.values(checks).filter(Boolean).length;
 
   if (score <= 2) {
-    return { score, label: 'Weak password', color: '#EF4444' };
+    return { score, label: 'Weak password', color: '#DC2626' };
   }
   if (score <= 4) {
-    return { score, label: 'Medium password', color: '#F59E0B' };
+    return { score, label: 'Medium password', color: '#D97706' };
   }
-  return { score, label: 'Strong password', color: '#22C55E' };
+  return { score, label: 'Strong password', color: '#059669' };
 }
 
 /** Returns an error message when the password does not meet strength rules, otherwise null. */

@@ -1,14 +1,16 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDialog } from '@/components/ui/AppDialog';
 import { PriorityBadge } from '@/components/tickets/PriorityBadge';
 import { SkeletonTicketDetails } from '@/components/tickets/Skeletons';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { TicketTimeline } from '@/components/tickets/TicketTimeline';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { useTicketDetails } from '@/hooks/useTicketDetails';
+import { friendlyErrorMessage } from '@/lib/errors';
 import {
   confirmWorkCompleted,
   rejectWorkCompleted,
@@ -64,6 +66,7 @@ export default function TicketDetailsScreen({
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const { ticket, timeline, loading, error, refresh } = useTicketDetails(ticketId);
+  const dialog = useDialog();
   const [confirmBusy, setConfirmBusy] = useState(false);
   // Skeleton only on the very first load — background realtime refreshes
   // (loading flips true while ticket already exists) must not flash it.
@@ -76,41 +79,41 @@ export default function TicketDetailsScreen({
       await confirmWorkCompleted(ticketId);
       await refresh();
     } catch (err) {
-      Alert.alert(
-        'Could not confirm',
-        err instanceof Error ? err.message : 'An unexpected error occurred.'
+      dialog.alert(
+        'Could Not Confirm',
+        friendlyErrorMessage(err, 'An unexpected error occurred. Please try again.'),
+        { tone: 'danger' }
       );
     } finally {
       setConfirmBusy(false);
     }
   };
 
-  const handleReject = async () => {
-    Alert.alert(
-      'Work not completed?',
-      'This will send the ticket back so the assigned worker can continue.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Not Completed',
-          style: 'destructive',
-          onPress: async () => {
-            setConfirmBusy(true);
-            try {
-              await rejectWorkCompleted(ticketId);
-              await refresh();
-            } catch (err) {
-              Alert.alert(
-                'Could not update',
-                err instanceof Error ? err.message : 'An unexpected error occurred.'
-              );
-            } finally {
-              setConfirmBusy(false);
-            }
-          },
-        },
-      ]
-    );
+  const handleReject = () => {
+    dialog.confirm({
+      title: 'Work not completed?',
+      message: 'This will send the ticket back so the assigned worker can continue.',
+      confirmLabel: 'Not Completed',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: () => {
+        void (async () => {
+          setConfirmBusy(true);
+          try {
+            await rejectWorkCompleted(ticketId);
+            await refresh();
+          } catch (err) {
+            dialog.alert(
+              'Could Not Update',
+              friendlyErrorMessage(err, 'An unexpected error occurred. Please try again.'),
+              { tone: 'danger' }
+            );
+          } finally {
+            setConfirmBusy(false);
+          }
+        })();
+      },
+    });
   };
 
   return (
@@ -185,11 +188,11 @@ export default function TicketDetailsScreen({
                 </View>
 
                 {staffName(ticket) ? (
-                  <View className="mt-4 rounded-xl bg-violet-50 px-4 py-3">
-                    <Text className="text-xs font-semibold uppercase tracking-wide text-violet-500">
+                  <View className="mt-4 rounded-xl bg-brand-50 px-4 py-3">
+                    <Text className="text-xs font-semibold uppercase tracking-wide text-brand-600">
                       Assigned Staff
                     </Text>
-                    <Text className="mt-0.5 text-sm font-semibold text-violet-800">
+                    <Text className="mt-0.5 text-sm font-semibold text-brand-800">
                       {staffName(ticket)}
                     </Text>
                   </View>

@@ -216,8 +216,8 @@ function ForgotPasswordView({
     <div className="px-10 pt-6 pb-8">
       {sent ? (
         <div className="text-center">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
-            <CheckCircle2 className="w-7 h-7 text-green-600" />
+          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-50 flex items-center justify-center">
+            <CheckCircle2 className="w-7 h-7 text-emerald-600" />
           </div>
           <h2 className="text-lg font-bold text-gray-900">Check your inbox</h2>
           <p className="mt-2 text-sm text-gray-600 leading-6">

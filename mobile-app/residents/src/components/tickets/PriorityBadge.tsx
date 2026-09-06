@@ -6,9 +6,9 @@ const PRIORITY_STYLES: Record<
   TicketPriority,
   { container: string; text: string; dot: string }
 > = {
-  low: { container: 'bg-slate-200', text: 'text-slate-600', dot: 'bg-slate-600' },
-  medium: { container: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-700' },
-  high: { container: 'bg-red-100', text: 'text-red-600', dot: 'bg-red-600' },
+  low: { container: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-400' },
+  medium: { container: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-600' },
+  high: { container: 'bg-red-100', text: 'text-red-600', dot: 'bg-red-500' },
 };
 
 type PriorityBadgeProps = {

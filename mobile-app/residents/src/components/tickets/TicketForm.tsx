@@ -130,8 +130,8 @@ export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
             value={description}
             onChangeText={setDescription}
             placeholder="Describe the issue or request in detail..."
-            placeholderTextColor="#9CA3AF"
-            className="rounded-md border border-[#D1D5DB] bg-white px-4 py-3.5 text-[15px] text-[#1E3A5F]"
+            placeholderTextColor="#94A3B8"
+            className="rounded-md border border-[#CBD5E1] bg-white px-4 py-3.5 text-[15px] text-slate-800"
             multiline
             numberOfLines={5}
             style={{ minHeight: 110, textAlignVertical: 'top' }}

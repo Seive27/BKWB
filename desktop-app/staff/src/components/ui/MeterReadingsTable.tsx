@@ -30,7 +30,7 @@ const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; borde
   pending_review: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   approved: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   rejected: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-  billed: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+  billed: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
 };
 
 const MeterReadingsTable: React.FC<MeterReadingsTableProps> = ({ readings }) => {

@@ -11,7 +11,7 @@ export default {
     userInterfaceStyle: 'automatic',
     android: {
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
+        backgroundColor: '#EEF7F4',
         foregroundImage: './assets/images/android-icon-foreground.png',
       },
       predictiveBackGestureEnabled: false,
@@ -27,7 +27,7 @@ export default {
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#208AEF',
+          backgroundColor: '#114C41',
           image: './assets/images/splash-icon.png',
           imageWidth: 76,
         },

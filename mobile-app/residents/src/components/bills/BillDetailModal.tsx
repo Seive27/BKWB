@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
 import { DetailModal } from '@/components/ui/DetailModal';
+import { useDialog } from '@/components/ui/AppDialog';
 import { supabase } from '@/lib/supabase';
+import { friendlyErrorMessage } from '@/lib/errors';
 import {
   downloadBillPdf,
   formatBillDate,
@@ -49,6 +51,7 @@ export function BillDetailModal({
   onClose: () => void;
   bill: ResidentBill | null;
 }) {
+  const dialog = useDialog();
   const [downloading, setDownloading] = useState(false);
   const [testingPayMongo, setTestingPayMongo] = useState(false);
 
@@ -59,7 +62,11 @@ export function BillDetailModal({
 
   const handleTestPayMongoCheckout = async () => {
     if (!bill?.id) {
-      Alert.alert('No Bill Found', 'There is no bill record available to test.');
+      dialog.alert(
+        'No Bill Found',
+        'There is no bill record available to test.',
+        { tone: 'warning' }
+      );
       return;
     }
     if (testingPayMongo) return;
@@ -108,9 +115,12 @@ export function BillDetailModal({
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-      console.error('[PayMongo Test Error]:', errMsg);
-      Alert.alert('Test Checkout Error', errMsg);
+      console.error('[PayMongo Test Error]:', err);
+      dialog.alert(
+        'Checkout Error',
+        friendlyErrorMessage(err, 'Could not start the payment checkout. Please try again.'),
+        { tone: 'danger' }
+      );
     } finally {
       setTestingPayMongo(false);
     }
@@ -122,9 +132,10 @@ export function BillDetailModal({
     try {
       await downloadBillPdf(bill);
     } catch (err) {
-      Alert.alert(
-        'Download failed',
-        err instanceof Error ? err.message : 'Could not create the PDF receipt.'
+      dialog.alert(
+        'Download Failed',
+        friendlyErrorMessage(err, 'Could not create the PDF receipt. Please try again.'),
+        { tone: 'danger' }
       );
     } finally {
       setDownloading(false);

@@ -1,12 +1,14 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDialog } from '@/components/ui/AppDialog';
 import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
+import { friendlyErrorMessage } from '@/lib/errors';
 import { getPasswordValidationError } from '@/lib/password';
 import {
   getCurrentProfile,
@@ -86,7 +88,7 @@ function EditableField({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor="#94A3B8"
         className="mt-1 text-sm font-semibold text-slate-800"
         style={{ padding: 0 }}
         keyboardType={keyboardType}
@@ -103,6 +105,7 @@ export default function Profile({
 }: ProfileProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
+  const dialog = useDialog();
 
   const [profile, setProfile] = useState<FullProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,9 +140,10 @@ export default function Profile({
       setProfile(data);
       applyProfileFields(data);
     } catch (err) {
-      Alert.alert(
+      dialog.alert(
         'Profile Error',
-        err instanceof Error ? err.message : 'Failed to load your profile.'
+        friendlyErrorMessage(err, 'Failed to load your profile.'),
+        { tone: 'danger' }
       );
     } finally {
       setLoading(false);
@@ -159,7 +163,11 @@ export default function Profile({
 
   const handleSaveProfile = async () => {
     if (!lastName.trim() || !firstName.trim()) {
-      Alert.alert('Missing Name', 'Last name and first name are required.');
+      dialog.alert(
+        'Missing Name',
+        'Last name and first name are required.',
+        { tone: 'warning' }
+      );
       return;
     }
     setSaving(true);
@@ -182,9 +190,13 @@ export default function Profile({
           : prev
       );
       setIsEditing(false);
-      Alert.alert('Profile Updated', 'Your profile has been updated.');
+      dialog.toast('Profile updated');
     } catch (err) {
-      Alert.alert('Update Failed', err instanceof Error ? err.message : 'Could not save your profile.');
+      dialog.alert(
+        'Update Failed',
+        friendlyErrorMessage(err, 'Could not save your profile.'),
+        { tone: 'danger' }
+      );
     } finally {
       setSaving(false);
     }
@@ -199,9 +211,10 @@ export default function Profile({
       setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
     } catch (err) {
       setAvatarUrl(profile?.avatar_url ?? '');
-      Alert.alert(
+      dialog.alert(
         'Upload Failed',
-        err instanceof Error ? err.message : 'Could not update your profile picture.'
+        friendlyErrorMessage(err, 'Could not update your profile picture.'),
+        { tone: 'danger' }
       );
     } finally {
       setUploadingAvatar(false);
@@ -211,7 +224,11 @@ export default function Profile({
   const pickFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission Required', 'Please allow photo library access to choose a profile picture.');
+      dialog.alert(
+        'Permission Required',
+        'Please allow photo library access to choose a profile picture.',
+        { tone: 'warning' }
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -228,7 +245,11 @@ export default function Profile({
   const takeSelfie = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission Required', 'Please allow camera access to take a profile selfie.');
+      dialog.alert(
+        'Permission Required',
+        'Please allow camera access to take a profile selfie.',
+        { tone: 'warning' }
+      );
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -245,11 +266,14 @@ export default function Profile({
 
   const handleChangeAvatar = () => {
     if (uploadingAvatar) return;
-    Alert.alert('Change Profile Picture', 'Choose how you want to update your photo.', [
-      { text: 'Take Selfie', onPress: () => { void takeSelfie(); } },
-      { text: 'Choose from Gallery', onPress: () => { void pickFromGallery(); } },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    dialog.actionSheet({
+      title: 'Change Profile Picture',
+      message: 'Choose how you want to update your photo.',
+      options: [
+        { label: 'Take Selfie', onPress: () => { void takeSelfie(); } },
+        { label: 'Choose from Gallery', onPress: () => { void pickFromGallery(); } },
+      ],
+    });
   };
 
   const handleChangePassword = async () => {
@@ -269,25 +293,29 @@ export default function Profile({
       setNewPassword('');
       setConfirmPassword('');
       setShowPasswordForm(false);
-      Alert.alert('Password Updated', 'Your password has been changed.');
+      dialog.toast('Password updated');
     } catch (err) {
-      Alert.alert('Update Failed', err instanceof Error ? err.message : 'Could not change your password.');
+      dialog.alert(
+        'Update Failed',
+        friendlyErrorMessage(err, 'Could not change your password.'),
+        { tone: 'danger' }
+      );
     } finally {
       setSavingPassword(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: () => {
-          signOut().catch(() => {});
-        },
+    dialog.confirm({
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out of your account?',
+      confirmLabel: 'Sign Out',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: () => {
+        signOut().catch(() => {});
       },
-    ]);
+    });
   };
 
   return (
@@ -317,7 +345,7 @@ export default function Profile({
             accessibilityLabel="Change profile picture"
           >
             {uploadingAvatar ? (
-              <ActivityIndicator size="small" color="#208AEF" />
+              <ActivityIndicator size="small" color="#186252" />
             ) : (
               <Image
                 source={require('../../assets/icons/camera.png')}
@@ -440,7 +468,7 @@ export default function Profile({
                         if (passwordError) setPasswordError('');
                       }}
                       placeholder="Enter password"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor="#94A3B8"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
                       autoCapitalize="none"
@@ -454,7 +482,7 @@ export default function Profile({
                         if (passwordError) setPasswordError('');
                       }}
                       placeholder="Re-enter new password"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor="#94A3B8"
                       secureTextEntry
                       className="mt-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
                       autoCapitalize="none"

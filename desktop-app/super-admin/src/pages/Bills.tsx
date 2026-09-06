@@ -86,9 +86,9 @@ const Bills: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid':
-        return 'bg-green-100 text-green-700';
+        return 'bg-emerald-100 text-emerald-700';
       case 'unpaid':
-        return 'bg-yellow-100 text-yellow-700';
+        return 'bg-amber-100 text-amber-700';
       case 'overdue':
         return 'bg-red-100 text-red-700';
       default:
@@ -126,10 +126,10 @@ const Bills: React.FC = () => {
 
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-emerald-600" />
               </div>
-              <span className="text-sm font-semibold text-green-600">+12%</span>
+              <span className="text-sm font-semibold text-emerald-600">+12%</span>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Total Collected Revenue</p>
             <h3 className="text-3xl font-bold text-gray-900">₱142,500</h3>
@@ -138,10 +138,10 @@ const Bills: React.FC = () => {
 
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-yellow-50 rounded-lg flex items-center justify-center">
-                <Clock className="w-6 h-6 text-yellow-600" />
+              <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
+                <Clock className="w-6 h-6 text-amber-600" />
               </div>
-              <span className="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-700 rounded">
+              <span className="px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 rounded">
                 High
               </span>
             </div>
@@ -317,10 +317,10 @@ const Bills: React.FC = () => {
                         <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors">
+                        <button className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors">
                           <CheckCircle className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded transition-colors">
+                        <button className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">
                           <Edit className="w-4 h-4" />
                         </button>
                         <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">

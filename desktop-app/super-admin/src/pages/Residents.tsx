@@ -61,7 +61,7 @@ function getInitials(firstName: string, lastName: string): string {
 function getStatusBadge(status: string | null) {
   switch (status) {
     case 'active':
-      return 'bg-green-100 text-green-700';
+      return 'bg-emerald-100 text-emerald-700';
     case 'inactive':
       return 'bg-gray-100 text-gray-700';
     case 'disconnected':
@@ -133,8 +133,7 @@ const AddResidentModal: React.FC<{
     const errors: Partial<Record<keyof AddResidentForm, string>> = {};
     if (!form.firstName.trim()) errors.firstName = 'First name is required.';
     if (!form.lastName.trim()) errors.lastName = 'Last name is required.';
-    if (!form.email.trim()) errors.email = 'Email address is required.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
       errors.email = 'Enter a valid email address.';
     if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
     const phoneError = validatePhone(form.phone);
@@ -248,7 +247,9 @@ const AddResidentModal: React.FC<{
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Email Address *</label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
+                  Email Address <span className="text-gray-400 normal-case">(optional)</span>
+                </label>
                 <input
                   type="email"
                   placeholder="resident@email.com"
@@ -256,7 +257,13 @@ const AddResidentModal: React.FC<{
                   onChange={(e) => set('email', e.target.value)}
                   className={`${inputClass} ${fieldErrors.email ? 'border-red-400' : ''}`}
                 />
-                {fieldErrors.email && <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>}
+                {fieldErrors.email ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Optional — the resident can add their email during first-login setup.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Date of Birth *</label>
@@ -295,7 +302,7 @@ const AddResidentModal: React.FC<{
                       title="Copy password"
                     >
                       {passwordCopied ? (
-                        <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+                        <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
                       ) : (
                         <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
                       )}
@@ -423,8 +430,8 @@ const SuccessView: React.FC<{
   return (
     <div className="bg-white rounded-2xl w-full max-w-md p-8">
       <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
-          <CheckCircle2 className="w-8 h-8 text-green-600" />
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-50 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold text-gray-900">Resident account created</h2>
         <p className="mt-1 text-sm text-gray-600">
@@ -433,10 +440,19 @@ const SuccessView: React.FC<{
       </div>
 
       <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-          <p className="text-sm font-semibold text-gray-900">{email}</p>
-        </div>
+        {email ? (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+            <p className="text-sm font-semibold text-gray-900">{email}</p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+            <p className="text-sm text-gray-500 italic">
+              Not provided — the resident will add and verify their email during first-login setup.
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
           <div className="flex items-center justify-between gap-2">
@@ -448,14 +464,16 @@ const SuccessView: React.FC<{
               className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
             >
               {copied ? (
-                <><Check className="w-3.5 h-3.5 text-green-600" /><span className="text-green-700">Copied</span></>
+                <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
               ) : (
                 <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
               )}
             </button>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Resident should change this after their first login.
+            {email
+              ? 'Resident should change this after their first login.'
+              : 'The resident signs in with their Account Number + this password, then completes Account Setup.'}
           </p>
         </div>
         {accountNumber && (
@@ -605,8 +623,8 @@ const Residents: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-1">ACTIVE ACCOUNTS</p>
                   <h3 className="text-3xl font-bold text-gray-900">{stats.activeAccounts.toLocaleString()}</h3>
                 </div>
-                <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                  <UserCheck className="w-6 h-6 text-green-600" />
+                <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <UserCheck className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
             </div>

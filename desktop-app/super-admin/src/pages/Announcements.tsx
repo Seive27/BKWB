@@ -43,7 +43,7 @@ const CATEGORY_META: Record<AnnouncementCategory, { label: string; badge: string
   schedule: { label: 'Water Schedule', badge: 'bg-blue-100 text-blue-700', icon: Calendar },
   interruption: { label: 'Water Interruption', badge: 'bg-red-100 text-red-700', icon: AlertTriangle },
   maintenance: { label: 'Maintenance', badge: 'bg-orange-100 text-orange-700', icon: Wrench },
-  billing: { label: 'Billing', badge: 'bg-purple-100 text-purple-700', icon: Receipt },
+  billing: { label: 'Billing', badge: 'bg-emerald-100 text-emerald-700', icon: Receipt },
   general: { label: 'General Announcement', badge: 'bg-gray-100 text-gray-700', icon: Info },
   emergency: { label: 'Emergency', badge: 'bg-rose-100 text-rose-700', icon: Siren },
 };
@@ -119,10 +119,10 @@ const STATUS_LABELS: Record<AnnouncementStatus, string> = {
 };
 
 const STATUS_BADGES: Record<AnnouncementStatus, string> = {
-  published: 'bg-green-100 text-green-700',
+  published: 'bg-emerald-100 text-emerald-700',
   draft: 'bg-gray-100 text-gray-600',
   scheduled: 'bg-blue-100 text-blue-700',
-  expired: 'bg-yellow-100 text-yellow-700',
+  expired: 'bg-amber-100 text-amber-700',
 };
 
 // ── Skeleton ──
@@ -684,8 +684,8 @@ const Announcements: React.FC = () => {
               <h3 className="text-3xl font-bold text-gray-900">{stats.total}</h3>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
-              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center mb-3">
-                <CheckCircle2 className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center mb-3">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Published</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.published}</h3>
@@ -705,8 +705,8 @@ const Announcements: React.FC = () => {
               <h3 className="text-3xl font-bold text-gray-900">{stats.drafts}</h3>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
-              <div className="w-12 h-12 bg-yellow-50 rounded-lg flex items-center justify-center mb-3">
-                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center mb-3">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Expired</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.expired}</h3>
@@ -962,7 +962,7 @@ const Announcements: React.FC = () => {
                               </button>
                               <button
                                 onClick={() => setEditingAnnouncement(announcement)}
-                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                                className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                                 title="Edit"
                               >
                                 <Edit className="w-4 h-4" />
@@ -1072,7 +1072,7 @@ const Announcements: React.FC = () => {
       {toast && (
         <div
           className={`fixed top-5 right-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${
-            toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+            toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >
           {toast.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}

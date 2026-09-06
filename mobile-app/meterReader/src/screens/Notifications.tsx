@@ -17,29 +17,29 @@ type NotificationsProps = {
 type Filter = 'all' | 'unread';
 
 const TYPE_COLORS: Record<NotificationType, string> = {
-  announcement: 'bg-sky-100',
-  ticket_created: 'bg-purple-100',
-  ticket_assigned: 'bg-indigo-100',
+  announcement: 'bg-brand-100',
+  ticket_created: 'bg-amber-100',
+  ticket_assigned: 'bg-brand-100',
   ticket_status: 'bg-orange-100',
   ticket_resolved: 'bg-emerald-100',
-  reading_assigned: 'bg-cyan-100',
+  reading_assigned: 'bg-brand-100',
   reading_approved: 'bg-emerald-100',
   reading_rejected: 'bg-red-100',
-  billing: 'bg-yellow-100',
+  billing: 'bg-amber-100',
   payment: 'bg-emerald-100',
   system: 'bg-slate-200',
 };
 
 const TYPE_DOTS: Record<NotificationType, string> = {
-  announcement: '#0ea5e9',
-  ticket_created: '#8b5cf6',
-  ticket_assigned: '#6366f1',
+  announcement: '#30947E',
+  ticket_created: '#D97706',
+  ticket_assigned: '#186252',
   ticket_status: '#f97316',
   ticket_resolved: '#10b981',
-  reading_assigned: '#06b6d4',
+  reading_assigned: '#1F7A66',
   reading_approved: '#10b981',
-  reading_rejected: '#ef4444',
-  billing: '#eab308',
+  reading_rejected: '#DC2626',
+  billing: '#D97706',
   payment: '#10b981',
   system: '#64748b',
 };

@@ -15,7 +15,7 @@ export function SyncAllButton({ onPress }: SyncAllButtonProps) {
     >
       <Image
         source={require('../../../assets/icons/synch.png')}
-        style={{ width: 12, height: 12, tintColor: '#5A6F82' }}
+        style={{ width: 12, height: 12, tintColor: '#64748B' }}
         contentFit="contain"
       />
       <Text

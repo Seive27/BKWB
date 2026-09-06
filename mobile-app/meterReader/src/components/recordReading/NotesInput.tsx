@@ -18,7 +18,7 @@ export function NotesInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#8FA3B5"
+        placeholderTextColor="#94A3B8"
         multiline
         textAlignVertical="top"
         className="min-h-[96px] rounded-2xl bg-surface px-4 py-3 text-[14px] leading-5 text-navy"

@@ -23,7 +23,7 @@ const CATEGORY_META: Record<AnnouncementCategory, { label: string; badge: string
   schedule: { label: 'Water Schedule', badge: 'bg-blue-100 text-blue-700', icon: Calendar },
   interruption: { label: 'Water Interruption', badge: 'bg-red-100 text-red-700', icon: AlertTriangle },
   maintenance: { label: 'Maintenance', badge: 'bg-orange-100 text-orange-700', icon: Wrench },
-  billing: { label: 'Billing', badge: 'bg-purple-100 text-purple-700', icon: Receipt },
+  billing: { label: 'Billing', badge: 'bg-emerald-100 text-emerald-700', icon: Receipt },
   general: { label: 'General Announcement', badge: 'bg-gray-100 text-gray-700', icon: Info },
   emergency: { label: 'Emergency', badge: 'bg-rose-100 text-rose-700', icon: Siren },
 };

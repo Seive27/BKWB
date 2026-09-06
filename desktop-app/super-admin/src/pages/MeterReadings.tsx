@@ -21,9 +21,9 @@ type StatusFilter = 'all' | MeterReadingStatus;
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; dot: string }> = {
   assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
   pending_review: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
-  approved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+  approved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   rejected: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
-  billed: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
+  billed: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
 };
 
 function fullName(person?: { first_name: string; last_name: string } | null): string {
@@ -125,8 +125,8 @@ const MeterReadings: React.FC = () => {
           </div>
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-emerald-600" />
               </div>
             </div>
             <p className="text-sm text-gray-600 mb-1">APPROVED</p>

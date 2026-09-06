@@ -174,7 +174,6 @@ export default function Dashboard({
             onViewBills={() => setQuickActionScreen('viewBills')}
             onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
             onTickets={() => setQuickActionScreen('tickets')}
-            onNotifications={() => onTabPress?.('announcements')}
           />
 
           <AnnouncementsPreview onViewAll={() => onTabPress?.('announcements')} />
@@ -322,7 +321,7 @@ function NotificationBell({ onPress }: { onPress?: () => void }) {
     >
       <Image
         source={require('../../assets/QuickActionsIcon/Notifications.svg')}
-        style={{ width: 20, height: 20 }}
+        style={{ width: 20, height: 20, tintColor: '#FFFFFF' }}
         contentFit="contain"
       />
       {unreadCount > 0 ? (

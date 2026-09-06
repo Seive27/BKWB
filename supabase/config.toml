@@ -3,8 +3,22 @@ project_id = "bkwb"
 [functions.create-user]
 verify_jwt = true
 
+[functions.resident-login]
+# The function verifies the caller's JWT itself (auth.getUser + staff/super_admin
+# role check server-side), so platform-level JWT validation is redundant. With
+# verify_jwt on, the gateway's 401 can strip CORS headers and the staff app only
+# sees "Failed to fetch".
+verify_jwt = false
+
 [functions.create-paymongo-checkout]
 verify_jwt = true
+
+[functions.resident-account-login]
+# Pure authentication helper: it verifies the Account Number + password
+# combination against GoTrue itself and must be callable by unauthenticated
+# users (that's its whole purpose). No service data is exposed; failures are
+# indistinguishable from a wrong password.
+verify_jwt = false
 
 [functions.send-email]
 # Internal-only helper, invoked edge-to-edge by create-user with the project

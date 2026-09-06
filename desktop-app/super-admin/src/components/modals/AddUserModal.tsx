@@ -651,7 +651,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                           title="Copy password"
                         >
                           {passwordCopied ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <Check className="w-4 h-4 text-emerald-500" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -715,7 +715,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                         title="Copy password"
                       >
                         {passwordCopied ? (
-                          <Check className="w-4 h-4 text-green-500" />
+                          <Check className="w-4 h-4 text-emerald-500" />
                         ) : (
                           <Copy className="w-4 h-4" />
                         )}

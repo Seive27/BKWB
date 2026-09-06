@@ -46,10 +46,10 @@ function LocationIcon() {
 function AvailableIcon() {
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={9} stroke="#1E5B8C" strokeWidth={1.8} />
+      <Circle cx={12} cy={12} r={9} stroke="#186252" strokeWidth={1.8} />
       <Path
         d="M8 12.5l2.5 2.5L16 9.5"
-        stroke="#1E5B8C"
+        stroke="#186252"
         strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"

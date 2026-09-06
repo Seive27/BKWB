@@ -33,7 +33,7 @@ function CheckIcon() {
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
       <Path
         d="M20 6L9 17l-5-5"
-        stroke="#1E5B8C"
+        stroke="#186252"
         strokeWidth={2.5}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -72,7 +72,7 @@ export function SelectField({
         onPress={handlePress}
         disabled={disabled}
         className={`flex-row items-center justify-between rounded-md border bg-white px-4 py-3.5 ${
-          disabled ? 'border-[#E5E7EB] bg-slate-50' : 'border-[#D1D5DB] active:border-brand'
+          disabled ? 'border-[#E2E8F0] bg-slate-50' : 'border-[#CBD5E1] active:border-brand'
         }`}
         accessibilityRole="button"
         accessibilityState={{ disabled, expanded: open }}
@@ -81,13 +81,13 @@ export function SelectField({
       >
         <Text
           className={`text-[15px] ${
-            value ? 'text-[#1E3A5F]' : disabled ? 'text-[#9CA3AF]' : 'text-[#9CA3AF]'
+            value ? 'text-slate-800' : disabled ? 'text-[#94A3B8]' : 'text-[#94A3B8]'
           }`}
           numberOfLines={1}
         >
           {value ?? (disabled ? disabledPlaceholder : placeholder)}
         </Text>
-        <ChevronDown color={disabled ? '#9CA3AF' : '#6B7280'} />
+        <ChevronDown color={disabled ? '#94A3B8' : '#64748B'} />
       </Pressable>
 
       <Modal

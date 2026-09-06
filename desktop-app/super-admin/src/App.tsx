@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import Sidebar from './components/layout/Sidebar';
+import Header from './components/layout/Header';
+import SessionTimeout from './components/ui/SessionTimeout';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthOverlay from './components/layout/AuthOverlay';
@@ -26,7 +28,7 @@ import SystemSettings from './pages/SystemSettings';
 
 function AppContent() {
   const [activePage, setActivePage] = useState('dashboard');
-  const { showLogin, isClosing, login, logout } = useAuth();
+  const { showLogin, isClosing, isAuthenticated, login, logout } = useAuth();
 
   const renderContent = () => {
     switch (activePage) {
@@ -82,6 +84,7 @@ function AppContent() {
       >
         <Sidebar activePage={activePage} onPageChange={setActivePage} onLogout={logout} />
         <div className="flex-1 flex flex-col overflow-hidden">
+          <Header onNavigate={setActivePage} />
           {renderContent()}
         </div>
       </div>
@@ -95,6 +98,9 @@ function AppContent() {
           onLogin={login}
         />
       )}
+
+      {/* Idle session watchdog — signs out after inactivity */}
+      {isAuthenticated && <SessionTimeout onExpire={logout} />}
     </>
   );
 }

@@ -16,16 +16,16 @@ function TicketsIllustration() {
         <Path
           d="M18 34h52a4 4 0 014 4v6a8 8 0 000 14v6a4 4 0 01-4 4H18a4 4 0 01-4-4v-6a8 8 0 000-14v-6a4 4 0 014-4z"
           fill="#FFFFFF"
-          stroke="#BFDBFE"
+          stroke="#D8EFE8"
           strokeWidth={2.5}
         />
         {/* Perforation dots */}
-        <Circle cx={28} cy={44} r={1.5} fill="#BFDBFE" />
-        <Circle cx={28} cy={50} r={1.5} fill="#BFDBFE" />
-        <Circle cx={60} cy={44} r={1.5} fill="#BFDBFE" />
-        <Circle cx={60} cy={50} r={1.5} fill="#BFDBFE" />
+        <Circle cx={28} cy={44} r={1.5} fill="#D8EFE8" />
+        <Circle cx={28} cy={50} r={1.5} fill="#D8EFE8" />
+        <Circle cx={60} cy={44} r={1.5} fill="#D8EFE8" />
+        <Circle cx={60} cy={50} r={1.5} fill="#D8EFE8" />
         {/* Center badge */}
-        <Circle cx={44} cy={47} r={13} fill="#1E5B8C" />
+        <Circle cx={44} cy={47} r={13} fill="#186252" />
         <Path
           d="M37.5 47l4.5 4.5 8.5-9.5"
           stroke="#FFFFFF"
@@ -34,8 +34,8 @@ function TicketsIllustration() {
           strokeLinejoin="round"
         />
         {/* Sparkles */}
-        <Path d="M68 22l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2 1.2-3z" fill="#93C5FD" />
-        <Path d="M20 20l0.9 2.3 2.3 0.9-2.3 0.9L20 26.4l-0.9-2.3-2.3-0.9 2.3-0.9L20 20z" fill="#BFDBFE" />
+        <Path d="M68 22l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2 1.2-3z" fill="#B0E0D3" />
+        <Path d="M20 20l0.9 2.3 2.3 0.9-2.3 0.9L20 26.4l-0.9-2.3-2.3-0.9 2.3-0.9L20 20z" fill="#D8EFE8" />
       </Svg>
     </View>
   );

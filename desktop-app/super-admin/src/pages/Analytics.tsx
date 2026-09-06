@@ -107,22 +107,22 @@ function TrendCard({
 }
 
 const TICKET_COLORS: Record<TicketStatus, string> = {
-  open: '#3b82f6',
-  acknowledged: '#0ea5e9',
-  assigned: '#8b5cf6',
-  scheduled: '#a855f7',
-  in_progress: '#f59e0b',
-  work_completed: '#14b8a6',
+  open: '#f59e0b',
+  acknowledged: '#94a3b8',
+  assigned: '#1f7a66',
+  scheduled: '#1f7a66',
+  in_progress: '#186252',
+  work_completed: '#059669',
   resolved: '#10b981',
-  closed: '#6b7280',
+  closed: '#64748b',
 };
 
 const READING_COLORS: Record<MeterReadingStatus, string> = {
-  assigned: '#0ea5e9',
+  assigned: '#1f7a66',
   pending_review: '#f59e0b',
   approved: '#10b981',
   rejected: '#ef4444',
-  billed: '#8b5cf6',
+  billed: '#059669',
 };
 
 function exportAnalyticsCsv(data: AnalyticsData) {
@@ -174,8 +174,8 @@ const Analytics: React.FC = () => {
     if (!summary) return [];
     return [
       { label: 'Total Residents', value: summary.totalResidents, icon: Users, color: 'bg-blue-50 text-blue-600' },
-      { label: 'Active Staff', value: summary.activeStaff, icon: UserCheck, color: 'bg-green-50 text-green-600' },
-      { label: 'Open Tickets', value: summary.tickets.open, icon: Ticket, color: 'bg-purple-50 text-purple-600' },
+      { label: 'Active Staff', value: summary.activeStaff, icon: UserCheck, color: 'bg-emerald-50 text-emerald-600' },
+      { label: 'Open Tickets', value: summary.tickets.open, icon: Ticket, color: 'bg-amber-50 text-amber-600' },
       { label: 'Assigned Readings', value: summary.readings.assigned, icon: ClipboardList, color: 'bg-cyan-50 text-cyan-600' },
       { label: 'Total Announcements', value: summary.totalAnnouncements, icon: Megaphone, color: 'bg-orange-50 text-orange-600' },
     ];
@@ -298,12 +298,12 @@ const Analytics: React.FC = () => {
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <TrendCard title="Ticket Trends" subtitle={'Tickets created per day (last ' + days + ' days)'} data={data.ticketTrends} type="line" color="#3b82f6" />
+              <TrendCard title="Ticket Trends" subtitle={'Tickets created per day (last ' + days + ' days)'} data={data.ticketTrends} type="line" color="#1f7a66" />
               <TrendCard title="Reading Completion" subtitle={'Readings submitted per day (last ' + days + ' days)'} data={data.readingCompletionTrends} type="bar" color="#10b981" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
               <TrendCard title="Announcement Activity" subtitle={'Announcements published per day (last ' + days + ' days)'} data={data.announcementActivity} type="bar" color="#f59e0b" />
-              <TrendCard title="Resident Growth" subtitle={'Cumulative residents (last ' + Math.max(days, 90) + ' days)'} data={data.residentGrowth} type="line" color="#8b5cf6" />
+              <TrendCard title="Resident Growth" subtitle={'Cumulative residents (last ' + Math.max(days, 90) + ' days)'} data={data.residentGrowth} type="line" color="#1f7a66" />
             </div>
           </>
         ) : null}

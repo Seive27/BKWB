@@ -36,7 +36,7 @@ export function MeterReadingInput({
           keyboardType="numeric"
           className="flex-1 text-center text-[28px] font-bold text-navy"
           placeholder="0"
-          placeholderTextColor="#8FA3B5"
+          placeholderTextColor="#94A3B8"
         />
         <Text className="ml-2 text-base font-semibold text-navy-muted">{unit}</Text>
       </View>

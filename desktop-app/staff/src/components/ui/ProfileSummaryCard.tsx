@@ -48,8 +48,8 @@ const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({ profile }) => {
         <div>
           <label className="text-xs font-medium text-gray-500 uppercase">Account Status</label>
           <div className="flex items-center space-x-2 mt-1">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-semibold text-green-600">
+            <CheckCircle className="w-4 h-4 text-emerald-600" />
+            <span className="text-sm font-semibold text-emerald-600">
               {profile.accountStatus.charAt(0).toUpperCase() + profile.accountStatus.slice(1)}
             </span>
           </div>

@@ -19,9 +19,9 @@ const ConversationCard: React.FC<ConversationCardProps> = ({
       case 'complaint':
         return 'bg-red-100 text-red-700';
       case 'inquiry':
-        return 'bg-purple-100 text-purple-700';
+        return 'bg-slate-100 text-slate-700';
       case 'payment':
-        return 'bg-green-100 text-green-700';
+        return 'bg-emerald-100 text-emerald-700';
       case 'technical':
         return 'bg-orange-100 text-orange-700';
       default:

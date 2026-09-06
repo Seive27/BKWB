@@ -25,7 +25,7 @@ export function PasswordStrengthHint({ password }: PasswordStrengthHintProps) {
                 key={index}
                 className="h-1.5 flex-1 rounded-full"
                 style={{
-                  backgroundColor: index < strength.score ? strength.color : '#E5E7EB',
+                  backgroundColor: index < strength.score ? strength.color : '#E2E8F0',
                 }}
               />
             ))}
@@ -40,11 +40,11 @@ export function PasswordStrengthHint({ password }: PasswordStrengthHintProps) {
               <div key={rule.key} className="flex items-center gap-2">
                 <div
                   className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                  style={{ backgroundColor: met ? '#22C55E' : '#9CA3AF' }}
+                  style={{ backgroundColor: met ? '#059669' : '#94A3B8' }}
                 >
                   ✓
                 </div>
-                <span className={`text-xs ${met ? 'text-green-500' : 'text-gray-500'}`}>
+                <span className={`text-xs ${met ? 'text-emerald-500' : 'text-gray-500'}`}>
                   {rule.label}
                 </span>
               </div>

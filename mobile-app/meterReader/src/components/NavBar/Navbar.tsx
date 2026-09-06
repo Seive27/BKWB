@@ -10,7 +10,7 @@ type NavbarProps = {
   onTabPress?: (tab: NavTab) => void;
 };
 
-const ACTIVE_COLOR = '#1E3A5F';
+const ACTIVE_COLOR = '#186252';
 const INACTIVE_COLOR = '#94A3B8';
 
 const tabs: {
@@ -74,7 +74,7 @@ function NavItem({
     >
       <View
         className={`items-center justify-center gap-1 rounded-2xl px-2.5 py-2 ${
-          isActive ? 'bg-white shadow-sm' : ''
+          isActive ? 'bg-brand-50' : ''
         }`}
       >
         <Image
@@ -100,8 +100,15 @@ export function Navbar({ activeTab = 'dashboard', onTabPress }: NavbarProps) {
 
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 rounded-t-[28px] bg-white"
-      style={{ paddingBottom: Math.max(insets.bottom, 8) }}
+      className="absolute bottom-0 left-0 right-0 rounded-t-[28px] border-t border-slate-100 bg-white"
+      style={{
+        paddingBottom: Math.max(insets.bottom, 8),
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.06,
+        shadowRadius: 18,
+        elevation: 10,
+      }}
     >
       <View className="h-[72px] flex-row items-center px-2 pt-2">
         {tabs.map(({ key, label, icon }) => (

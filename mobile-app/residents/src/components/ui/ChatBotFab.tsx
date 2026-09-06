@@ -12,7 +12,7 @@ export function ChatBotFab({ onPress }: ChatBotFabProps) {
       onPress={onPress}
       className="absolute bottom-24 right-5 z-10 h-12 w-12 items-center justify-center rounded-xl bg-brand shadow-md active:bg-brand-dark"
       style={{
-        shadowColor: '#1E5B8C',
+        shadowColor: '#186252',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 6,

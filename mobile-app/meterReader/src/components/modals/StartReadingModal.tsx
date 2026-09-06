@@ -327,7 +327,7 @@ export function StartReadingModal({
                   value={meterNumber}
                   onChangeText={setMeterNumber}
                   placeholder="Enter meter number"
-                  placeholderTextColor="#8FA3B5"
+                  placeholderTextColor="#94A3B8"
                   className="rounded-2xl border border-slate-200 bg-surface px-4 py-3.5 text-[15px] text-navy"
                   autoCapitalize="characters"
                   autoCorrect={false}
@@ -454,7 +454,7 @@ export function StartReadingModal({
                     }
                     keyboardType="numeric"
                     placeholder="0"
-                    placeholderTextColor="#8FA3B5"
+                    placeholderTextColor="#94A3B8"
                     className="flex-1 text-center text-[28px] font-bold text-navy"
                   />
                   <Text className="ml-2 text-base font-semibold text-navy-muted">

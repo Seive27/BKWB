@@ -1,5 +1,5 @@
 ﻿import { ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
 /**
  * Shared expandable-detail modal used by announcements, water schedule
@@ -30,17 +30,23 @@ export function DetailModal({
     disabled?: boolean;
   };
 }) {
+  const { height: windowHeight } = useWindowDimensions();
+  // Leave room for handle, title block, and action buttons within the 88% sheet.
+  const footerReserve = secondaryAction ? 340 : 260;
+  const scrollMaxHeight = Math.round(windowHeight * 0.88) - footerReserve;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        className="flex-1 justify-end bg-black/50"
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Close details"
-      >
+      <View className="flex-1 justify-end">
         <Pressable
+          className="absolute inset-0 bg-black/50"
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close details"
+        />
+
+        <View
           className="max-h-[88%] rounded-t-3xl bg-white"
-          onPress={(e) => e.stopPropagation()}
           accessibilityLiveRegion="polite"
         >
           {/* Drag handle */}
@@ -58,8 +64,12 @@ export function DetailModal({
 
           <ScrollView
             className="px-5"
-            style={{ maxHeight: 520 }}
-            showsVerticalScrollIndicator={false}
+            style={{ maxHeight: Math.max(160, scrollMaxHeight) }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            bounces
           >
             {children}
           </ScrollView>
@@ -87,8 +97,8 @@ export function DetailModal({
               <Text className="text-base font-semibold text-white">Close</Text>
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

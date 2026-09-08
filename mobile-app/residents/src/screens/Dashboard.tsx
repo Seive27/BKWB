@@ -24,10 +24,15 @@ import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
 
+export type DashboardDeepLink = 'tickets' | 'waterSchedule' | 'createTicket' | null;
+
 type DashboardProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   onOpenChatBot?: () => void;
+  /** One-shot deep link from Lunas (consumed on mount / change). */
+  deepLink?: DashboardDeepLink;
+  onDeepLinkConsumed?: () => void;
 };
 
 type QuickActionScreen =
@@ -35,6 +40,7 @@ type QuickActionScreen =
   | 'payments'
   | 'waterSchedule'
   | 'tickets'
+  | 'createTicket'
   | 'notifications'
   | null;
 
@@ -42,10 +48,20 @@ export default function Dashboard({
   activeTab = 'dashboard',
   onTabPress,
   onOpenChatBot,
+  deepLink = null,
+  onDeepLinkConsumed,
 }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
+
+  useEffect(() => {
+    if (!deepLink) return;
+    if (deepLink === 'tickets') setQuickActionScreen('tickets');
+    else if (deepLink === 'waterSchedule') setQuickActionScreen('waterSchedule');
+    else if (deepLink === 'createTicket') setQuickActionScreen('createTicket');
+    onDeepLinkConsumed?.();
+  }, [deepLink, onDeepLinkConsumed]);
   const [residentName, setResidentName] = useState('Resident');
   const [currentBill, setCurrentBill] = useState<ResidentBill | null>(null);
   const [billLoading, setBillLoading] = useState(true);
@@ -119,7 +135,7 @@ export default function Dashboard({
     );
   }
 
-  if (quickActionScreen === 'tickets') {
+  if (quickActionScreen === 'tickets' || quickActionScreen === 'createTicket') {
     return (
       <TicketsScreen
         activeTab={activeTab}
@@ -128,6 +144,7 @@ export default function Dashboard({
           onTabPress?.(tab);
         }}
         onBack={() => setQuickActionScreen(null)}
+        initialView={quickActionScreen === 'createTicket' ? 'create' : 'list'}
       />
     );
   }

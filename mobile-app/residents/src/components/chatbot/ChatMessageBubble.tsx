@@ -1,12 +1,14 @@
 import { Image } from 'expo-image';
 import { Pressable, Text, View } from 'react-native';
 
-import type { ChatMessage } from '@/types/chatbot';
+import type { ChatMessage, LunasAction } from '@/types/chatbot';
 
 type ChatMessageBubbleProps = {
   message: ChatMessage;
   showAvatar?: boolean;
   onAttachPhotos?: () => void;
+  onAction?: (action: LunasAction) => void;
+  onSuggestion?: (text: string) => void;
 };
 
 function formatTime(date: Date): string {
@@ -21,6 +23,8 @@ export function ChatMessageBubble({
   message,
   showAvatar = false,
   onAttachPhotos,
+  onAction,
+  onSuggestion,
 }: ChatMessageBubbleProps) {
   const isUser = message.sender === 'user';
 
@@ -59,6 +63,38 @@ export function ChatMessageBubble({
         </View>
       </View>
       <Text className="ml-10 mt-1.5 text-xs text-slate-400">{formatTime(message.createdAt)}</Text>
+
+      {message.actions?.length ? (
+        <View className="ml-10 mt-2 flex-row flex-wrap gap-2">
+          {message.actions.map((action, index) => (
+            <Pressable
+              key={`${action.label}-${index}`}
+              onPress={() => onAction?.(action)}
+              className="rounded-full border border-brand/30 bg-white px-3.5 py-2 active:bg-brand/5"
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+            >
+              <Text className="text-sm font-semibold text-brand">{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {message.suggestions?.length ? (
+        <View className="ml-10 mt-2 flex-row flex-wrap gap-2">
+          {message.suggestions.map((suggestion) => (
+            <Pressable
+              key={suggestion}
+              onPress={() => onSuggestion?.(suggestion)}
+              className="rounded-full bg-slate-100 px-3 py-1.5 active:bg-slate-200"
+              accessibilityRole="button"
+              accessibilityLabel={suggestion}
+            >
+              <Text className="text-xs font-medium text-slate-600">{suggestion}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {message.showAttachCard ? (
         <Pressable

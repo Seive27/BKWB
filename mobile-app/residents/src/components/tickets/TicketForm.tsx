@@ -7,7 +7,6 @@ import {
   TICKET_SUBJECTS,
   type TicketCategory,
   type TicketDraft,
-  type TicketPriority,
 } from '@/types/tickets';
 
 const CATEGORIES: TicketCategory[] = [
@@ -17,12 +16,6 @@ const CATEGORIES: TicketCategory[] = [
   'water_quality',
   'meter_concern',
   'other',
-];
-
-const PRIORITIES: { value: TicketPriority; label: string }[] = [
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
 ];
 
 type TicketFormProps = {
@@ -60,7 +53,6 @@ function Chip({
 
 export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
   const [category, setCategory] = useState<TicketCategory | null>(null);
-  const [priority, setPriority] = useState<TicketPriority>('medium');
   const [subject, setSubject] = useState<string | null>(null);
   const [description, setDescription] = useState('');
 
@@ -78,7 +70,6 @@ export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
     onSubmit?.({
       subject: subject.trim(),
       category,
-      priority,
       description: description.trim(),
     });
   };
@@ -124,7 +115,7 @@ export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
           />
         </View>
 
-        <View className="mb-4">
+        <View>
           <FieldLabel>Details</FieldLabel>
           <TextInput
             value={description}
@@ -137,17 +128,6 @@ export function TicketForm({ onSubmit, submitting = false }: TicketFormProps) {
             style={{ minHeight: 110, textAlignVertical: 'top' }}
             maxLength={500}
           />
-        </View>
-
-        <View>
-          <FieldLabel>Priority</FieldLabel>
-          <View className="flex-row flex-wrap gap-2">
-            {PRIORITIES.map((item) => (
-              <Chip key={item.value} selected={priority === item.value} onPress={() => setPriority(item.value)}>
-                {item.label}
-              </Chip>
-            ))}
-          </View>
         </View>
       </View>
 

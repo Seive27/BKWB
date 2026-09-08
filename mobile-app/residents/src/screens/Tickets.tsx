@@ -29,6 +29,8 @@ type TicketsScreenProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   onBack?: () => void;
+  /** Open create form immediately (e.g. from Lunas deep link). */
+  initialView?: 'list' | 'create';
 };
 
 type TicketView = 'list' | 'create' | 'details';
@@ -106,11 +108,12 @@ export default function TicketsScreen({
   activeTab = 'dashboard',
   onTabPress,
   onBack,
+  initialView = 'list',
 }: TicketsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
 
-  const [view, setView] = useState<TicketView>('list');
+  const [view, setView] = useState<TicketView>(initialView === 'create' ? 'create' : 'list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TicketFilter>('all');

@@ -65,6 +65,14 @@ ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NUL
 -- Self-heal data and foreign keys for legacy schemas
 DO $$
 BEGIN
+  -- Legacy draft used status 'unpaid'; app + RPC use 'pending' (+ void).
+  UPDATE public.bills SET status = 'pending' WHERE status = 'unpaid';
+  ALTER TABLE public.bills DROP CONSTRAINT IF EXISTS bills_status_check;
+  ALTER TABLE public.bills ALTER COLUMN status SET DEFAULT 'pending';
+  ALTER TABLE public.bills
+    ADD CONSTRAINT bills_status_check
+    CHECK (status IN ('pending', 'paid', 'overdue', 'void'));
+
   -- If legacy schema had 'amount' instead of 'amount_due', copy values across
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -1139,5 +1147,250 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.import_resident_rows(JSONB, TEXT) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- 11. TICKET WORK COMPLETED → RESIDENT CONFIRM → RESOLVED
+-- Meter readers mark work_completed; residents confirm to resolve.
+-- ============================================================
+
+DO $$
+DECLARE
+  con_name TEXT;
+BEGIN
+  FOR con_name IN
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ANY(con.conkey)
+    JOIN pg_class cls ON cls.oid = con.conrelid
+    JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+    WHERE ns.nspname = 'public'
+      AND cls.relname = 'tickets'
+      AND con.contype = 'c'
+      AND att.attname = 'status'
+  LOOP
+    EXECUTE format('ALTER TABLE public.tickets DROP CONSTRAINT %I', con_name);
+  END LOOP;
+END $$;
+
+ALTER TABLE public.tickets
+  ADD CONSTRAINT tickets_status_check
+  CHECK (status IN (
+    'open',
+    'acknowledged',
+    'assigned',
+    'scheduled',
+    'in_progress',
+    'work_completed',
+    'resolved',
+    'closed'
+  ));
+
+CREATE OR REPLACE FUNCTION public.enforce_ticket_status_transition()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_allowed TEXT[];
+BEGIN
+  IF NEW.status IS NOT DISTINCT FROM OLD.status THEN
+    RETURN NEW;
+  END IF;
+
+  v_allowed := CASE OLD.status
+    WHEN 'open' THEN ARRAY['acknowledged', 'assigned', 'in_progress']::TEXT[]
+    WHEN 'acknowledged' THEN ARRAY['assigned', 'in_progress']::TEXT[]
+    WHEN 'assigned' THEN ARRAY['scheduled', 'in_progress']::TEXT[]
+    WHEN 'scheduled' THEN ARRAY['in_progress', 'work_completed', 'resolved']::TEXT[]
+    WHEN 'in_progress' THEN ARRAY['work_completed', 'resolved', 'closed']::TEXT[]
+    WHEN 'work_completed' THEN ARRAY['resolved', 'in_progress']::TEXT[]
+    WHEN 'resolved' THEN ARRAY['closed', 'in_progress']::TEXT[]
+    WHEN 'closed' THEN ARRAY[]::TEXT[]
+    ELSE ARRAY[]::TEXT[]
+  END;
+
+  IF NEW.status = ANY(v_allowed) THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Invalid ticket status transition from % to %.', OLD.status, NEW.status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.guard_ticket_reader_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_role TEXT;
+BEGIN
+  SELECT public.current_user_role_name() INTO v_role;
+
+  IF v_role IN ('staff', 'super_admin') OR public.is_staff_or_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_role = 'resident' THEN
+    IF (
+      NEW.resident_id IS DISTINCT FROM OLD.resident_id
+      OR NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
+      OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
+      OR NEW.ticket_number IS DISTINCT FROM OLD.ticket_number
+      OR NEW.category IS DISTINCT FROM OLD.category
+      OR NEW.subject IS DISTINCT FROM OLD.subject
+      OR NEW.description IS DISTINCT FROM OLD.description
+      OR NEW.priority IS DISTINCT FROM OLD.priority
+      OR NEW.resolution IS DISTINCT FROM OLD.resolution
+      OR NEW.internal_notes IS DISTINCT FROM OLD.internal_notes
+    ) THEN
+      RAISE EXCEPTION 'Residents cannot change assignment-level or resolution fields.';
+    END IF;
+
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+      IF NOT (
+        (OLD.status = 'work_completed' AND NEW.status IN ('resolved', 'in_progress'))
+      ) THEN
+        RAISE EXCEPTION 'Residents can only confirm or reject completed work.';
+      END IF;
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  IF (
+    NEW.resident_id IS DISTINCT FROM OLD.resident_id
+    OR NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
+    OR NEW.category IS DISTINCT FROM OLD.category
+    OR NEW.subject IS DISTINCT FROM OLD.subject
+    OR NEW.description IS DISTINCT FROM OLD.description
+    OR NEW.priority IS DISTINCT FROM OLD.priority
+    OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
+    OR NEW.ticket_number IS DISTINCT FROM OLD.ticket_number
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'Meter readers cannot change ticket assignment-level fields.';
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (OLD.status = 'assigned' AND NEW.status IN ('scheduled', 'in_progress'))
+      OR (OLD.status = 'scheduled' AND NEW.status IN ('in_progress', 'work_completed'))
+      OR (OLD.status = 'in_progress' AND NEW.status = 'work_completed')
+    ) THEN
+      RAISE EXCEPTION 'Meter readers cannot set the ticket to that status.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP POLICY IF EXISTS "Residents can update own open tickets" ON public.tickets;
+CREATE POLICY "Residents can update own open tickets"
+  ON public.tickets
+  FOR UPDATE
+  TO authenticated
+  USING (
+    resident_id = (SELECT auth.uid())
+    AND status NOT IN ('resolved', 'closed')
+    AND deleted_at IS NULL
+  )
+  WITH CHECK (
+    resident_id = (SELECT auth.uid())
+    AND deleted_at IS NULL
+    AND status IN (
+      'open',
+      'acknowledged',
+      'assigned',
+      'scheduled',
+      'in_progress',
+      'work_completed',
+      'resolved'
+    )
+  );
+
+DROP POLICY IF EXISTS "Meter readers can update own assigned tickets" ON public.tickets;
+CREATE POLICY "Meter readers can update own assigned tickets"
+  ON public.tickets
+  FOR UPDATE
+  TO authenticated
+  USING (
+    assigned_staff_id = (SELECT auth.uid())
+    AND status IN ('assigned', 'scheduled', 'in_progress')
+    AND deleted_at IS NULL
+  )
+  WITH CHECK (
+    assigned_staff_id = (SELECT auth.uid())
+    AND deleted_at IS NULL
+    AND status IN ('assigned', 'scheduled', 'in_progress', 'work_completed')
+  );
+
+DROP POLICY IF EXISTS "Residents can add timeline events to own tickets" ON public.ticket_timeline;
+CREATE POLICY "Residents can add timeline events to own tickets"
+  ON public.ticket_timeline
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    event_type IN ('created', 'status_change')
+    AND ticket_id IN (
+      SELECT id FROM public.tickets
+      WHERE resident_id = (SELECT auth.uid()) AND deleted_at IS NULL
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.notify_ticket_updated()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_type TEXT;
+  v_title TEXT;
+BEGIN
+  IF NEW.deleted_at IS NULL
+     AND NEW.assigned_staff_id IS NOT NULL
+     AND NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id THEN
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (
+      NEW.assigned_staff_id,
+      'ticket_assigned',
+      'Ticket assigned to you: ' || NEW.ticket_number,
+      NEW.subject,
+      'ticket',
+      NEW.id
+    );
+  END IF;
+
+  IF NEW.deleted_at IS NULL
+     AND NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NEW.status = 'resolved' THEN
+      v_type := 'ticket_resolved';
+      v_title := 'Ticket ' || NEW.ticket_number || ' has been resolved';
+    ELSIF NEW.status = 'work_completed' THEN
+      v_type := 'ticket_status';
+      v_title := 'Please confirm: is the work on ticket ' || NEW.ticket_number || ' completed?';
+    ELSE
+      v_type := 'ticket_status';
+      v_title := 'Ticket ' || NEW.ticket_number || ' is now ' || replace(NEW.status, '_', ' ');
+    END IF;
+
+    INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+    VALUES (
+      NEW.resident_id,
+      v_type,
+      v_title,
+      NEW.subject,
+      'ticket',
+      NEW.id
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
 
 NOTIFY pgrst, 'reload schema';

@@ -6,9 +6,10 @@ import AccountSetup from '@/screens/AccountSetup';
 import Announcements from '@/screens/Announcements';
 import Bills from '@/screens/Bills';
 import ChatBot from '@/screens/ChatBot';
-import Dashboard from '@/screens/Dashboard';
+import Dashboard, { type DashboardDeepLink } from '@/screens/Dashboard';
 import Login from '@/screens/Login';
 import Profile from '@/screens/Profile';
+import type { LunasNavigateScreen } from '@/types/chatbot';
 
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -19,6 +20,7 @@ export default function HomeScreen() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [showChatBot, setShowChatBot] = useState(false);
+  const [dashboardDeepLink, setDashboardDeepLink] = useState<DashboardDeepLink>(null);
 
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
@@ -47,6 +49,32 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const handleLunasNavigate = (screen: LunasNavigateScreen) => {
+    setShowChatBot(false);
+    switch (screen) {
+      case 'Bills':
+        setActiveTab('bills');
+        break;
+      case 'Announcements':
+        setActiveTab('announcements');
+        break;
+      case 'Tickets':
+        setActiveTab('dashboard');
+        setDashboardDeepLink('tickets');
+        break;
+      case 'CreateTicket':
+        setActiveTab('dashboard');
+        setDashboardDeepLink('createTicket');
+        break;
+      case 'WaterSchedule':
+        setActiveTab('dashboard');
+        setDashboardDeepLink('waterSchedule');
+        break;
+      default:
+        setActiveTab('dashboard');
+    }
+  };
+
   // Avoid flashing the login screen while the session is being restored.
   if (!sessionChecked) {
     return null;
@@ -70,7 +98,12 @@ export default function HomeScreen() {
   }
 
   if (showChatBot) {
-    return <ChatBot onBack={() => setShowChatBot(false)} />;
+    return (
+      <ChatBot
+        onBack={() => setShowChatBot(false)}
+        onNavigate={handleLunasNavigate}
+      />
+    );
   }
 
   if (activeTab === 'dashboard') {
@@ -79,6 +112,8 @@ export default function HomeScreen() {
         activeTab={activeTab}
         onTabPress={setActiveTab}
         onOpenChatBot={() => setShowChatBot(true)}
+        deepLink={dashboardDeepLink}
+        onDeepLinkConsumed={() => setDashboardDeepLink(null)}
       />
     );
   }

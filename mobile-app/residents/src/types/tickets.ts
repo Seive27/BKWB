@@ -73,12 +73,11 @@ export interface Ticket {
   timeline?: TicketTimelineEvent[];
 }
 
-/** Data captured by the create-ticket form (resident version). */
+/** Data captured by the create-ticket form (resident version). Priority is set by staff. */
 export interface TicketDraft {
   category: TicketCategory;
   subject: string;
   description: string;
-  priority: TicketPriority;
 }
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {

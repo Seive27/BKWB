@@ -28,6 +28,10 @@ declare module 'npm:@supabase/supabase-js@2' {
     eq(column: string, value: unknown): QueryBuilder;
     is(column: string, value: unknown): QueryBuilder;
     in(column: string, values: unknown[]): QueryBuilder;
+    or(filters: string): QueryBuilder;
+    ilike(column: string, pattern: string): QueryBuilder;
+    order(column: string, options?: { ascending?: boolean }): QueryBuilder;
+    limit(count: number): QueryBuilder;
     maybeSingle(): QueryResult;
     then: Promise<{ data: any; error: { message: string } | null }>['then'];
   }

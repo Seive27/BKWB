@@ -178,6 +178,7 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
 /**
  * Create a ticket for the logged-in resident. The ticket number is
  * generated automatically by a database trigger (TKT-YYYY-000001).
+ * Priority is assigned later by staff (defaults to medium).
  * Also records the initial "created" timeline event.
  */
 export async function createTicket(draft: TicketDraft): Promise<Ticket> {
@@ -190,7 +191,6 @@ export async function createTicket(draft: TicketDraft): Promise<Ticket> {
       category: draft.category,
       subject: draft.subject,
       description: draft.description,
-      priority: draft.priority,
     })
     .select(TICKET_SELECT)
     .single();

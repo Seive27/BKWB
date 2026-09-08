@@ -6,6 +6,9 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Helvetica Neue"', 'Helvetica', '"Segoe UI"', 'Arial', 'sans-serif'],
+      },
       colors: {
         /*
          * BKWB unified brand palette (teal-green, anchored on the meter-reader

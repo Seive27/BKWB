@@ -156,7 +156,9 @@ function AnnouncementCard({
           </View>
 
           {announcement.content ? (
-            <Text className="mt-2 text-sm leading-5 text-slate-600">{announcement.content}</Text>
+            <Text className="mt-2 text-sm leading-5 text-slate-600" numberOfLines={3}>
+              {announcement.content}
+            </Text>
           ) : null}
 
           <View className="mt-3 flex-row items-center gap-1.5">

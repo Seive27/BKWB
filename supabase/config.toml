@@ -26,3 +26,12 @@ verify_jwt = false
 # keys, so verify_jwt is disabled here and the function authorizes callers
 # itself (see supabase/functions/send-email/index.ts).
 verify_jwt = false
+
+[functions.lunas-chat]
+# Gateway JWT check on; function still re-validates auth.getUser and runs
+# tools with the user-scoped client (RLS).
+verify_jwt = true
+
+[functions.lunas-embed]
+# Staff JWT or service role; authorizes callers inside the function.
+verify_jwt = true

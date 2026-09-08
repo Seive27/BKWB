@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
+  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -16,30 +17,31 @@ import { ChatInputBar } from '@/components/chatbot/ChatInputBar';
 import { ChatMessageBubble } from '@/components/chatbot/ChatMessageBubble';
 import { RecommendedQuestions } from '@/components/chatbot/RecommendedQuestions';
 import {
-  DEFAULT_BOT_REPLY,
+  askLunas,
+  historyFromMessages,
+  offlineLunasReply,
+} from '@/services/lunasService';
+import {
   FAQ_ITEMS,
   type ChatMessage,
   type FaqItem,
+  type LunasAction,
+  type LunasNavigateScreen,
 } from '@/types/chatbot';
+
+export type ChatBotDeepLink = 'tickets' | 'waterSchedule' | 'createTicket' | null;
 
 type ChatBotProps = {
   onBack?: () => void;
+  /** Navigate out of chat into app surfaces (bills tab, tickets, etc.). */
+  onNavigate?: (screen: LunasNavigateScreen, params?: Record<string, string>) => void;
 };
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function findFaqMatch(text: string): FaqItem | undefined {
-  const normalized = text.trim().toLowerCase();
-  return FAQ_ITEMS.find(
-    (item) =>
-      item.question.toLowerCase() === normalized ||
-      normalized.includes(item.question.toLowerCase().replace('?', ''))
-  );
-}
-
-export default function ChatBot({ onBack }: ChatBotProps) {
+export default function ChatBot({ onBack, onNavigate }: ChatBotProps) {
   const insets = useSafeAreaInsets();
   const dialog = useDialog();
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -57,25 +59,31 @@ export default function ChatBot({ onBack }: ChatBotProps) {
     return () => clearTimeout(timer);
   }, [messages, hasMessages]);
 
-  const appendBotReply = useCallback((text: string, showAttachCard?: boolean) => {
-    setIsReplying(true);
-    setTimeout(() => {
+  const appendBotMessage = useCallback(
+    (payload: {
+      text: string;
+      showAttachCard?: boolean;
+      actions?: LunasAction[];
+      suggestions?: string[];
+    }) => {
       setMessages((prev) => [
         ...prev.map((m) => (m.sender === 'user' ? { ...m, seen: true } : m)),
         {
           id: createId(),
           sender: 'bot',
-          text,
+          text: payload.text,
           createdAt: new Date(),
-          showAttachCard,
+          showAttachCard: payload.showAttachCard,
+          actions: payload.actions,
+          suggestions: payload.suggestions,
         },
       ]);
-      setIsReplying(false);
-    }, 600);
-  }, []);
+    },
+    [],
+  );
 
   const sendUserMessage = useCallback(
-    (text: string, faq?: FaqItem) => {
+    async (text: string, faq?: FaqItem) => {
       const trimmed = text.trim();
       if (!trimmed || isReplying) return;
 
@@ -89,15 +97,50 @@ export default function ChatBot({ onBack }: ChatBotProps) {
 
       setMessages((prev) => [...prev, userMessage]);
       setDraft('');
+      setIsReplying(true);
 
-      const matched = faq ?? findFaqMatch(trimmed);
-      appendBotReply(matched?.answer ?? DEFAULT_BOT_REPLY, matched?.showAttachCard);
+      const history = historyFromMessages([...messages, userMessage]);
+
+      try {
+        const reply = await askLunas({ message: trimmed, history });
+        appendBotMessage({
+          text: reply.message,
+          showAttachCard: faq?.showAttachCard,
+          actions: reply.actions,
+          suggestions: reply.suggestions,
+        });
+      } catch (error) {
+        console.warn('[Lunas] falling back to offline FAQ:', error);
+        const offline = offlineLunasReply(trimmed);
+        appendBotMessage({
+          text: offline.message,
+          showAttachCard: faq?.showAttachCard ?? offline.actions?.some((a) => a.screen === 'CreateTicket'),
+          actions: offline.actions,
+          suggestions: offline.suggestions,
+        });
+      } finally {
+        setIsReplying(false);
+      }
     },
-    [appendBotReply, isReplying]
+    [appendBotMessage, isReplying, messages],
   );
 
   const handleFaqSelect = (item: FaqItem) => {
-    sendUserMessage(item.question, item);
+    void sendUserMessage(item.question, item);
+  };
+
+  const handleAction = (action: LunasAction) => {
+    if (action.type === 'navigate' || action.type === 'create_ticket') {
+      const screen = (action.screen ??
+        (action.type === 'create_ticket' ? 'CreateTicket' : undefined)) as
+        | LunasNavigateScreen
+        | undefined;
+      if (screen && onNavigate) {
+        onNavigate(screen, action.params);
+        return;
+      }
+    }
+    dialog.alert('Open in app', `Use ${action.label} from the main screens.`, { tone: 'info' });
   };
 
   const pickFromGallery = async () => {
@@ -106,7 +149,7 @@ export default function ChatBot({ onBack }: ChatBotProps) {
       dialog.alert(
         'Permission Needed',
         'Please allow photo library access to attach images.',
-        { tone: 'warning' }
+        { tone: 'warning' },
       );
       return;
     }
@@ -117,8 +160,8 @@ export default function ChatBot({ onBack }: ChatBotProps) {
     });
     if (!result.canceled && result.assets.length > 0) {
       const count = result.assets.length;
-      sendUserMessage(
-        count === 1 ? '📷 Photo attached' : `📷 ${count} photos attached`
+      void sendUserMessage(
+        count === 1 ? '📷 Photo attached' : `📷 ${count} photos attached`,
       );
     }
   };
@@ -156,6 +199,14 @@ export default function ChatBot({ onBack }: ChatBotProps) {
               </View>
             </View>
           }
+          ListFooterComponent={
+            isReplying ? (
+              <View className="mb-4 flex-row items-center gap-2 px-4 pl-14">
+                <ActivityIndicator size="small" color="#0ea5e9" />
+                <Text className="text-sm text-slate-500">Lunas is thinking…</Text>
+              </View>
+            ) : null
+          }
           renderItem={({ item, index }) => {
             const prev = messages[index - 1];
             const showAvatar = item.sender === 'bot' && prev?.sender !== 'bot';
@@ -164,6 +215,10 @@ export default function ChatBot({ onBack }: ChatBotProps) {
                 message={item}
                 showAvatar={showAvatar}
                 onAttachPhotos={pickFromGallery}
+                onAction={handleAction}
+                onSuggestion={(text) => {
+                  void sendUserMessage(text);
+                }}
               />
             );
           }}
@@ -178,6 +233,9 @@ export default function ChatBot({ onBack }: ChatBotProps) {
           <Text className="mt-5 text-center text-xl font-semibold leading-7 text-slate-900">
             Hi, I am Lunas.{'\n'}How can I help you?
           </Text>
+          <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
+            Ask about your bill, tickets, or announcements.
+          </Text>
         </View>
       )}
 
@@ -188,7 +246,9 @@ export default function ChatBot({ onBack }: ChatBotProps) {
       <ChatInputBar
         value={draft}
         onChangeText={setDraft}
-        onSend={() => sendUserMessage(draft)}
+        onSend={() => {
+          void sendUserMessage(draft);
+        }}
         onAttach={handleAttach}
         onGallery={pickFromGallery}
       />

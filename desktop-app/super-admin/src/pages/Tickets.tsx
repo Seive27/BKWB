@@ -17,6 +17,7 @@ import {
   Save,
   Loader2,
   MessageSquare,
+  ChevronDown,
 } from 'lucide-react';
 import TicketCard from '../components/ui/TicketCard';
 import CreateTicketModal from '../components/modals/CreateTicketModal';
@@ -359,6 +360,20 @@ const Tickets: React.FC = () => {
     }
   };
 
+  const handlePriorityChange = async (priority: TicketPriority) => {
+    if (!selectedTicket || actionBusy || selectedTicket.priority === priority) return;
+    setActionBusy(true);
+    try {
+      await updateTicket(selectedTicket.id, { priority });
+      await refresh();
+      showToast('success', `Priority set to ${TICKET_PRIORITY_LABELS[priority]}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to update priority.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!selectedTicket || actionBusy) return;
     setActionBusy(true);
@@ -387,15 +402,26 @@ const Tickets: React.FC = () => {
     );
   };
 
-  const getPriorityBadge = (priority: TicketPriority) => {
+  const getPrioritySelect = (priority: TicketPriority) => {
     const p = priorityStyles[priority];
     return (
-      <span
-        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-semibold ${p.bg} ${p.text}`}
-      >
-        {p.icon}
-        <span>{TICKET_PRIORITY_LABELS[priority]}</span>
-      </span>
+      <div className="relative inline-flex items-center">
+        <select
+          value={priority}
+          disabled={actionBusy}
+          onChange={(e) => void handlePriorityChange(e.target.value as TicketPriority)}
+          className={`appearance-none cursor-pointer pl-2.5 pr-7 py-1 rounded-full text-xs font-semibold border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${p.bg} ${p.text}`}
+          title="Set ticket priority"
+          aria-label="Ticket priority"
+        >
+          {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
+            <option key={value} value={value}>
+              {TICKET_PRIORITY_LABELS[value]}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" />
+      </div>
     );
   };
 
@@ -667,7 +693,7 @@ const Tickets: React.FC = () => {
                 {TICKET_CATEGORY_LABELS[selectedTicket.category]}
               </span>
               <span className="text-xs text-gray-300">|</span>
-              <span>{getPriorityBadge(selectedTicket.priority)}</span>
+              <span>{getPrioritySelect(selectedTicket.priority)}</span>
               <span>{getStatusBadge(selectedTicket.status)}</span>
               {selectedTicket.assigned_staff && (
                 <>
@@ -712,7 +738,7 @@ const Tickets: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-[11px] text-blue-600 font-medium">Priority</span>
-                  <p className="mt-0.5">{getPriorityBadge(selectedTicket.priority)}</p>
+                  <p className="mt-0.5">{getPrioritySelect(selectedTicket.priority)}</p>
                 </div>
                 <div>
                   <span className="text-[11px] text-blue-600 font-medium">Status</span>

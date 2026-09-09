@@ -1,5 +1,12 @@
 project_id = "bkwb"
 
+# Password reset emails show a 6-digit OTP for in-app verification
+# (verifyOtp type=recovery). Hosted projects must mirror this in
+# Dashboard → Authentication → Email Templates → Reset password.
+[auth.email.template.recovery]
+subject = "Your BKWB password reset code"
+content_path = "./supabase/templates/recovery.html"
+
 [functions.create-user]
 verify_jwt = true
 

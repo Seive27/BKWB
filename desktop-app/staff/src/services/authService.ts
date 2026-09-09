@@ -229,22 +229,53 @@ export async function isAuthenticated(): Promise<boolean> {
   return !!data.session;
 }
 
-/**
- * Where the "Forgot Password" email link lands. Point this at the hosted
- * reset page (see /reset-password) or override per-app via
- * VITE_RESET_REDIRECT_URL in .env.
- */
-const RESET_REDIRECT_URL =
-  (import.meta.env.VITE_RESET_REDIRECT_URL as string | undefined) ||
-  'https://idyllic-lolly-7c6e23.netlify.app/';
-
-/** Send a password reset email */
+/** Send a password-reset OTP email (code verified in-app). */
 export async function resetPassword(email: string): Promise<void> {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: RESET_REDIRECT_URL,
-  });
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.trim().toLowerCase()
+  );
   if (error) {
     throw new Error(getAuthErrorMessage(error));
+  }
+}
+
+/** Verify the 6-digit recovery OTP from email. */
+export async function verifyPasswordResetOtp(
+  email: string,
+  token: string
+): Promise<void> {
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    throw new Error('Please enter the verification code from your email.');
+  }
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: trimmedToken,
+    type: 'recovery',
+  });
+  if (error) {
+    if (/expired/i.test(error.message)) {
+      throw new Error('That code has expired. Please request a new one.');
+    }
+    throw new Error(error.message || 'Invalid verification code. Please try again.');
+  }
+}
+
+/** Set a new password after OTP verification, then sign out for a clean login. */
+export async function completePasswordReset(newPassword: string): Promise<void> {
+  await changePassword(newPassword);
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    throw new Error(getAuthErrorMessage(error));
+  }
+}
+
+/** Abandon an in-progress reset (clears recovery session if any). */
+export async function cancelPasswordReset(): Promise<void> {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // Ignore — caller returns to login either way.
   }
 }
 

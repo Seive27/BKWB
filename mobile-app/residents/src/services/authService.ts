@@ -1,6 +1,21 @@
 import { getPasswordValidationError } from '@/lib/password';
 import { supabase } from '@/lib/supabase';
-import { RESET_REDIRECT_URL } from '@/lib/env';
+
+/** True while Forgot Password OTP → new-password is in progress so the app
+ *  shell does not treat the recovery session as a normal login. */
+let passwordResetPending = false;
+
+export function isPasswordResetPending(): boolean {
+  return passwordResetPending;
+}
+
+function beginPasswordResetFlow(): void {
+  passwordResetPending = true;
+}
+
+function endPasswordResetFlow(): void {
+  passwordResetPending = false;
+}
 
 export interface AuthUser {
   id: string;
@@ -434,14 +449,66 @@ export async function uploadAvatar(localUri: string): Promise<string> {
   return publicUrl;
 }
 
-/** Send a password reset email for the given account email. */
+/** Send a password-reset OTP email for the given account email. */
 export async function requestPasswordReset(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(
-    email.trim().toLowerCase(),
-    { redirectTo: RESET_REDIRECT_URL }
+    email.trim().toLowerCase()
   );
   if (error) {
     throw new Error(error.message || 'Failed to send reset email.');
+  }
+}
+
+/**
+ * Verify the 6-digit recovery OTP from email. Establishes a recovery session
+ * that may set a new password via completePasswordReset().
+ */
+export async function verifyPasswordResetOtp(
+  email: string,
+  token: string
+): Promise<void> {
+  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    throw new Error('Please enter the verification code from your email.');
+  }
+
+  beginPasswordResetFlow();
+  const { error } = await supabase.auth.verifyOtp({
+    email: trimmedEmail,
+    token: trimmedToken,
+    type: 'recovery',
+  });
+  if (error) {
+    endPasswordResetFlow();
+    if (/expired/i.test(error.message)) {
+      throw new Error('That code has expired. Please request a new one.');
+    }
+    throw new Error(error.message || 'Invalid verification code. Please try again.');
+  }
+}
+
+/** Set a new password after OTP verification, then sign out for a clean login. */
+export async function completePasswordReset(newPassword: string): Promise<void> {
+  try {
+    await changePassword(newPassword);
+    const { error } = await supabase.auth.signOut();
+    if (error) throw new Error(error.message || 'Failed to sign out.');
+  } finally {
+    endPasswordResetFlow();
+  }
+}
+
+/** Abandon an in-progress reset (clears recovery session if any). */
+export async function cancelPasswordReset(): Promise<void> {
+  try {
+    if (passwordResetPending) {
+      await supabase.auth.signOut();
+    }
+  } catch {
+    // Ignore — local flag still clears below.
+  } finally {
+    endPasswordResetFlow();
   }
 }
 

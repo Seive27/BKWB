@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { type NavTab } from '@/components/NavBar/Navbar';
 import { supabase } from '@/lib/supabase';
+import { isPasswordResetPending } from '@/services/authService';
 import Announcements from '@/screens/Announcements';
 import Assigned from '@/screens/Assigned';
 import Dashboard from '@/screens/Dashboard';
@@ -21,10 +22,15 @@ export default function HomeScreen() {
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
   // never report "You must be logged in" while the user is authenticated.
+  // Skip PASSWORD_RECOVERY / in-progress reset so Forgot Password stays on Login.
   useEffect(() => {
     let cancelled = false;
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
+      if (event === 'PASSWORD_RECOVERY' || isPasswordResetPending()) {
+        setSessionChecked(true);
+        return;
+      }
       setIsLoggedIn(!!session);
       setSessionChecked(true);
     });
@@ -32,6 +38,10 @@ export default function HomeScreen() {
       .getSession()
       .then(({ data }) => {
         if (!cancelled) {
+          if (isPasswordResetPending()) {
+            setSessionChecked(true);
+            return;
+          }
           setIsLoggedIn(!!data.session);
           setSessionChecked(true);
         }

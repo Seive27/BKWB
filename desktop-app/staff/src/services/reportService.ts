@@ -1,5 +1,8 @@
-﻿import { supabase } from '../lib/supabase';
+﻿import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { supabase } from '../lib/supabase';
 import { BILL_STATUS_LABELS, METER_READING_STATUS_LABELS, TICKET_CATEGORY_LABELS, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS } from '../types';
+import { downloadFile } from '../utils/downloadFile';
 
 /**
  * Reporting engine (Phase J). Reports are generated from live BKWB tables
@@ -509,7 +512,7 @@ function csvEscape(v: unknown): string {
 }
 
 /** Download the report as CSV. */
-export function exportReportCsv(result: ReportResult, filenamePrefix: string): void {
+export async function exportReportCsv(result: ReportResult, filenamePrefix: string): Promise<void> {
   const header = result.columns.map((c) => csvEscape(c.label)).join(',');
   const lines = result.rows.map((row) =>
     result.columns.map((c) => csvEscape(row[c.key])).join(',')
@@ -517,63 +520,105 @@ export function exportReportCsv(result: ReportResult, filenamePrefix: string): v
   const meta = [`"${result.title} — ${result.periodLabel}"`, `"Generated ${fmtDate(result.generatedAt)}"`, ''];
   const csv = [...meta, header, ...lines].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${filenamePrefix}-${result.periodLabel.replace(/\s+/g, '-').toLowerCase()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const filename = `${slugify(filenamePrefix)}-${slugify(result.periodLabel || 'report')}.csv`;
+  await downloadFile(blob, filename);
+}
+
+function pdfSafe(value: unknown): string {
+  return String(value ?? '')
+    .replace(/₱/g, 'PHP ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\t\n\r\x20-\x7E]/g, '?');
+}
+
+function slugify(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report';
 }
 
 /**
- * Export the report as PDF through the browser print dialog (the print
- * target can be saved as PDF). Works without extra dependencies; in Tauri
- * the webview print dialog is used when available.
+ * Build a branded PDF of the current report and download it as a .pdf file.
  */
-export function exportReportPdf(result: ReportResult): void {
-  const esc = (v: unknown) =>
-    String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const head = result.columns.map((c) => `<th>${esc(c.label)}</th>`).join('');
-  const body = result.rows
-    .map((row) => `<tr>${result.columns.map((c) => `<td>${esc(row[c.key])}</td>`).join('')}</tr>`)
-    .join('');
-  const summaryHtml = result.summary
-    .map((s) => `<div class="chip"><strong>${esc(s.label)}:</strong> ${esc(s.value)}</div>`)
-    .join('');
+export async function exportReportPdf(result: ReportResult, filenamePrefix: string): Promise<void> {
+  const landscape = result.columns.length > 6;
+  const doc = new jsPDF({
+    orientation: landscape ? 'landscape' : 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
 
-  const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>${esc(result.title)}</title>
-<style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 32px; color: #111827; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .meta { color: #6b7280; font-size: 12px; margin-bottom: 16px; }
-  .chips { margin-bottom: 16px; }
-  .chip { display: inline-block; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 10px; margin: 0 8px 8px 0; font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  th { background: #f3f4f6; text-align: left; padding: 6px 8px; border: 1px solid #e5e7eb; text-transform: uppercase; letter-spacing: 0.03em; }
-  td { padding: 5px 8px; border: 1px solid #e5e7eb; }
-  tr:nth-child(even) td { background: #fafafa; }
-</style>
-</head>
-<body onload="window.print()">
-  <h1>${esc(result.title)}</h1>
-  <div class="meta">Period: ${esc(result.periodLabel || 'All time')} · Generated ${esc(fmtDate(result.generatedAt))}</div>
-  <div class="chips">${summaryHtml}</div>
-  <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-</body>
-</html>`;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const brand: [number, number, number] = [31, 122, 102];
+  const ink: [number, number, number] = [17, 24, 39];
+  const muted: [number, number, number] = [107, 114, 128];
 
-  const w = window.open('', '_blank');
-  if (!w) {
-    alert('Allow pop-ups to export the PDF, or use Export CSV instead.');
-    return;
+  doc.setFillColor(...brand);
+  doc.rect(0, 0, pageWidth, 8, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...brand);
+  doc.text('BARANGAY KALUNASAN WATER BILLING SYSTEM', margin, 16);
+
+  doc.setFontSize(16);
+  doc.setTextColor(...ink);
+  doc.text(pdfSafe(result.title), margin, 24);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...muted);
+  const generated = new Date(result.generatedAt).toLocaleString();
+  doc.text(
+    `Period: ${pdfSafe(result.periodLabel || 'All time')}   |   Generated: ${pdfSafe(generated)}   |   ${result.rows.length} row(s)`,
+    margin,
+    30
+  );
+
+  doc.setFontSize(9);
+  doc.setTextColor(...ink);
+  const summaryLine = result.summary
+    .map((s) => `${pdfSafe(s.label)}: ${pdfSafe(s.value)}`)
+    .join('    |    ');
+  const summaryLines = doc.splitTextToSize(summaryLine, pageWidth - margin * 2);
+  doc.text(summaryLines, margin, 36);
+  const tableStartY = 36 + summaryLines.length * 5 + 4;
+
+  autoTable(doc, {
+    startY: tableStartY,
+    head: [result.columns.map((c) => pdfSafe(c.label))],
+    body: result.rows.map((row) => result.columns.map((c) => pdfSafe(row[c.key]))),
+    theme: 'grid',
+    styles: {
+      fontSize: landscape ? 7.5 : 8,
+      cellPadding: 2,
+      textColor: ink,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: brand,
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: [238, 247, 244] },
+    margin: { left: margin, right: margin, bottom: 16 },
+  });
+
+  const pageCount = (doc as jsPDF & { getNumberOfPages: () => number }).getNumberOfPages();
+  for (let i = 1; i <= pageCount; i += 1) {
+    doc.setPage(i);
+    doc.setFillColor(...brand);
+    doc.rect(0, pageHeight - 8, pageWidth, 8, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('BKWB operational report', margin, pageHeight - 3);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 3, { align: 'right' });
   }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+
+  const filename = `${slugify(filenamePrefix)}-${slugify(result.periodLabel || 'report')}.pdf`;
+  await downloadFile(doc.output('blob'), filename);
 }

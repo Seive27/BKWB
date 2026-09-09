@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Upload, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import StyledSelect from '../ui/StyledSelect';
 import { getResidents } from '../../services/ticketService';
 import {
   ResidentOption,
@@ -117,11 +118,12 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Resident <span className="text-red-500">*</span>
               </label>
-              <select
+              <StyledSelect
                 value={residentId}
                 onChange={(e) => setResidentId(e.target.value)}
                 disabled={loadingResidents}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white disabled:bg-gray-50"
+                className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white disabled:bg-gray-50"
+                wrapperClassName="w-full"
               >
                 <option value="">
                   {loadingResidents ? 'Loading residents…' : 'Select a resident'}
@@ -131,7 +133,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                     {resident.first_name} {resident.last_name} — {resident.email}
                   </option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
 
             {/* Category and Priority Row */}
@@ -140,36 +142,38 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Category
                 </label>
-                <select
+                <StyledSelect
                   value={category}
                   onChange={(e) => {
                     setCategory(e.target.value as TicketCategory);
                     setSubject('');
                   }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                  className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                  wrapperClassName="w-full"
                 >
                   {CATEGORIES.map((cat) => (
                     <option key={cat} value={cat}>
                       {TICKET_CATEGORY_LABELS[cat]}
                     </option>
                   ))}
-                </select>
+                </StyledSelect>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Priority
                 </label>
-                <select
+                <StyledSelect
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as TicketPriority)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                  className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                  wrapperClassName="w-full"
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p} value={p}>
                       {TICKET_PRIORITY_LABELS[p]}
                     </option>
                   ))}
-                </select>
+                </StyledSelect>
               </div>
             </div>
 
@@ -178,10 +182,11 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Subject <span className="text-red-500">*</span>
               </label>
-              <select
+              <StyledSelect
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+                wrapperClassName="w-full"
               >
                 <option value="">Select a subject</option>
                 {TICKET_SUBJECTS[category].map((s) => (
@@ -189,7 +194,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                     {s}
                   </option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
 
             {/* Description */}

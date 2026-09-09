@@ -7,6 +7,7 @@ import {
   RefreshCcw,
   AlertCircle,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import {
   REPORT_CATEGORIES,
   exportReportCsv,
@@ -42,6 +43,8 @@ const Reports: React.FC = () => {
 
   const [result, setResult] = useState<ReportResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeCategory = useMemo(
@@ -71,6 +74,32 @@ const Reports: React.FC = () => {
       setLoading(false);
     }
   }, [category, period]);
+
+  const handleExportCsv = async () => {
+    if (!result) return;
+    setExportingCsv(true);
+    setError(null);
+    try {
+      await exportReportCsv(result, category);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export CSV.');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!result) return;
+    setExportingPdf(true);
+    setError(null);
+    try {
+      await exportReportPdf(result, category);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   // Initial load.
   useEffect(() => {
@@ -148,44 +177,44 @@ const Reports: React.FC = () => {
             {kind === 'monthly' && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Month</label>
-                <select
+                <StyledSelect
                   value={month}
                   onChange={(e) => setMonth(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
                   {MONTHS.map((m, i) => (
                     <option key={m} value={i + 1}>{m}</option>
                   ))}
-                </select>
+                </StyledSelect>
               </div>
             )}
 
             {kind === 'quarterly' && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Quarter</label>
-                <select
+                <StyledSelect
                   value={quarter}
                   onChange={(e) => setQuarter(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
                   {[1, 2, 3, 4].map((q) => (
                     <option key={q} value={q}>Q{q}</option>
                   ))}
-                </select>
+                </StyledSelect>
               </div>
             )}
 
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Year</label>
-              <select
+              <StyledSelect
                 value={year}
                 onChange={(e) => setYear(Number(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
                 {years.map((y) => (
                   <option key={y} value={y}>{y}</option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
 
             <button
@@ -199,20 +228,20 @@ const Reports: React.FC = () => {
 
             <div className="ml-auto flex items-center space-x-2">
               <button
-                onClick={() => result && exportReportCsv(result, category)}
-                disabled={!result || result.rows.length === 0}
+                onClick={handleExportCsv}
+                disabled={!result || result.rows.length === 0 || exportingCsv}
                 className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
-                <Download className="w-4 h-4" />
-                <span>Export CSV</span>
+                {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>{exportingCsv ? 'Exporting…' : 'Export CSV'}</span>
               </button>
               <button
-                onClick={() => result && exportReportPdf(result)}
-                disabled={!result || result.rows.length === 0}
+                onClick={handleExportPdf}
+                disabled={!result || result.rows.length === 0 || exportingPdf}
                 className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-40"
               >
-                <FileText className="w-4 h-4" />
-                <span>Export PDF</span>
+                {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                <span>{exportingPdf ? 'Exporting…' : 'Export PDF'}</span>
               </button>
             </div>
           </div>

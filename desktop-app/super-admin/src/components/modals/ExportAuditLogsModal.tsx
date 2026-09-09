@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Download, AlertCircle, FileText } from 'lucide-react';
+import StyledSelect from '../ui/StyledSelect';
 
 interface ExportAuditLogsModalProps {
   isOpen: boolean;
@@ -104,17 +105,18 @@ const ExportAuditLogsModal: React.FC<ExportAuditLogsModalProps> = ({ isOpen, onC
             <label className="block text-sm font-semibold text-gray-900 mb-3">
               Audit Period
             </label>
-            <select
+            <StyledSelect
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as DateRangeOption)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full py-2.5 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              wrapperClassName="w-full"
             >
               <option value="current-session">Current Session</option>
               <option value="today">Today</option>
               <option value="last-7-days">Last 7 Days</option>
               <option value="last-30-days">Last 30 Days</option>
               <option value="custom">Custom Range</option>
-            </select>
+            </StyledSelect>
 
             {/* Custom Date Range */}
             {dateRange === 'custom' && (
@@ -183,16 +185,17 @@ const ExportAuditLogsModal: React.FC<ExportAuditLogsModalProps> = ({ isOpen, onC
             <label className="block text-sm font-semibold text-gray-900 mb-3">
               File Format
             </label>
-            <select
+            <StyledSelect
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full py-2.5 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              wrapperClassName="w-full"
             >
               <option value="pdf">PDF Report</option>
               <option value="xlsx">Excel Spreadsheet (.xlsx)</option>
               <option value="csv">CSV File</option>
               <option value="json">JSON</option>
-            </select>
+            </StyledSelect>
           </div>
 
           {/* Section 4: Export Summary */}

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Inbox,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import type { AuditLogEntry, AuditLogQueryOptions } from '../types';
 import { AUDIT_MODULES } from '../types';
 import { useAuditLogs } from '../hooks/useAuditLogs';
@@ -175,25 +176,27 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ onNavigateToConsole }) => {
           {/* Module */}
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Module</label>
-            <select
+            <StyledSelect
               value={module}
               onChange={(e) => setModule(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full py-2 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              wrapperClassName="w-full"
             >
               <option value="">All Modules</option>
               {AUDIT_MODULES.map((m) => (
                 <option key={m} value={m}>{moduleLabel(m)}</option>
               ))}
-            </select>
+            </StyledSelect>
           </div>
 
           {/* Action */}
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Action</label>
-            <select
+            <StyledSelect
               value={action}
               onChange={(e) => setAction(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full py-2 border border-gray-200 rounded-lg bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              wrapperClassName="w-full"
             >
               <option value="">All Actions</option>
               <option value="login">Login</option>
@@ -206,7 +209,7 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ onNavigateToConsole }) => {
               <option value="close">Close</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
-            </select>
+            </StyledSelect>
           </div>
 
           {/* Date Range */}

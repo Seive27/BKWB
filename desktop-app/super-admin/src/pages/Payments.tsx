@@ -18,6 +18,7 @@ import {
   Clock,
   Layers,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { getBills } from '../services/billService';
 import { recordMultiBillPayment } from '../services/paymentService';
@@ -387,10 +388,11 @@ const Payments: React.FC = () => {
 
               {/* Sitio Filter */}
               <div>
-                <select
+                <StyledSelect
                   value={sitioFilter}
                   onChange={(e) => setSitioFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  wrapperClassName="w-full"
                   title="Filter by Sitio"
                 >
                   <option value="">All Sitios</option>
@@ -399,22 +401,23 @@ const Payments: React.FC = () => {
                       {s}
                     </option>
                   ))}
-                </select>
+                </StyledSelect>
               </div>
 
               {/* Status Filter */}
               <div>
-                <select
+                <StyledSelect
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  wrapperClassName="w-full"
                   title="Filter by payment status"
                 >
                   <option value="unpaid">Pending / Unpaid Bills</option>
                   <option value="overdue">Overdue Bills</option>
                   <option value="paid">Paid Bills</option>
                   <option value="all">All Bills</option>
-                </select>
+                </StyledSelect>
               </div>
             </div>
 
@@ -530,10 +533,10 @@ const Payments: React.FC = () => {
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      <select
+                      <StyledSelect
                         value={periodFilter}
                         onChange={(e) => setPeriodFilter(e.target.value)}
-                        className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="py-1.5 border border-gray-300 rounded-lg text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         title="Filter period"
                       >
                         <option value="">All Periods</option>
@@ -542,7 +545,7 @@ const Payments: React.FC = () => {
                             {formatPeriod(p)}
                           </option>
                         ))}
-                      </select>
+                      </StyledSelect>
                     </div>
                   </div>
 

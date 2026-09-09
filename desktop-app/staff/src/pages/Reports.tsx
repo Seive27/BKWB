@@ -43,6 +43,8 @@ const Reports: React.FC = () => {
 
   const [result, setResult] = useState<ReportResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeCategory = useMemo(
@@ -72,6 +74,32 @@ const Reports: React.FC = () => {
       setLoading(false);
     }
   }, [category, period]);
+
+  const handleExportCsv = async () => {
+    if (!result) return;
+    setExportingCsv(true);
+    setError(null);
+    try {
+      await exportReportCsv(result, category);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export CSV.');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!result) return;
+    setExportingPdf(true);
+    setError(null);
+    try {
+      await exportReportPdf(result, category);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   // Initial load.
   useEffect(() => {
@@ -209,20 +237,20 @@ const Reports: React.FC = () => {
 
             <div className="ml-auto flex items-center space-x-2">
               <button
-                onClick={() => result && exportReportCsv(result, category)}
-                disabled={!result || result.rows.length === 0}
+                onClick={handleExportCsv}
+                disabled={!result || result.rows.length === 0 || exportingCsv}
                 className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
-                <Download className="w-4 h-4" />
-                <span>Export CSV</span>
+                {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>{exportingCsv ? 'Exporting…' : 'Export CSV'}</span>
               </button>
               <button
-                onClick={() => result && exportReportPdf(result)}
-                disabled={!result || result.rows.length === 0}
+                onClick={handleExportPdf}
+                disabled={!result || result.rows.length === 0 || exportingPdf}
                 className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-40"
               >
-                <FileText className="w-4 h-4" />
-                <span>Export PDF</span>
+                {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                <span>{exportingPdf ? 'Exporting…' : 'Export PDF'}</span>
               </button>
             </div>
           </div>

@@ -10,6 +10,7 @@ import {
   Loader2,
   FileText,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import { useMeterReadings } from '../hooks/useMeterReadings';
 import {
   MeterReadingStatus,
@@ -90,7 +91,7 @@ const MeterReadings: React.FC = () => {
   };
 
   const selectStyles =
-    'px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
+    'py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
@@ -158,7 +159,7 @@ const MeterReadings: React.FC = () => {
                   className="pl-10 pr-4 py-2 w-96 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
               </div>
-              <select
+              <StyledSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                 className={selectStyles}
@@ -169,7 +170,7 @@ const MeterReadings: React.FC = () => {
                     {METER_READING_STATUS_LABELS[st]}
                   </option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
           </div>
 

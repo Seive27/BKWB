@@ -20,6 +20,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import TicketCard from '../components/ui/TicketCard';
+import StyledSelect from '../components/ui/StyledSelect';
 import CreateTicketModal from '../components/modals/CreateTicketModal';
 import { useAuth } from '../hooks/useAuth';
 import { useTickets } from '../hooks/useTickets';
@@ -426,7 +427,7 @@ const Tickets: React.FC = () => {
   };
 
   const selectStyles =
-    'px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
+    'w-full py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
 
   return (
     <div className="flex-1 flex h-screen overflow-hidden bg-gray-50">
@@ -454,10 +455,11 @@ const Tickets: React.FC = () => {
 
           {/* Filters */}
           <div className="grid grid-cols-2 gap-2">
-            <select
+            <StyledSelect
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
               className={selectStyles}
+              wrapperClassName="w-full"
             >
               <option value="all">All Categories</option>
               {(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((cat) => (
@@ -465,11 +467,12 @@ const Tickets: React.FC = () => {
                   {TICKET_CATEGORY_LABELS[cat]}
                 </option>
               ))}
-            </select>
-            <select
+            </StyledSelect>
+            <StyledSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               className={selectStyles}
+              wrapperClassName="w-full"
             >
               <option value="all">All Statuses</option>
               {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map((st) => (
@@ -477,11 +480,12 @@ const Tickets: React.FC = () => {
                   {TICKET_STATUS_LABELS[st]}
                 </option>
               ))}
-            </select>
-            <select
+            </StyledSelect>
+            <StyledSelect
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
               className={selectStyles}
+              wrapperClassName="w-full"
             >
               <option value="all">All Priorities</option>
               {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((pr) => (
@@ -489,17 +493,18 @@ const Tickets: React.FC = () => {
                   {TICKET_PRIORITY_LABELS[pr]}
                 </option>
               ))}
-            </select>
-            <select
+            </StyledSelect>
+            <StyledSelect
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value as SortKey)}
               className={selectStyles}
+              wrapperClassName="w-full"
             >
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
-              <option value="priority">Priority (High â†’ Low)</option>
-              <option value="status">Status (Open â†’ Closed)</option>
-            </select>
+              <option value="priority">Priority (High → Low)</option>
+              <option value="status">Status (Open → Closed)</option>
+            </StyledSelect>
           </div>
         </div>
 
@@ -915,10 +920,11 @@ const Tickets: React.FC = () => {
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
               Staff Member
             </label>
-            <select
+            <StyledSelect
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white mb-5"
+              className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+              wrapperClassName="w-full mb-5"
             >
               <option value="">Select staff or meter reader</option>
               <optgroup label="Staff">
@@ -943,7 +949,7 @@ const Tickets: React.FC = () => {
                   );
                 })}
               </optgroup>
-            </select>
+            </StyledSelect>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowAssignModal(false)}

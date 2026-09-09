@@ -15,7 +15,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDialog } from '@/components/ui/AppDialog';
 import { friendlyErrorMessage } from '@/lib/errors';
-import { login, requestPasswordReset } from '@/services/authService';
+import {
+  isLoginHandleEmail,
+  login,
+  looksLikeAccountNumber,
+  requestPasswordReset,
+} from '@/services/authService';
 
 type LoginProps = {
   /** Called after a real Supabase session exists; carries whether the
@@ -24,7 +29,11 @@ type LoginProps = {
 };
 
 /** Forgot-password modal: email → reset link (never reveals whether the
- *  account exists, for privacy/security). */
+ *  account exists, for privacy/security). Residents who have NOT completed
+ *  the mandatory first-time Account Setup are redirected back to that flow
+ *  instead of being offered password recovery — recovery links can only be
+ *  sent to a real, verified email, never to an account number or the
+ *  temporary @example.com login handle. */
 function ForgotPasswordModal({
   visible,
   onClose,
@@ -39,6 +48,23 @@ function ForgotPasswordModal({
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
 
+  const ONBOARDING_MESSAGE =
+    'Please complete your first-time account setup before using password ' +
+    'recovery. Recovery links are sent to the verified email on your ' +
+    'account — enter that email above.';
+
+  const sendReset = async (address: string) => {
+    setSending(true);
+    try {
+      await requestPasswordReset(address);
+    } catch (err) {
+      // Generic message either way — do not leak whether the email exists.
+      console.warn('[forgot-password] reset request failed:', err);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = async () => {
     setError('');
     const trimmed = email.trim();
@@ -47,20 +73,28 @@ function ForgotPasswordModal({
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      // An account number is not a recovery identity — never attempt to send
+      // a reset to one (it would go nowhere and is the un-onboarded path).
+      if (looksLikeAccountNumber(trimmed)) {
+        setError(ONBOARDING_MESSAGE);
+        return;
+      }
       setError('Please enter a valid email address.');
       return;
     }
-    setSending(true);
-    try {
-      await requestPasswordReset(trimmed);
-      setSent(true);
-    } catch (err) {
-      // Generic message either way — do not leak whether the email exists.
-      console.warn('[forgot-password] reset request failed:', err);
-      setSent(true);
-    } finally {
-      setSending(false);
+    // The acc-…@example.com handle is the pre-setup identity and cannot
+    // receive mail — sending a reset there would silently go nowhere.
+    if (isLoginHandleEmail(trimmed)) {
+      setError(ONBOARDING_MESSAGE);
+      return;
     }
+    setSent(true);
+    await sendReset(trimmed);
+  };
+
+  const handleResend = async () => {
+    setError('');
+    await sendReset(email.trim());
   };
 
   const handleClose = () => {
@@ -86,8 +120,23 @@ function ForgotPasswordModal({
                 been sent. Open it to set a new password, then sign in.
               </Text>
               <Pressable
+                onPress={handleResend}
+                disabled={sending}
+                className="mt-5 items-center py-1 active:opacity-70 disabled:opacity-50"
+                accessibilityRole="button"
+                accessibilityLabel="Resend the password reset email"
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color="#186252" />
+                ) : (
+                  <Text className="text-sm font-semibold text-brand">
+                    Didn't receive it? Resend
+                  </Text>
+                )}
+              </Pressable>
+              <Pressable
                 onPress={handleClose}
-                className="mt-6 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
+                className="mt-3 items-center rounded-xl bg-brand py-3.5 active:bg-brand-dark"
                 accessibilityRole="button"
               >
                 <Text className="text-base font-semibold text-white">Done</Text>
@@ -99,8 +148,8 @@ function ForgotPasswordModal({
                 Reset your password
               </Text>
               <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
-                Enter the email linked to your account and we'll send you a
-                secure reset link.
+                Enter the verified email linked to your account and we'll send
+                you a secure reset link.
               </Text>
               <TextInput
                 value={email}

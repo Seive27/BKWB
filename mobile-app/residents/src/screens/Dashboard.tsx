@@ -16,6 +16,7 @@ import {
   formatPeriod,
   formatPeso,
   getMyBills,
+  subscribeToMyBills,
   type ResidentBill,
 } from '@/services/billService';
 import NotificationsScreen from '@/screens/Notifications';
@@ -76,22 +77,30 @@ export default function Dashboard({
   }, []);
 
   // Mirror Bills → Current Bill: newest unpaid, else newest overall.
-  useEffect(() => {
-    let cancelled = false;
+  // Stays subscribed to realtime so a webhook-confirmed payment is reflected
+  // on the dashboard (and the Payments screen) without a manual refresh.
+  const loadBills = (showSpinner = false) => {
+    if (showSpinner) setBillLoading(true);
     getMyBills()
       .then((bills) => {
-        if (cancelled) return;
         const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
         setCurrentBill(unpaid ?? bills[0] ?? null);
       })
       .catch(() => {
-        if (!cancelled) setCurrentBill(null);
+        setCurrentBill(null);
       })
       .finally(() => {
-        if (!cancelled) setBillLoading(false);
+        if (showSpinner) setBillLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadBills(true);
+    const unsubscribe = subscribeToMyBills(() => {
+      loadBills(false);
+    });
     return () => {
-      cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -118,6 +127,7 @@ export default function Dashboard({
           onTabPress?.(tab);
         }}
         onBack={() => setQuickActionScreen(null)}
+        onBillPaid={() => loadBills(false)}
       />
     );
   }

@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
+import { Pressable, Text, View } from 'react-native';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
-import { useDialog } from '@/components/ui/AppDialog';
-import { supabase } from '@/lib/supabase';
-import { friendlyErrorMessage } from '@/lib/errors';
+import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
 import {
   formatBillDate,
   formatPeriod,
@@ -16,18 +13,17 @@ import {
 } from '@/services/billService';
 
 const PAYMENT_OPTIONS = [
+  'Pay online — GCash, Maya, card and more via PayMongo',
   'Barangay Kalunasan Hall (Mon–Fri, 8AM–5PM)',
   'Authorized Barangay Payment Centers',
-  'GCash / Maya (Cash-in/Walk-in confirmation)',
 ];
 
 export function CurrentBill() {
-  const dialog = useDialog();
   const [bill, setBill] = useState<ResidentBill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [testingPayMongo, setTestingPayMongo] = useState(false);
+  const [showPay, setShowPay] = useState(false);
 
   const loadBill = (showSpinner = false) => {
     if (showSpinner) setLoading(true);
@@ -43,71 +39,6 @@ export function CurrentBill() {
       .finally(() => {
         if (showSpinner) setLoading(false);
       });
-  };
-
-  const handleTestPayMongoCheckout = async () => {
-    if (!bill?.id) {
-      dialog.alert(
-        'No Bill Found',
-        'There is no bill record available to test.',
-        { tone: 'warning' }
-      );
-      return;
-    }
-    if (testingPayMongo) return;
-
-    setTestingPayMongo(true);
-    try {
-      const existingBillId = bill.id;
-      const { data, error: fnError } = await supabase.functions.invoke(
-        'create-paymongo-checkout',
-        {
-          body: {
-            bill_id: existingBillId,
-          },
-        }
-      );
-
-      if (fnError) {
-        throw new Error(fnError.message || 'Failed to invoke payment function.');
-      }
-
-      if (!data?.checkout_url) {
-        throw new Error(data?.error || 'Payment gateway did not return a checkout URL.');
-      }
-
-      console.log('[PayMongo Test Checkout Result]', {
-        success: data.success,
-        checkout_session_id: data.checkout_session_id,
-        checkout_url: data.checkout_url,
-        amount: data.amount,
-        currency: data.currency,
-        reference_number: data.reference_number,
-      });
-
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') {
-          window.open(data.checkout_url, '_blank');
-        } else {
-          await Linking.openURL(data.checkout_url);
-        }
-      } else {
-        try {
-          await WebBrowser.openBrowserAsync(data.checkout_url);
-        } catch {
-          await Linking.openURL(data.checkout_url);
-        }
-      }
-    } catch (err: unknown) {
-      console.error('[PayMongo Test Error]:', err);
-      dialog.alert(
-        'Checkout Error',
-        friendlyErrorMessage(err, 'Could not start the payment checkout. Please try again.'),
-        { tone: 'danger' }
-      );
-    } finally {
-      setTestingPayMongo(false);
-    }
   };
 
   useEffect(() => {
@@ -235,22 +166,12 @@ export function CurrentBill() {
         <View className="p-4 gap-2.5 bg-white">
           {unpaid ? (
             <Pressable
-              onPress={handleTestPayMongoCheckout}
-              disabled={testingPayMongo}
-              className={`items-center justify-center rounded-xl bg-amber-500 py-3 active:bg-amber-600 ${
-                testingPayMongo ? 'opacity-70' : ''
-              }`}
+              onPress={() => setShowPay(true)}
+              className="items-center justify-center rounded-xl bg-brand py-3 active:bg-brand-dark"
               accessibilityRole="button"
-              accessibilityLabel="Test PayMongo Checkout"
+              accessibilityLabel="Pay this bill online"
             >
-              {testingPayMongo ? (
-                <View className="flex-row items-center gap-2">
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text className="text-sm font-bold text-white">Creating Checkout Session…</Text>
-                </View>
-              ) : (
-                <Text className="text-sm font-bold text-white">🧪 Test PayMongo Checkout</Text>
-              )}
+              <Text className="text-sm font-bold text-white">Pay Online</Text>
             </Pressable>
           ) : null}
 
@@ -283,6 +204,13 @@ export function CurrentBill() {
         </View>
       </View>
 
+      <PaymentFlowModal
+        visible={showPay}
+        onClose={() => setShowPay(false)}
+        bill={bill}
+        onConfirmed={() => loadBill(false)}
+      />
+
       <BillDetailModal
         visible={showDetails}
         onClose={() => setShowDetails(false)}
@@ -290,4 +218,4 @@ export function CurrentBill() {
       />
     </View>
   );
-}
+}

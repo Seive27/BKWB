@@ -169,9 +169,9 @@ export function CurrentBill() {
               onPress={() => setShowPay(true)}
               className="items-center justify-center rounded-xl bg-brand py-3 active:bg-brand-dark"
               accessibilityRole="button"
-              accessibilityLabel="Pay this bill online"
+              accessibilityLabel="Pay now"
             >
-              <Text className="text-sm font-bold text-white">Pay Online</Text>
+              <Text className="text-sm font-bold text-white">Pay Now</Text>
             </Pressable>
           ) : null}
 

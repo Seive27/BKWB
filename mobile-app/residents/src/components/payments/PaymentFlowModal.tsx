@@ -22,7 +22,11 @@ export function PaymentFlowModal({
   onConfirmed?: (payment: ResidentPayment | null) => void;
 }) {
   const { height: windowHeight } = useWindowDimensions();
-  const scrollMaxHeight = Math.round(windowHeight * 0.88) - 220;
+  // The sheet needs a DEFINITE height: PaymentJourney fills its parent with
+  // flex-1, and inside a content-sized (auto-height) parent a flex child
+  // collapses to zero height — which made the modal look like a bare
+  // "Pay Your Water Bill" reminder with no payment flow inside it.
+  const sheetHeight = Math.round(windowHeight * 0.88);
 
   if (!bill) return null;
 
@@ -36,7 +40,11 @@ export function PaymentFlowModal({
           accessibilityLabel="Close payment"
         />
 
-        <View className="max-h-[88%] rounded-t-3xl bg-slate-50" accessibilityLiveRegion="polite">
+        <View
+          className="rounded-t-3xl bg-slate-50"
+          style={{ height: sheetHeight }}
+          accessibilityLiveRegion="polite"
+        >
           <View className="items-center pt-3">
             <View className="h-1.5 w-12 rounded-full bg-slate-200" />
           </View>
@@ -51,15 +59,14 @@ export function PaymentFlowModal({
             </Text>
           </View>
 
-          <View
-            className="flex-1 px-5"
-            style={{ maxHeight: Math.max(160, scrollMaxHeight) }}
-          >
-            <PaymentJourney
-              bill={bill}
-              onClose={onClose}
-              onConfirmed={onConfirmed}
-            />
+          <View className="flex-1 px-5">
+            {visible ? (
+              <PaymentJourney
+                bill={bill}
+                onClose={onClose}
+                onConfirmed={onConfirmed}
+              />
+            ) : null}
           </View>
         </View>
       </View>

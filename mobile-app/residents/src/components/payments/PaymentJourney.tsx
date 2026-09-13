@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { useDialog } from '@/components/ui/AppDialog';
 import { usePayMongoCheckout } from '@/hooks/usePayMongoCheckout';
 import {
   formatBillDate,
@@ -17,32 +16,29 @@ import {
   type ResidentPayment,
 } from '@/services/paymentService';
 
-type PaymentMethodId = 'gcash' | 'maya' | 'cash';
+/** The two ways a resident can settle a bill. */
+type PaymentOptionId = 'online' | 'barangay';
 
-type PaymentMethod = {
-  id: PaymentMethodId;
+type PaymentOptionIcon = 'wallet' | 'card' | 'pin';
+
+type PaymentOption = {
+  id: PaymentOptionId;
   title: string;
   subtitle: string;
-  icon: 'wallet' | 'card' | 'pin';
+  icon: PaymentOptionIcon;
 };
 
-const PAYMENT_METHODS: PaymentMethod[] = [
+const PAYMENT_OPTIONS: PaymentOption[] = [
   {
-    id: 'gcash',
-    title: 'GCash',
-    subtitle: 'Pay online with your GCash wallet',
+    id: 'online',
+    title: 'Pay Online',
+    subtitle: 'Secure online payment through the available payment gateway.',
     icon: 'wallet',
   },
   {
-    id: 'maya',
-    title: 'Maya',
-    subtitle: 'Pay online with your Maya wallet',
-    icon: 'card',
-  },
-  {
-    id: 'cash',
-    title: 'Cash (Pay at Barangay)',
-    subtitle: 'Walk-in payment at the Barangay Hall',
+    id: 'barangay',
+    title: 'Pay at Barangay Hall',
+    subtitle: 'Pay your bill directly at the barangay hall.',
     icon: 'pin',
   },
 ];
@@ -51,7 +47,7 @@ function MethodIcon({
   kind,
   selected,
 }: {
-  kind: PaymentMethod['icon'];
+  kind: PaymentOptionIcon;
   selected: boolean;
 }) {
   const color = selected ? '#186252' : '#94A3B8';
@@ -95,26 +91,6 @@ function MethodIcon({
   );
 }
 
-function RadioSelected() {
-  return (
-    <View className="h-6 w-6 items-center justify-center rounded-full bg-brand">
-      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M5 12.5 10 17.5 19 7.5"
-          stroke="#fff"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </View>
-  );
-}
-
-function RadioEmpty() {
-  return <View className="h-6 w-6 rounded-full border-2 border-slate-300" />;
-}
-
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row items-center justify-between py-2">
@@ -141,120 +117,154 @@ function StatusPill({ status }: { status: ResidentBill['status'] }) {
   );
 }
 
-/** Review step content: bill facts + payment method + pay action. */
-function ReviewStepContent({
+/**
+ * One tappable payment option. Tapping it either starts PayMongo or shows the
+ * walk-in instructions — there is no radio state that can be left unselected.
+ */
+function PaymentOptionCard({
+  option,
+  onPress,
+  disabled,
+}: {
+  option: PaymentOption;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      className={`flex-row items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-3.5 active:border-brand active:opacity-90 ${
+        disabled ? 'opacity-60' : ''
+      }`}
+      accessibilityRole="button"
+      accessibilityLabel={option.title}
+    >
+      <MethodIcon kind={option.icon} selected={false} />
+      <View className="flex-1">
+        <Text className="text-base font-bold text-slate-800">{option.title}</Text>
+        <Text className="mt-0.5 text-sm text-slate-400">{option.subtitle}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * First step: the bill facts the resident must see (amount due, bill number)
+ * followed by the two ways to settle it.
+ */
+function PaymentOptionsStep({
   bill,
-  method,
-  onMethodChange,
-  onPay,
   busy,
+  onPayOnline,
+  onPayBarangay,
 }: {
   bill: ResidentBill;
-  method: PaymentMethodId;
-  onMethodChange: (id: PaymentMethodId) => void;
-  onPay: () => void;
   busy: boolean;
+  onPayOnline: () => void;
+  onPayBarangay: () => void;
 }) {
   const billAmount = Number(bill.amount_due) || 0;
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
 
   return (
     <View className="gap-6">
       {/* Bill summary */}
       <View className="rounded-2xl border border-slate-200 bg-white p-5">
-        <View className="mb-1 flex-row items-center justify-between">
+        <View className="flex-row items-center justify-between">
           <Text className="text-xs font-semibold tracking-wide text-slate-400">
             {formatPeriod(bill.billing_period).toUpperCase()} BILL
           </Text>
           <StatusPill status={bill.status} />
         </View>
+        <Text className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Amount Due
+        </Text>
         <Text className="text-3xl font-bold text-brand">{formatPeso(billAmount)}</Text>
         <View className="mt-4 border-t border-slate-100 pt-1">
-          <InfoRow label="Account Number" value={bill.account?.account_number ?? '—'} />
           <InfoRow label="Bill Number" value={bill.bill_number} />
+          <InfoRow label="Account Number" value={bill.account?.account_number ?? '—'} />
           <InfoRow label="Billing Period" value={formatPeriod(bill.billing_period)} />
           <InfoRow
             label="Due Date"
             value={bill.due_date ? formatBillDate(bill.due_date) : '—'}
           />
-          <InfoRow
-            label="Payment Status"
-            value={bill.status === 'paid' ? 'Paid' : unpaid ? 'Unpaid' : bill.status}
-          />
         </View>
       </View>
 
-      {/* Payment method */}
+      {/* The two ways to settle the bill. */}
       <View>
-        <Text className="mb-3 text-base font-bold text-slate-800">Payment Method</Text>
+        <Text className="mb-3 text-base font-bold text-slate-800">
+          Choose how you want to pay
+        </Text>
         <View className="gap-3">
-          {PAYMENT_METHODS.map((item) => {
-            const selected = method === item.id;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => onMethodChange(item.id)}
-                disabled={busy}
-                className={`flex-row items-center gap-3 rounded-2xl border-2 bg-white px-4 py-3.5 active:opacity-90 ${
-                  selected ? 'border-brand' : 'border-slate-200'
-                }`}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={item.title}
-              >
-                <MethodIcon kind={item.icon} selected={selected} />
-                <View className="flex-1">
-                  <Text className="text-base font-bold text-slate-800">{item.title}</Text>
-                  <Text className="mt-0.5 text-sm text-slate-400">{item.subtitle}</Text>
-                </View>
-                {selected ? <RadioSelected /> : <RadioEmpty />}
-              </Pressable>
-            );
-          })}
+          {PAYMENT_OPTIONS.map((option) => (
+            <PaymentOptionCard
+              key={option.id}
+              option={option}
+              disabled={busy}
+              onPress={option.id === 'online' ? onPayOnline : onPayBarangay}
+            />
+          ))}
         </View>
+        <Text className="mt-3 text-center text-xs leading-4 text-slate-400">
+          Online payments are completed securely on PayMongo. You can also pay in
+          person at the barangay hall.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Walk-in instructions for a manual payment. Informational only — it never
+ * creates a payment record and never marks the bill paid; staff record the
+ * payment through their own workflow.
+ */
+function BarangayPaymentInfo({
+  bill,
+  onClose,
+  onPayOnlineInstead,
+}: {
+  bill: ResidentBill;
+  onClose?: () => void;
+  onPayOnlineInstead: () => void;
+}) {
+  const billAmount = Number(bill.amount_due) || 0;
+
+  return (
+    <View className="gap-4">
+      <View className="items-center rounded-2xl border border-slate-200 bg-white px-5 py-6">
+        <View className="h-14 w-14 items-center justify-center rounded-full bg-brand/10">
+          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10Z"
+              stroke="#186252"
+              strokeWidth={1.8}
+            />
+            <Circle cx={12} cy={11} r={2.2} stroke="#186252" strokeWidth={1.8} />
+          </Svg>
+        </View>
+        <Text className="mt-3 text-lg font-bold text-slate-900">Pay at Barangay Hall</Text>
+        <Text className="mt-1 text-center text-sm leading-5 text-slate-500">
+          You can pay this bill at the Barangay Kalunasan Water Billing office.
+        </Text>
       </View>
 
-      {/* Summary */}
-      <View>
-        <Text className="mb-3 text-base font-bold text-slate-800">Summary</Text>
-        <View className="rounded-2xl bg-slate-100 px-4 py-4">
-          <View className="flex-row items-center justify-between py-1">
-            <Text className="text-sm text-slate-500">Bill Amount</Text>
-            <Text className="text-sm font-semibold text-slate-800">
-              {formatPeso(billAmount)}
-            </Text>
-          </View>
-          <View className="my-2 border-t border-slate-200" />
-          <View className="flex-row items-center justify-between py-1">
-            <Text className="text-base font-bold text-slate-800">Total</Text>
-            <Text className="text-base font-bold text-brand">{formatPeso(billAmount)}</Text>
-          </View>
-        </View>
-
-        {method !== 'cash' ? (
-          <Text className="mt-2 text-center text-xs leading-4 text-slate-400">
-            You'll complete the payment securely on PayMongo — GCash, Maya, cards and more.
-          </Text>
-        ) : null}
-
-        <Pressable
-          onPress={onPay}
-          disabled={busy}
-          className={`mt-4 items-center justify-center rounded-xl py-3.5 ${
-            busy ? 'bg-brand/60' : 'bg-brand active:bg-brand-dark'
-          }`}
-          accessibilityRole="button"
-          accessibilityLabel={method === 'cash' ? 'Pay at Barangay Hall' : 'Pay Online'}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text className="text-base font-semibold text-white">
-              {method === 'cash' ? 'Pay at Barangay Hall' : 'Pay Online'}
-            </Text>
-          )}
-        </Pressable>
+      <View className="rounded-2xl border border-slate-200 bg-white px-4 py-2">
+        <InfoRow label="Bill Number" value={bill.bill_number} />
+        <InfoRow label="Amount Due" value={formatPeso(billAmount)} />
+        <InfoRow label="Billing Period" value={formatPeriod(bill.billing_period)} />
       </View>
+
+      <View className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+        <Text className="text-center text-xs leading-5 text-amber-800">
+          Pay during office hours (Mon–Fri, 8AM–5PM). Barangay staff will record your
+          payment — this bill stays unpaid until they do.
+        </Text>
+      </View>
+
+      <PrimaryButton label="Close" onPress={onClose} />
+      <SecondaryButton label="Pay Online Instead" onPress={onPayOnlineInstead} />
     </View>
   );
 }
@@ -369,7 +379,8 @@ function SecondaryButton({ label, onPress, disabled }: { label: string; onPress?
  * Full resident payment journey for one bill. Rendered inline by the
  * Payments screen and inside a modal by the bill cards.
  *
- *   Review → (Pay Online) → Creating → Opening → Verifying → Confirmed
+ *   Choose how to pay → (Pay Online) → Creating → Opening → Verifying → Confirmed
+ *                     → (Pay at Barangay Hall) → walk-in instructions (no record)
  *                                                        ↘ Cancelled/Expired: bill stays unpaid
  *                                                        ↘ Checkout error → retry
  *
@@ -387,8 +398,7 @@ export function PaymentJourney({
   onConfirmed?: (payment: ResidentPayment | null) => void;
   onBillPaid?: () => void;
 }) {
-  const dialog = useDialog();
-  const [method, setMethod] = useState<PaymentMethodId>('gcash');
+  const [showBarangayInfo, setShowBarangayInfo] = useState(false);
   const [paidReceipt, setPaidReceipt] = useState<ResidentPayment | null>(null);
   const flow = usePayMongoCheckout(bill);
   // Fire the parent's confirmation callbacks exactly once per bill.
@@ -418,8 +428,10 @@ export function PaymentJourney({
   }, [bill.id, unpaid]);
 
   // Surface the confirmation to the parent (refresh bill card, etc.) — once.
+  // A different bill always starts back on the payment-options step.
   useEffect(() => {
     confirmedHandledRef.current = false;
+    setShowBarangayInfo(false);
   }, [bill.id]);
 
   useEffect(() => {
@@ -429,20 +441,6 @@ export function PaymentJourney({
       onBillPaid?.();
     }
   }, [flow.state, flow.confirmedPayment, onConfirmed, onBillPaid]);
-
-  const handlePay = () => {
-    if (method === 'cash') {
-      dialog.alert(
-        'Pay at Barangay Hall',
-        `Bring ${formatPeso(Number(bill.amount_due) || 0)} for your ${formatPeriod(
-          bill.billing_period
-        )} bill to the Barangay Kalunasan Hall (Mon–Fri, 8AM–5PM) or an authorized payment center.`,
-        { tone: 'info' }
-      );
-      return;
-    }
-    flow.start();
-  };
 
   let content: ReactNode;
 
@@ -539,7 +537,16 @@ export function PaymentJourney({
     content = (
       <View className="items-center px-2 pt-6">
         <View className="h-16 w-16 items-center justify-center rounded-full bg-red-50">
-          <Text className="text-3xl">⚠️</Text>
+          <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M12 3.5 21.5 20.5H2.5L12 3.5Z"
+              stroke="#DC2626"
+              strokeWidth={1.8}
+              strokeLinejoin="round"
+            />
+            <Path d="M12 9.5v5" stroke="#DC2626" strokeWidth={1.8} strokeLinecap="round" />
+            <Circle cx={12} cy={17.5} r={1} fill="#DC2626" />
+          </Svg>
         </View>
         <Text className="mt-5 text-center text-lg font-bold text-slate-900">
           Payment Could Not Start
@@ -554,14 +561,23 @@ export function PaymentJourney({
   } else if (!unpaid) {
     // idle + already paid → receipt instead of a pay button.
     content = <PaidReceiptContent payment={paidReceipt} />;
+  } else if (showBarangayInfo) {
+    content = (
+      <BarangayPaymentInfo
+        bill={bill}
+        onClose={onClose}
+        onPayOnlineInstead={() => setShowBarangayInfo(false)}
+      />
+    );
   } else {
     content = (
-      <ReviewStepContent
+      <PaymentOptionsStep
         bill={bill}
-        method={method}
-        onMethodChange={setMethod}
-        onPay={handlePay}
         busy={busy}
+        onPayOnline={() => {
+          void flow.start();
+        }}
+        onPayBarangay={() => setShowBarangayInfo(true)}
       />
     );
   }

@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useNotifications } from '@/hooks/useNotifications';
 import {
   markAllNotificationsRead,
   markNotificationRead,
+  softDeleteAllNotifications,
+  softDeleteNotification,
 } from '@/services/notificationService';
 import type { AppNotification, NotificationType } from '@/types/notifications';
 import { NOTIFICATION_TYPE_LABELS } from '@/types/notifications';
@@ -83,6 +85,49 @@ export default function Notifications({ onBack }: NotificationsProps) {
     }
   };
 
+  const handleDeleteItem = (item: AppNotification) => {
+    Alert.alert('Delete notification?', 'This notification will be removed from your feed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await softDeleteNotification(item.id);
+            await refresh();
+          } catch (err) {
+            Alert.alert(
+              'Delete failed',
+              err instanceof Error ? err.message : 'Could not delete this notification.'
+            );
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteAll = () => {
+    if (notifications.length === 0) return;
+    Alert.alert('Delete all notifications?', 'This will remove all of your notifications from the feed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete All',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await softDeleteAllNotifications();
+            await refresh();
+          } catch (err) {
+            Alert.alert(
+              'Delete failed',
+              err instanceof Error ? err.message : 'Could not delete notifications.'
+            );
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <View className="flex-1 bg-surface">
       <View
@@ -106,7 +151,7 @@ export default function Notifications({ onBack }: NotificationsProps) {
       </View>
 
       {/* Filter tabs */}
-      <View className="flex-row gap-2 bg-surface px-4 pb-3 pt-3">
+      <View className="flex-row flex-wrap items-center gap-2 bg-surface px-4 pb-3 pt-3">
         {(['all', 'unread'] as Filter[]).map((f) => {
           const selected = activeFilter === f;
           return (
@@ -127,6 +172,11 @@ export default function Notifications({ onBack }: NotificationsProps) {
         <Pressable onPress={handleMarkAllRead} className="self-center active:opacity-70" accessibilityRole="button">
           <Text className="text-sm font-semibold text-brand">Mark all read</Text>
         </Pressable>
+        {notifications.length > 0 ? (
+          <Pressable onPress={handleDeleteAll} className="self-center active:opacity-70" accessibilityRole="button">
+            <Text className="text-sm font-semibold text-red-600">Delete all</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -180,6 +230,15 @@ export default function Notifications({ onBack }: NotificationsProps) {
                           {item.title}
                         </Text>
                         {unread ? <View className="mt-1.5 h-2 w-2 rounded-full bg-brand" /> : null}
+                        <Pressable
+                          onPress={() => handleDeleteItem(item)}
+                          hitSlop={8}
+                          className="mt-0.5 h-7 w-7 items-center justify-center rounded-full active:bg-slate-100"
+                          accessibilityRole="button"
+                          accessibilityLabel="Delete notification"
+                        >
+                          <Text className="text-base font-semibold text-slate-400">×</Text>
+                        </Pressable>
                       </View>
                       <Text className="mt-1 text-[13px] leading-5 text-slate-500">{item.message}</Text>
                       <View className="mt-2 flex-row items-center justify-between">

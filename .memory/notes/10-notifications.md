@@ -30,7 +30,8 @@ Implemented functionality includes:
 - Search where applicable
 - Mark as read
 - Mark all as read
-- Soft delete
+- Soft delete (single notification)
+- Soft delete all notifications
 - Relative timestamps
 - Type-specific icons
 - Realtime updates

@@ -167,6 +167,22 @@ export async function softDeleteNotification(id: string): Promise<void> {
   }
 }
 
+/** Soft-delete all notifications for the current user. */
+export async function softDeleteAllNotifications(): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('user_id', userData.user.id)
+    .is('deleted_at', null);
+
+  if (error) {
+    throw new Error(getNotificationErrorMessage(error));
+  }
+}
+
 /**
  * Subscribe to insert/update/delete events on the notifications table.
  * Realtime broadcasts respect RLS, so a client only receives events for the

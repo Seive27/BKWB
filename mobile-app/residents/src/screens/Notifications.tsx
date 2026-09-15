@@ -9,8 +9,14 @@ import {
 } from '@/components/notifications/NotificationFilterTabs';
 import { NotificationList } from '@/components/notifications/NotificationList';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import { useDialog } from '@/components/ui/AppDialog';
 import { useNotifications } from '@/hooks/useNotifications';
-import { markAllNotificationsRead, markNotificationRead } from '@/services/notificationService';
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+  softDeleteAllNotifications,
+  softDeleteNotification,
+} from '@/services/notificationService';
 import type { AppNotification } from '@/types/notifications';
 
 type NotificationsScreenProps = {
@@ -44,6 +50,7 @@ export default function NotificationsScreen({
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+  const dialog = useDialog();
 
   const { notifications, unreadCount, loading, refreshing, error, refresh } = useNotifications();
 
@@ -64,6 +71,49 @@ export default function NotificationsScreen({
     } catch {
       // Best-effort.
     }
+  };
+
+  const handleDeleteItem = (item: AppNotification) => {
+    dialog.confirm({
+      title: 'Delete notification?',
+      message: 'This notification will be removed from your feed.',
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await softDeleteNotification(item.id);
+          await refresh();
+          dialog.toast('Notification deleted');
+        } catch (err) {
+          dialog.toast(
+            err instanceof Error ? err.message : 'Failed to delete notification',
+            'error'
+          );
+        }
+      },
+    });
+  };
+
+  const handleDeleteAll = () => {
+    if (notifications.length === 0) return;
+    dialog.confirm({
+      title: 'Delete all notifications?',
+      message: 'This will remove all of your notifications from the feed.',
+      confirmLabel: 'Delete All',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await softDeleteAllNotifications();
+          await refresh();
+          dialog.toast('All notifications deleted');
+        } catch (err) {
+          dialog.toast(
+            err instanceof Error ? err.message : 'Failed to delete notifications',
+            'error'
+          );
+        }
+      },
+    });
   };
 
   return (
@@ -107,7 +157,9 @@ export default function NotificationsScreen({
               items={notifications}
               filter={activeFilter}
               onMarkAllRead={handleMarkAllRead}
+              onDeleteAll={handleDeleteAll}
               onPressItem={handlePressItem}
+              onDeleteItem={handleDeleteItem}
             />
           )}
           {refreshing && notifications.length > 0 ? (

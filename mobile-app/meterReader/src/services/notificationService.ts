@@ -20,7 +20,7 @@ export function getNotificationErrorMessage(error: {
     return 'The notifications table has not been set up yet. Please run the SQL migration.';
   }
   if (code === '42501' || msg.includes('row-level security') || msg.includes('permission denied')) {
-    return "You don't have permission to view notifications.";
+    return "You don't have permission to manage notifications.";
   }
   if (msg.includes('network') || msg.includes('fetch')) {
     return 'Network unavailable. Please check your connection and try again.';
@@ -150,6 +150,24 @@ export async function softDeleteNotification(id: string): Promise<void> {
     .from('notifications')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id);
+
+  if (error) {
+    throw new Error(getNotificationErrorMessage(error));
+  }
+}
+
+/** Soft-delete all notifications for the current user. */
+export async function softDeleteAllNotifications(): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('user_id', user.id)
+    .is('deleted_at', null);
 
   if (error) {
     throw new Error(getNotificationErrorMessage(error));

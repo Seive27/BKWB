@@ -116,9 +116,11 @@ function NotificationTypeIcon({ type }: { type: NotificationType }) {
 function NotificationCard({
   item,
   onPress,
+  onDelete,
 }: {
   item: AppNotification;
   onPress?: (item: AppNotification) => void;
+  onDelete?: (item: AppNotification) => void;
 }) {
   return (
     <Pressable
@@ -139,6 +141,17 @@ function NotificationCard({
           <View className="flex-row items-start gap-2">
             <Text className="flex-1 text-base font-bold text-slate-800">{item.title}</Text>
             {!item.is_read ? <View className="mt-1.5 h-2 w-2 rounded-full bg-brand" /> : null}
+            {onDelete ? (
+              <Pressable
+                onPress={() => onDelete(item)}
+                hitSlop={8}
+                className="mt-0.5 h-7 w-7 items-center justify-center rounded-full active:bg-slate-100"
+                accessibilityRole="button"
+                accessibilityLabel="Delete notification"
+              >
+                <Text className="text-base font-semibold text-slate-400">×</Text>
+              </Pressable>
+            ) : null}
           </View>
           <Text className="mt-1.5 text-sm leading-5 text-slate-500">{item.message}</Text>
           <View className="mt-3 flex-row items-center justify-between">
@@ -159,14 +172,18 @@ type NotificationListProps = {
   items: AppNotification[];
   filter?: NotificationFilter;
   onMarkAllRead?: () => void;
+  onDeleteAll?: () => void;
   onPressItem?: (item: AppNotification) => void;
+  onDeleteItem?: (item: AppNotification) => void;
 };
 
 export function NotificationList({
   items,
   filter = 'all',
   onMarkAllRead,
+  onDeleteAll,
   onPressItem,
+  onDeleteItem,
 }: NotificationListProps) {
   const visible = filter === 'unread' ? items.filter((i) => !i.is_read) : items;
   const today = visible.filter((i) => isToday(i.created_at));
@@ -179,11 +196,20 @@ export function NotificationList({
 
   return (
     <View className="gap-4">
-      <View className="flex-row items-center justify-between">
-        <Text className="text-xl font-bold text-slate-800">Recent Updates</Text>
-        <Pressable onPress={onMarkAllRead} className="active:opacity-70" accessibilityRole="button">
-          <Text className="text-sm font-semibold text-brand">Mark all as read</Text>
-        </Pressable>
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="flex-1 text-xl font-bold text-slate-800">Recent Updates</Text>
+        <View className="flex-row items-center gap-3">
+          {onMarkAllRead ? (
+            <Pressable onPress={onMarkAllRead} className="active:opacity-70" accessibilityRole="button">
+              <Text className="text-sm font-semibold text-brand">Mark all as read</Text>
+            </Pressable>
+          ) : null}
+          {onDeleteAll && items.length > 0 ? (
+            <Pressable onPress={onDeleteAll} className="active:opacity-70" accessibilityRole="button">
+              <Text className="text-sm font-semibold text-red-600">Delete all</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {visible.length === 0 ? (
@@ -205,7 +231,12 @@ export function NotificationList({
                 {group.label}
               </Text>
               {group.items.map((item) => (
-                <NotificationCard key={item.id} item={item} onPress={onPressItem} />
+                <NotificationCard
+                  key={item.id}
+                  item={item}
+                  onPress={onPressItem}
+                  onDelete={onDeleteItem}
+                />
               ))}
             </View>
           );

@@ -1333,12 +1333,14 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- Users read their own notifications; staff/super admins may monitor all.
+-- Note: do NOT require deleted_at IS NULL here — soft-delete UPDATEs need
+-- PostgREST RETURNING to still see the row; apps filter deleted_at in queries.
 DROP POLICY IF EXISTS "Users can read own notifications" ON public.notifications;
 CREATE POLICY "Users can read own notifications"
   ON public.notifications
   FOR SELECT
   TO authenticated
-  USING (user_id = auth.uid() AND deleted_at IS NULL);
+  USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "Staff and admins can read all notifications" ON public.notifications;
 CREATE POLICY "Staff and admins can read all notifications"

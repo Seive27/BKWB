@@ -15,6 +15,7 @@ import {
   Wrench,
   AlertTriangle,
   Inbox,
+  Trash2,
 } from 'lucide-react';
 import type { NotificationType } from '../types';
 import { NOTIFICATION_TYPE_LABELS } from '../types';
@@ -24,6 +25,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   softDeleteNotification,
+  softDeleteAllNotifications,
 } from '../services/notificationService';
 
 const typeConfig: Record<
@@ -67,6 +69,8 @@ const Notifications: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [mineOnly, setMineOnly] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -122,10 +126,25 @@ const Notifications: React.FC = () => {
     try {
       await softDeleteNotification(id);
       await refresh();
+      showToast('success', 'Notification deleted.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove notification.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setDeletingAll(true);
+    try {
+      await softDeleteAllNotifications();
+      await refresh();
+      setConfirmDeleteAll(false);
+      showToast('success', 'All notifications deleted.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to delete notifications.');
+    } finally {
+      setDeletingAll(false);
     }
   };
 
@@ -157,10 +176,20 @@ const Notifications: React.FC = () => {
             )}
             <button
               onClick={handleMarkAllRead}
-              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              disabled={notifications.length === 0}
+              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
               <CheckCircle className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-700">Mark All as Read</span>
+            </button>
+            <button
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={notifications.length === 0 || deletingAll || !mineOnly}
+              className="flex items-center space-x-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+              title={!mineOnly ? 'Switch to Mine to delete your notifications' : undefined}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-sm">Delete All</span>
             </button>
             <div className="flex items-center space-x-1 bg-white border border-gray-300 rounded-lg p-1">
               <button
@@ -303,6 +332,38 @@ const Notifications: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {confirmDeleteAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center space-x-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete all notifications?</h3>
+                <p className="text-sm text-gray-500">This will remove all of your notifications from the feed.</p>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setConfirmDeleteAll(false)}
+                disabled={deletingAll}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={deletingAll}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingAll ? 'Deleting…' : 'Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`fixed bottom-6 right-6 flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${        toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>

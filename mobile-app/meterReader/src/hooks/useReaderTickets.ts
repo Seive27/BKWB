@@ -41,9 +41,15 @@ export function useReaderTickets(): UseReaderTicketsResult {
 
     // Supabase channels are singletons keyed by name; a unique name per mount
     // avoids "cannot add callbacks after subscribe()" on remounts.
+    const channelName = `reader-tickets-${Date.now()}`;
     const channel = supabase
-      .channel(`reader-tickets-${Date.now()}`)
+      .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        load(true);
+      })
+      // Resident "Not Yet" reasons live on ticket_timeline — refresh so feedback
+      // appears without requiring a manual pull.
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_timeline' }, () => {
         load(true);
       })
       .subscribe();

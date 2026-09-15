@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
 /**
- * Shared expandable-detail modal used by announcements.
+ * Shared detail sheet used by announcements and tickets.
  * Keeps long-form content off the main feed: tapping a list item opens
  * this modal instead of expanding inline.
  */

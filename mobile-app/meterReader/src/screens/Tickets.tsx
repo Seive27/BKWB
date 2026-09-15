@@ -1,16 +1,12 @@
 ﻿import { useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TicketCard } from '@/components/tickets/TicketCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { useReaderTickets } from '@/hooks/useReaderTickets';
-import {
-  markWorkCompleted,
-  startTicketWork,
-  type ReaderTicket,
-} from '@/services/ticketService';
+import TicketDetails from '@/screens/TicketDetails';
 
 type Filter = 'active' | 'resolved';
 
@@ -24,9 +20,7 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
   const { tickets, loading, refreshing, error, refresh } = useReaderTickets();
   const [filter, setFilter] = useState<Filter>('active');
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [completing, setCompleting] = useState<ReaderTicket | null>(null);
-  const [completionText, setCompletionText] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const filtered = tickets.filter((t) =>
     filter === 'active'
@@ -34,42 +28,16 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
       : t.status === 'resolved' || t.status === 'closed'
   );
 
-  const handleStartWork = async (ticket: ReaderTicket) => {
-    setBusyId(ticket.id);
-    try {
-      await startTicketWork(ticket.id);
-      await refresh();
-    } catch (err) {
-      Alert.alert(
-        'Could not start work',
-        err instanceof Error ? err.message : 'An unexpected error occurred.'
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleMarkWorkCompleted = async () => {
-    if (!completing) return;
-    if (!completionText.trim()) {
-      Alert.alert('Details required', 'Please describe what work was completed.');
-      return;
-    }
-    setBusyId(completing.id);
-    try {
-      await markWorkCompleted(completing.id, completionText);
-      setCompleting(null);
-      setCompletionText('');
-      await refresh();
-    } catch (err) {
-      Alert.alert(
-        'Could not update',
-        err instanceof Error ? err.message : 'An unexpected error occurred.'
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
+  if (selectedId) {
+    return (
+      <TicketDetails
+        ticketId={selectedId}
+        activeTab={activeTab}
+        onTabPress={onTabPress}
+        onBack={() => setSelectedId(null)}
+      />
+    );
+  }
 
   return (
     <View className="flex-1 bg-surface">
@@ -135,12 +103,7 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
               <TicketCard
                 key={ticket.id}
                 ticket={ticket}
-                busy={busyId === ticket.id}
-                onStartWork={() => handleStartWork(ticket)}
-                onMarkWorkCompleted={() => {
-                  setCompleting(ticket);
-                  setCompletionText('');
-                }}
+                onPress={() => setSelectedId(ticket.id)}
               />
             ))}
           </View>
@@ -148,55 +111,6 @@ export default function Tickets({ activeTab = 'tickets', onTabPress }: TicketsPr
       </ScrollView>
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
-
-      {/* Work completed notes modal */}
-      {completing && (
-        <View className="absolute inset-0 justify-end bg-black/50">
-          <Pressable className="flex-1" onPress={() => setCompleting(null)} />
-          <View className="rounded-t-3xl bg-white px-5 pb-8 pt-4">
-            <View className="items-center pt-1">
-              <View className="h-1.5 w-12 rounded-full bg-slate-200" />
-            </View>
-            <Text className="mt-3 text-lg font-bold text-slate-800">Work Completed</Text>
-            <Text className="mt-1 text-sm text-slate-400">
-              {completing.ticket_number} · {completing.subject}
-            </Text>
-            <Text className="mt-2 text-sm leading-5 text-slate-500">
-              The resident will be asked to confirm that the work is completed before this ticket
-              is resolved.
-            </Text>
-            <TextInput
-              value={completionText}
-              onChangeText={setCompletionText}
-              placeholder="Describe the work that was completed…"
-              placeholderTextColor="#94A3B8"
-              multiline
-              numberOfLines={4}
-              className="mt-4 min-h-[110px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-800"
-              textAlignVertical="top"
-            />
-            <View className="mt-4 flex-row gap-3">
-              <Pressable
-                onPress={() => setCompleting(null)}
-                className="flex-1 items-center rounded-xl border border-slate-200 py-3.5 active:bg-slate-50"
-                accessibilityRole="button"
-              >
-                <Text className="text-base font-semibold text-slate-600">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleMarkWorkCompleted}
-                disabled={busyId === completing.id}
-                className="flex-1 items-center rounded-xl bg-emerald-600 py-3.5 active:opacity-85 disabled:opacity-50"
-                accessibilityRole="button"
-              >
-                <Text className="text-base font-semibold text-white">
-                  {busyId === completing.id ? 'Saving…' : 'Submit'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

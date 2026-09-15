@@ -257,10 +257,18 @@ export async function confirmWorkCompleted(ticketId: string): Promise<Ticket> {
 
 /**
  * Resident reports that work is not yet done. Returns the ticket to Ongoing
- * so the assigned worker can continue.
+ * so the assigned worker can continue. `reason` is required and recorded on
+ * the timeline so staff/readers know what still needs to be done.
  */
-export async function rejectWorkCompleted(ticketId: string): Promise<Ticket> {
+export async function rejectWorkCompleted(
+  ticketId: string,
+  reason: string
+): Promise<Ticket> {
   const userId = await requireUserId();
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error('Please explain why the work is not completed yet.');
+  }
 
   const { data, error } = await supabase
     .from('tickets')
@@ -278,7 +286,7 @@ export async function rejectWorkCompleted(ticketId: string): Promise<Ticket> {
   const { error: timelineError } = await supabase.from('ticket_timeline').insert({
     ticket_id: ticketId,
     event_type: 'status_change',
-    description: 'Resident reported that work is not yet completed',
+    description: `Resident reported that work is not yet completed: ${trimmed}`,
     performed_by: userId,
   });
   if (timelineError) {

@@ -71,6 +71,7 @@ function eventTitle(event: TicketTimelineEvent): string {
       const desc = event.description?.toLowerCase() ?? '';
       if (desc.includes('resolved')) return 'Ticket Resolved';
       if (desc.includes('closed')) return 'Ticket Closed';
+      if (desc.includes('not yet completed')) return 'Work Not Completed';
       return 'Status Updated';
     }
   }

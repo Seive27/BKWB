@@ -27,6 +27,11 @@ export interface ReaderTicket {
   resolved_at: string | null;
   /** Joined profiles row for the resident who filed the ticket. */
   resident?: { id: string; first_name: string; last_name: string } | null;
+  /**
+   * Latest resident "Not Yet" explanation from ticket_timeline, when the
+   * resident rejected a work_completed confirmation. Shown while Ongoing.
+   */
+  resident_not_yet_reason?: string | null;
 }
 
 export const READER_TICKET_STATUS_LABELS: Record<ReaderTicketStatus, string> = {
@@ -40,8 +45,72 @@ export const READER_TICKET_STATUS_LABELS: Record<ReaderTicketStatus, string> = {
   closed: 'Closed',
 };
 
+const NOT_YET_PREFIX = 'Resident reported that work is not yet completed:';
+
 function mapRow(row: ReaderTicket): ReaderTicket {
-  return { ...row, resident: row.resident ?? null };
+  return {
+    ...row,
+    resident: row.resident ?? null,
+    resident_not_yet_reason: row.resident_not_yet_reason ?? null,
+  };
+}
+
+function extractNotYetReason(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const idx = description.indexOf(NOT_YET_PREFIX);
+  if (idx >= 0) {
+    const reason = description.slice(idx + NOT_YET_PREFIX.length).trim();
+    return reason || null;
+  }
+  // Fallback for older/variant wording.
+  const lower = description.toLowerCase();
+  if (!lower.includes('not yet completed')) return null;
+  const colon = description.indexOf(':');
+  if (colon >= 0) {
+    const reason = description.slice(colon + 1).trim();
+    return reason || description.trim();
+  }
+  return description.trim();
+}
+
+/**
+ * Attach the newest resident "Not Yet" reason per ticket from timeline.
+ * Only surfaced for Ongoing tickets so old feedback does not linger after
+ * the reader marks work completed again.
+ */
+async function attachResidentNotYetReasons(
+  tickets: ReaderTicket[]
+): Promise<ReaderTicket[]> {
+  const ongoingIds = tickets.filter((t) => t.status === 'in_progress').map((t) => t.id);
+  if (ongoingIds.length === 0) {
+    return tickets.map((t) => ({ ...t, resident_not_yet_reason: null }));
+  }
+
+  const { data, error } = await supabase
+    .from('ticket_timeline')
+    .select('ticket_id, description, created_at')
+    .in('ticket_id', ongoingIds)
+    .eq('event_type', 'status_change')
+    .ilike('description', '%not yet completed%')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.warn('[tickets] could not load resident feedback:', error.message);
+    return tickets.map((t) => ({ ...t, resident_not_yet_reason: null }));
+  }
+
+  const latestByTicket = new Map<string, string>();
+  for (const row of data ?? []) {
+    const ticketId = row.ticket_id as string;
+    if (latestByTicket.has(ticketId)) continue;
+    const reason = extractNotYetReason(row.description as string | null);
+    if (reason) latestByTicket.set(ticketId, reason);
+  }
+
+  return tickets.map((t) => ({
+    ...t,
+    resident_not_yet_reason: latestByTicket.get(t.id) ?? null,
+  }));
 }
 
 const SELECT =
@@ -80,7 +149,8 @@ export async function getMyTickets(): Promise<ReaderTicket[]> {
     throw new Error(error.message || 'Failed to load your tickets.');
   }
 
-  return ((data ?? []) as unknown as ReaderTicket[]).map(mapRow);
+  const tickets = ((data ?? []) as unknown as ReaderTicket[]).map(mapRow);
+  return attachResidentNotYetReasons(tickets);
 }
 
 /** Mark an assigned/scheduled ticket as Ongoing (in progress). */

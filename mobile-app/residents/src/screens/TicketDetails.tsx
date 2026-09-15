@@ -1,6 +1,14 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDialog } from '@/components/ui/AppDialog';
@@ -68,6 +76,8 @@ export default function TicketDetailsScreen({
   const { ticket, timeline, loading, error, refresh } = useTicketDetails(ticketId);
   const dialog = useDialog();
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   // Skeleton only on the very first load — background realtime refreshes
   // (loading flips true while ticket already exists) must not flash it.
   const showSkeleton = loading && !ticket;
@@ -89,31 +99,40 @@ export default function TicketDetailsScreen({
     }
   };
 
-  const handleReject = () => {
-    dialog.confirm({
-      title: 'Work not completed?',
-      message: 'This will send the ticket back so the assigned worker can continue.',
-      confirmLabel: 'Not Completed',
-      cancelLabel: 'Cancel',
-      destructive: true,
-      onConfirm: () => {
-        void (async () => {
-          setConfirmBusy(true);
-          try {
-            await rejectWorkCompleted(ticketId);
-            await refresh();
-          } catch (err) {
-            dialog.alert(
-              'Could Not Update',
-              friendlyErrorMessage(err, 'An unexpected error occurred. Please try again.'),
-              { tone: 'danger' }
-            );
-          } finally {
-            setConfirmBusy(false);
-          }
-        })();
-      },
-    });
+  const openRejectSheet = () => {
+    setRejectReason('');
+    setRejectOpen(true);
+  };
+
+  const closeRejectSheet = () => {
+    if (confirmBusy) return;
+    setRejectOpen(false);
+    setRejectReason('');
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectReason.trim()) {
+      dialog.alert('Reason required', 'Please explain why the work is not completed yet.', {
+        tone: 'warning',
+      });
+      return;
+    }
+
+    setConfirmBusy(true);
+    try {
+      await rejectWorkCompleted(ticketId, rejectReason);
+      setRejectOpen(false);
+      setRejectReason('');
+      await refresh();
+    } catch (err) {
+      dialog.alert(
+        'Could Not Update',
+        friendlyErrorMessage(err, 'An unexpected error occurred. Please try again.'),
+        { tone: 'danger' }
+      );
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   return (
@@ -134,6 +153,7 @@ export default function TicketDetailsScreen({
         className="flex-1"
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View className="px-4 pt-5">
           {showSkeleton ? (
@@ -230,7 +250,7 @@ export default function TicketDetailsScreen({
                   </Text>
                   <View className="mt-4 flex-row gap-3">
                     <Pressable
-                      onPress={handleReject}
+                      onPress={openRejectSheet}
                       disabled={confirmBusy}
                       className="flex-1 items-center rounded-xl border border-slate-200 py-3.5 active:bg-slate-50 disabled:opacity-50"
                       accessibilityRole="button"
@@ -277,6 +297,58 @@ export default function TicketDetailsScreen({
       </ScrollView>
 
       <Navbar activeTab={activeTab} onTabPress={onTabPress} />
+
+      {rejectOpen ? (
+        <View className="absolute inset-0 justify-end bg-black/50">
+          <Pressable className="flex-1" onPress={closeRejectSheet} />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View
+              className="rounded-t-3xl bg-white px-5 pt-4"
+              style={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
+            >
+              <View className="items-center pt-1">
+                <View className="h-1.5 w-12 rounded-full bg-slate-200" />
+              </View>
+              <Text className="mt-3 text-lg font-bold text-slate-800">Work not completed?</Text>
+              <Text className="mt-1 text-sm leading-5 text-slate-500">
+                Tell us what still needs to be done so the assigned worker can continue.
+              </Text>
+              <TextInput
+                value={rejectReason}
+                onChangeText={setRejectReason}
+                placeholder="Explain why the work is not completed yet…"
+                placeholderTextColor="#94A3B8"
+                multiline
+                numberOfLines={4}
+                autoFocus
+                className="mt-4 min-h-[110px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-800"
+                textAlignVertical="top"
+                editable={!confirmBusy}
+              />
+              <View className="mt-4 flex-row gap-3">
+                <Pressable
+                  onPress={closeRejectSheet}
+                  disabled={confirmBusy}
+                  className="flex-1 items-center rounded-xl border border-slate-200 py-3.5 active:bg-slate-50 disabled:opacity-50"
+                  accessibilityRole="button"
+                >
+                  <Text className="text-base font-semibold text-slate-600">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleRejectSubmit}
+                  disabled={confirmBusy}
+                  className="flex-1 items-center rounded-xl bg-red-600 py-3.5 active:opacity-85 disabled:opacity-50"
+                  accessibilityRole="button"
+                >
+                  <Text className="text-base font-semibold text-white">
+                    {confirmBusy ? 'Saving…' : 'Submit'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      ) : null}
     </View>
   );
 }

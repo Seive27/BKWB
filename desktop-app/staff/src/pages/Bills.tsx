@@ -11,10 +11,10 @@ import {
   Settings2,
   RefreshCw,
   AlertCircle,
-  X,
   ChevronDown,
 } from 'lucide-react';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
+import BillOverviewModal from '../components/modals/BillOverviewModal';
 import {
   getBills,
   setBillStatus
@@ -70,107 +70,6 @@ function getStatusColor(status: BillStatus): string {
 function getStatusText(status: BillStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
-
-// ─── Bill Detail Modal ───
-
-const BillDetailModal: React.FC<{ bill: Bill; onClose: () => void }> = ({ bill, onClose }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-      <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-5 flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900">{bill.bill_number}</h3>
-          <p className="text-sm text-gray-500">{formatPeriod(bill.billing_period)} billing statement</p>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-          <X className="w-5 h-5 text-gray-500" />
-        </button>
-      </div>
-
-      <div className="px-6 py-5 space-y-5">
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Resident</p>
-            <p className="font-medium text-gray-900">
-              {bill.resident ? `${bill.resident.first_name} ${bill.resident.last_name}` : '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Account Number</p>
-            <p className="font-medium text-gray-900">{bill.account?.account_number ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Sitio</p>
-            <p className="font-medium text-gray-900">{bill.account?.sitio ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Billing Period</p>
-            <p className="font-medium text-gray-900">{formatPeriod(bill.billing_period)}</p>
-          </div>
-        </div>
-
-        <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
-          <div className="flex justify-between px-4 py-2.5 text-sm">
-            <span className="text-gray-500">Previous Reading</span>
-            <span className="text-gray-900 font-medium">
-              {bill.previous_reading !== null && bill.previous_reading !== undefined ? `${bill.previous_reading.toLocaleString()} m³` : '—'}
-            </span>
-          </div>
-          <div className="flex justify-between px-4 py-2.5 text-sm">
-            <span className="text-gray-500">Current Reading</span>
-            <span className="text-gray-900 font-medium">
-              {bill.current_reading !== null && bill.current_reading !== undefined ? `${bill.current_reading.toLocaleString()} m³` : '—'}
-            </span>
-          </div>
-          <div className="flex justify-between px-4 py-2.5 text-sm">
-            <span className="text-gray-500">Consumption</span>
-            <span className="text-gray-900 font-medium">
-              {bill.consumption !== null && bill.consumption !== undefined ? `${bill.consumption.toLocaleString()} m³` : '—'}
-            </span>
-          </div>
-          <div className="flex justify-between px-4 py-2.5 text-sm">
-            <span className="text-gray-500">Water Rate (per m³)</span>
-            <span className="text-gray-900 font-medium">{formatPeso(bill.water_rate)}</span>
-          </div>
-          {(bill.extra_components ?? []).map((c, i) => (
-            <div key={`${c.category}-${i}`} className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-gray-500">{c.category}</span>
-              <span className="text-gray-900 font-medium">{formatPeso(c.price)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between px-4 py-3 bg-primary-50 rounded-b-xl">
-            <span className="text-sm font-semibold text-primary-800">Amount Due</span>
-            <span className="text-base font-bold text-primary-800">{formatPeso(bill.amount_due)}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Due Date</p>
-            <p className="font-medium text-gray-900">{formatDate(bill.due_date)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Date Issued</p>
-            <p className="font-medium text-gray-900">{formatDate(bill.created_at)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 uppercase">Payment Date</p>
-            <p className="font-medium text-gray-900">
-              {bill.paid_at ? formatDate(bill.paid_at) : 'Not paid'}
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(bill.status)}`}>
-            {getStatusText(bill.status)}
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-// ─── Page ───
 
 const Bills: React.FC = () => {
   const [bills, setBills] = useState<Bill[]>([]);
@@ -524,7 +423,11 @@ const Bills: React.FC = () => {
                         ? `${bill.resident.first_name} ${bill.resident.last_name}`
                         : 'Unknown resident';
                       return (
-                        <tr key={bill.id} className="hover:bg-gray-50 transition-colors">
+                        <tr
+                          key={bill.id}
+                          onClick={() => setDetailBill(bill)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                             {bill.bill_number}
                           </td>
@@ -558,7 +461,10 @@ const Bills: React.FC = () => {
                               {getStatusText(bill.status)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <td
+                            className="px-6 py-4 whitespace-nowrap text-right"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <div className="flex items-center justify-end space-x-1.5">
                               <button
                                 onClick={() => setDetailBill(bill)}
@@ -634,7 +540,7 @@ const Bills: React.FC = () => {
       </div>
 
       {showConfigureBills && <ConfigureBillsModal isOpen={showConfigureBills} onClose={() => setShowConfigureBills(false)} />}
-      {detailBill && <BillDetailModal bill={detailBill} onClose={() => setDetailBill(null)} />}
+      {detailBill && <BillOverviewModal bill={detailBill} onClose={() => setDetailBill(null)} />}
     </>
   );
 };

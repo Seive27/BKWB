@@ -14,6 +14,8 @@ export interface BillQueryOptions {
 export interface BillReceiptLine {
   accountName: string;
   billPeriod: string;
+  /** Receipt-facing status for that billing month. */
+  status: 'Paid' | 'Unpaid' | 'Void';
   previousReading: number | null;
   currentReading: number | null;
   consumption: number | null;
@@ -192,53 +194,106 @@ function previousPeriod(period: string): string | null {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+/** Map bill status to the Paid / Unpaid label shown on receipts. */
+function receiptStatusLabel(status: BillStatus): BillReceiptLine['status'] {
+  if (status === 'paid') return 'Paid';
+  if (status === 'void') return 'Void';
+  return 'Unpaid'; // pending + overdue
+}
+
 /**
- * Assemble the billing-receipt payload used by the Generate Bill modal
- * after a meter reading is approved and billed.
+ * Assemble the billing-receipt payload used by Generate Bill / Print Preview.
+ * Includes prior months' bills so the receipt shows previous readings history,
+ * while Total Amount Due only sums unpaid (pending / overdue) charges.
  */
 export async function getBillReceiptData(billId: string): Promise<BillReceiptData> {
   const bill = await getBillById(billId);
 
-  const unpaid = await getUnpaidBillsByAccount(bill.account_id);
-  const lineBills =
-    unpaid.length > 0
-      ? unpaid
-      : [bill];
+  const [{ data: historyRows, error: historyError }, unpaid] = await Promise.all([
+    supabase
+      .from('bills')
+      .select(BILL_SELECT)
+      .eq('account_id', bill.account_id)
+      .is('deleted_at', null)
+      .lte('billing_period', bill.billing_period)
+      .order('billing_period', { ascending: true })
+      .limit(6),
+    getUnpaidBillsByAccount(bill.account_id),
+  ]);
 
-  // Ensure the just-generated bill is present even if status filters miss it.
-  if (!lineBills.some((b) => b.id === bill.id)) {
-    lineBills.unshift(bill);
+  if (historyError) {
+    throw new Error(getBillErrorMessage(historyError));
   }
+
+  const byId = new Map<string, Bill>();
+  for (const row of historyRows ?? []) {
+    const mapped = mapRow(row as unknown as BillRow);
+    byId.set(mapped.id, mapped);
+  }
+  for (const unpaidBill of unpaid) {
+    byId.set(unpaidBill.id, unpaidBill);
+  }
+  byId.set(bill.id, bill);
+
+  const lineBills = [...byId.values()].sort((a, b) =>
+    a.billing_period.localeCompare(b.billing_period)
+  );
+
+  // Immediately previous period bill (for header Prev. Bill Period / Prev. Consumption).
+  const priorBills = lineBills.filter((b) => b.billing_period < bill.billing_period);
+  const previousBill = priorBills.length > 0 ? priorBills[priorBills.length - 1] : null;
 
   const lines: BillReceiptLine[] = [];
   for (const b of lineBills) {
+    const priorForRowList = lineBills.filter((x) => x.billing_period < b.billing_period);
+    const priorForRow =
+      priorForRowList.length > 0 ? priorForRowList[priorForRowList.length - 1] : null;
+
+    // Prefer stored previous_reading; fall back to prior bill's current reading.
+    const previousReading =
+      b.previous_reading != null && Number(b.previous_reading) !== 0
+        ? b.previous_reading
+        : priorForRow?.current_reading ?? b.previous_reading;
+
     const waterAmount = Math.max(
       0,
       Number(b.amount_due) -
         (b.extra_components ?? []).reduce((sum, c) => sum + (Number(c.price) || 0), 0)
     );
+
+    const lineStatus = receiptStatusLabel(b.status);
+
     lines.push({
       accountName: 'WATER FEE',
       billPeriod: b.billing_period,
-      previousReading: b.previous_reading,
+      status: lineStatus,
+      previousReading,
       currentReading: b.current_reading,
       consumption: b.consumption,
       amount: waterAmount,
     });
-    for (const c of b.extra_components ?? []) {
-      if (!c.category?.trim()) continue;
-      lines.push({
-        accountName: c.category.trim().toUpperCase(),
-        billPeriod: b.billing_period,
-        previousReading: null,
-        currentReading: null,
-        consumption: null,
-        amount: Number(c.price) || 0,
-      });
+
+    // Extra components only on unpaid / current open bills (avoid re-listing paid fees).
+    if (b.status === 'pending' || b.status === 'overdue' || b.id === bill.id) {
+      for (const c of b.extra_components ?? []) {
+        if (!c.category?.trim()) continue;
+        lines.push({
+          accountName: c.category.trim().toUpperCase(),
+          billPeriod: b.billing_period,
+          status: lineStatus,
+          previousReading: null,
+          currentReading: null,
+          consumption: null,
+          amount: Number(c.price) || 0,
+        });
+      }
     }
   }
 
-  const totalAmountDue = lineBills.reduce((sum, b) => sum + (Number(b.amount_due) || 0), 0);
+  // Charge total: unpaid only (paid prior months stay on the receipt for readings).
+  const totalAmountDue = lineBills
+    .filter((b) => b.status === 'pending' || b.status === 'overdue')
+    .reduce((sum, b) => sum + (Number(b.amount_due) || 0), 0);
 
   let lastPayment: BillReceiptData['lastPayment'] = null;
   const { data: paymentRows, error: paymentError } = await supabase
@@ -272,8 +327,10 @@ export async function getBillReceiptData(billId: string): Promise<BillReceiptDat
     residentName: formatResidentName(bill.resident),
     address,
     meterSerial: account?.meter?.meter_number ?? '—',
-    prevBillPeriod: previousPeriod(bill.billing_period),
-    prevConsumption: bill.previous_reading,
+    prevBillPeriod: previousBill?.billing_period ?? previousPeriod(bill.billing_period),
+    prevConsumption:
+      previousBill?.consumption ??
+      (bill.previous_reading != null ? Number(bill.previous_reading) : null),
     billPeriod: bill.billing_period,
     dueDate: bill.due_date,
     lastPayment,

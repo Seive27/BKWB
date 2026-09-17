@@ -28,6 +28,7 @@ import {
   createSitioAssignment,
   getMeterReaders,
   getSitioOptions,
+  markReadingBilled,
   rejectReading,
   type SitioAssignOption,
 } from '../services/meterReadingService';
@@ -48,7 +49,7 @@ const PAGE_SIZE = 10;
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; dot: string }> = {
   assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
   pending_review: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
-  approved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  approved: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
   rejected: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
   billed: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
 };
@@ -143,15 +144,15 @@ const MeterReadings: React.FC = () => {
   const stats = useMemo(() => {
     let assigned = 0;
     let pending = 0;
-    let approved = 0;
+    let billed = 0;
     let rejected = 0;
     for (const r of readings) {
       if (r.status === 'assigned') assigned += 1;
       else if (r.status === 'pending_review') pending += 1;
-      else if (r.status === 'approved') approved += 1;
+      else if (r.status === 'billed') billed += 1;
       else if (r.status === 'rejected') rejected += 1;
     }
-    return { assigned, pending, approved, rejected };
+    return { assigned, pending, billed, rejected };
   }, [readings]);
 
   const sitioFilterOptions = useMemo(() => {
@@ -295,50 +296,59 @@ const MeterReadings: React.FC = () => {
     try {
       await approveReading(selectedReading.id, actorId);
       await refresh();
-      setShowReviewModal(false);
-
-      // Billing workflow: approved reading → generate bill → show receipt modal.
-      setBillReceipt(null);
-      setBillReceiptError(null);
-      setGeneratedBillNumber(null);
-      setBillReceiptLoading(true);
-      setShowGenerateBillModal(true);
-
-      try {
-        const result = await generateBillForReading(selectedReading.id);
-        const billId = result.bill_id ?? null;
-        setGeneratedBillNumber(result.bill_number ?? null);
-
-        if (!billId) {
-          setBillReceiptError(
-            result.message ?? 'A bill for this billing period already exists, but it could not be loaded.'
-          );
-          showToast(
-            'success',
-            `Reading approved. ${result.message ?? 'A bill for this billing period already exists.'}`
-          );
-          return;
-        }
-
-        const receipt = await getBillReceiptData(billId);
-        setBillReceipt(receipt);
-        showToast(
-          'success',
-          result.generated
-            ? `Reading approved. Bill ${result.bill_number ?? ''} generated.`.trim()
-            : `Reading approved. ${result.message ?? 'Showing existing bill.'}`
-        );
-      } catch (billErr) {
-        const message =
-          billErr instanceof Error ? billErr.message : 'Failed to generate the bill.';
-        setBillReceiptError(message);
-        showToast('error', `Reading approved, but the bill was not generated: ${message}`);
-      } finally {
-        setBillReceiptLoading(false);
-      }
+      showToast('success', 'Reading approved. Use Issue Bill to create the resident bill.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to approve reading.');
     } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleIssueBill = async (reading: MeterReading) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setSelectedId(reading.id);
+    setShowReviewModal(false);
+    setBillReceipt(null);
+    setBillReceiptError(null);
+    setGeneratedBillNumber(null);
+    setBillReceiptLoading(true);
+    setShowGenerateBillModal(true);
+
+    try {
+      const result = await generateBillForReading(reading.id);
+      const billId = result.bill_id ?? null;
+      setGeneratedBillNumber(result.bill_number ?? null);
+
+      // Ensure status becomes Billed even when a duplicate bill already exists.
+      await markReadingBilled(reading.id);
+      await refresh();
+
+      if (!billId) {
+        setBillReceiptError(
+          result.message ?? 'A bill for this billing period already exists, but it could not be loaded.'
+        );
+        showToast(
+          'success',
+          result.message ?? 'A bill for this billing period already exists. Reading marked as billed.'
+        );
+        return;
+      }
+
+      const receipt = await getBillReceiptData(billId);
+      setBillReceipt(receipt);
+      showToast(
+        'success',
+        result.generated
+          ? `Bill ${result.bill_number ?? ''} issued. It appears as Pending on the Bills page.`.trim()
+          : result.message ?? 'Existing bill loaded. Reading marked as billed.'
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to issue the bill.';
+      setBillReceiptError(message);
+      showToast('error', message);
+    } finally {
+      setBillReceiptLoading(false);
       setActionBusy(false);
     }
   };
@@ -399,7 +409,7 @@ const MeterReadings: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Meter Readings</h1>
               <p className="text-gray-600">
-                Assign readings to meter readers and review their submissions.
+                Assign readings to meter readers, approve submissions, then issue bills for residents.
               </p>
             </div>
             <button
@@ -437,8 +447,8 @@ const MeterReadings: React.FC = () => {
                   <CheckCircle className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">APPROVED</p>
-              <h3 className="text-3xl font-bold text-gray-900">{stats.approved}</h3>
+              <p className="text-sm text-gray-600 mb-1">BILLED</p>
+              <h3 className="text-3xl font-bold text-gray-900">{stats.billed}</h3>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-3">
@@ -657,13 +667,25 @@ const MeterReadings: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(reading.status)}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <button
-                            onClick={() => openReview(reading)}
-                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-300 text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-all"
-                          >
-                            <EyeIcon />
-                            <span>Review</span>
-                          </button>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => openReview(reading)}
+                              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-300 text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-all"
+                            >
+                              <EyeIcon />
+                              <span>Review</span>
+                            </button>
+                            {reading.status === 'approved' && (
+                              <button
+                                onClick={() => handleIssueBill(reading)}
+                                disabled={actionBusy}
+                                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-600 text-white hover:bg-primary-700 transition-all disabled:opacity-50"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Issue Bill</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1015,6 +1037,26 @@ const MeterReadings: React.FC = () => {
                   {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                   <CheckCircle className="w-4 h-4" />
                   <span>Approve</span>
+                </button>
+              </div>
+            )}
+
+            {selectedReading.status === 'approved' && (
+              <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end space-x-3 rounded-b-2xl">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => handleIssueBill(selectedReading)}
+                  disabled={actionBusy}
+                  className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
+                >
+                  {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <FileText className="w-4 h-4" />
+                  <span>Issue Bill</span>
                 </button>
               </div>
             )}

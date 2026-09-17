@@ -266,7 +266,7 @@ export async function issueResidentLogin(
 ): Promise<{
   login_email: string;
   temporary_password: string;
-  generated_from: 'dob' | 'random';
+  generated_from: 'dob' | 'random' | 'account_lastname';
   profile_is_active: boolean;
 }> {
   const { data, error } = await supabase.functions.invoke('resident-login', {
@@ -289,10 +289,20 @@ export async function issueResidentLogin(
   return {
     login_email: data.login_email as string,
     temporary_password: data.temporary_password as string,
-    generated_from: (data.generated_from as 'dob' | 'random') ?? 'random',
+    generated_from: (data.generated_from as 'dob' | 'random' | 'account_lastname') ?? 'account_lastname',
     profile_is_active: data.profile_is_active === true,
   };
 }
+
+/**
+ * True when the resident already has mobile-app login credentials
+ * (Issue Login has been run, or they signed up with an email).
+ * Migrated masterlist rows with a NULL/blank email are "No Account Yet".
+ */
+export function hasMobileAccount(resident: Pick<ResidentRecord, 'email'>): boolean {
+  return !!(resident.email && resident.email.trim());
+}
+
 // ── Resident creation (server-side via edge function) ──
 
 /**

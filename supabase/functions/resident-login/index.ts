@@ -14,8 +14,8 @@
 //          ->  a LOGIN HANDLE email is assigned when the user has none:
 //                acc-<cons code>@example.com   (internal identifier,
 //                IANA-reserved domain — never a real mailbox)
-//          ->  temporary password set (DOB-based when available,
-//              otherwise a secure random one) and returned ONCE
+//          ->  temporary password set as AccountNumber@LastName
+//              (migration credentials) and returned ONCE
 //
 // The resident then signs in on the mobile app using their Account
 // Number + temporary password, and completes their profile.
@@ -58,42 +58,24 @@ export function isLoginHandle(email: string | null | undefined): boolean {
   return /^acc-[a-z0-9-]+@/.test(normalized);
 }
 
-function parseBirthDate(dateOfBirth: string): { y: number; m: number; d: number } | null {
-  const iso = dateOfBirth.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return { y: Number(iso[1]), m: Number(iso[2]), d: Number(iso[3]) };
-  const us = dateOfBirth.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (us) return { y: Number(us[3]), m: Number(us[1]), d: Number(us[2]) };
-  return null;
-}
-
-/** Same DOB-based pattern used across BKWB: DelaCruzJuan05122003 */
-function generateTemporaryPassword(firstName: string, lastName: string, dateOfBirth: string): string {
+/**
+ * Temporary migration password: AccountNumber@LastName
+ * Example: ACC-0006@DelaCruz
+ */
+function generateTemporaryPassword(accountNumber: string, lastName: string): string {
   const titleCase = (name: string) =>
     name
       .trim()
       .split(/\s+/)
       .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
       .join('');
 
-  const parts = parseBirthDate(dateOfBirth);
-  if (!parts || parts.y < 1900 || parts.m < 1 || parts.m > 12 || parts.d < 1 || parts.d > 31) {
-    throw new Error('Invalid date of birth format.');
+  const last = titleCase(lastName);
+  if (!last) {
+    throw new Error('Resident last name is required to generate a temporary password.');
   }
-  const mm = String(parts.m).padStart(2, '0');
-  const dd = String(parts.d).padStart(2, '0');
-  const yyyy = String(parts.y);
-  return `${titleCase(lastName)}${titleCase(firstName)}${mm}${dd}${yyyy}`;
-}
-
-/** Cryptographically random fallback password for records without a DOB. */
-function generateRandomPassword(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (const b of bytes) out += alphabet[b % alphabet.length];
-  return `Bkwb-${out.slice(0, 12)}!`;
+  return `${accountNumber.trim()}@${last}`;
 }
 
 function firstStringValue(values: unknown[]): string | undefined {
@@ -242,31 +224,24 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // 4. Build the credentials.
+  // Login identifier shown to residents is the Account Number. Auth still
+  // uses an internal handle (acc-<cons>@example.com) because GoTrue requires
+  // an email-shaped identifier.
   const existingEmail = profileRow.email?.trim() ?? '';
   const hasRealEmail = !!existingEmail && !isLoginHandle(existingEmail);
   const handle = loginHandleForAccount(accountNumber);
-
-  // A resident whose record already carries a REAL email logs in with it;
-  // we only assign the internal handle when no real email exists.
   const loginEmail = hasRealEmail ? existingEmail.toLowerCase() : handle;
 
   let temporaryPassword: string;
-  let generatedFrom: 'dob' | 'random';
   try {
-    if (profileRow.date_of_birth) {
-      temporaryPassword = generateTemporaryPassword(
-        profileRow.first_name ?? '',
-        profileRow.last_name ?? '',
-        profileRow.date_of_birth
-      );
-      generatedFrom = 'dob';
-    } else {
-      temporaryPassword = generateRandomPassword();
-      generatedFrom = 'random';
-    }
+    temporaryPassword = generateTemporaryPassword(
+      accountNumber,
+      profileRow.last_name ?? ''
+    );
   } catch (err) {
     return fail(400, err instanceof Error ? err.message : 'Could not generate a password.');
   }
+  const generatedFrom = 'account_lastname' as const;
 
   // 5. Apply them through the Admin API.
   const adminClient = createClient(supabaseUrl, secretKey, {
@@ -320,6 +295,7 @@ async function handleRequest(req: Request): Promise<Response> {
     profile_is_active: profileRow.is_active === true,
   });
 }
+
 
 Deno.serve(async (req) => {
   try {

@@ -570,11 +570,14 @@ BEGIN
     );
   END IF;
 
-  -- A bill for this account+period already exists.
+  -- A bill for this account+period already exists — still mark the reading billed.
   SELECT id, bill_number INTO v_existing_id, v_existing_number
   FROM public.bills
   WHERE account_id = v_reading.account_id AND billing_period = v_period AND deleted_at IS NULL
   LIMIT 1;
+
+  UPDATE public.meter_readings SET status = 'billed'
+  WHERE id = p_reading_id AND status <> 'billed';
 
   RETURN jsonb_build_object(
     'generated', FALSE,
@@ -607,6 +610,15 @@ BEGIN
         previous_reading_date = date_trunc('month', COALESCE(NEW.reading_date, NEW.assignment_date::timestamptz))::date,
         updated_at = NOW()
     WHERE id = NEW.account_id;
+
+    -- Keep still-open assignments in sync for the next submit.
+    UPDATE public.meter_readings
+    SET previous_reading = NEW.current_reading,
+        updated_at = NOW()
+    WHERE account_id = NEW.account_id
+      AND id IS DISTINCT FROM NEW.id
+      AND deleted_at IS NULL
+      AND status = 'assigned';
   END IF;
   RETURN NEW;
 END;

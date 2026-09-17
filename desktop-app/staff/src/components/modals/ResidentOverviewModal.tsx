@@ -13,7 +13,7 @@ import type { MeterReading } from '../../types';
 import { METER_READING_STATUS_LABELS } from '../../types';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBillsByResident } from '../../services/billService';
-import type { ResidentRecord } from '../../services/residentService';
+import { hasMobileAccount, type ResidentRecord } from '../../services/residentService';
 
 type OverviewTab = 'information' | 'meter' | 'billing' | 'payments';
 
@@ -28,10 +28,12 @@ function formatPeso(value: number): string {
   return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function getStatusBadge(status: ResidentRecord['connectionStatus']): { bg: string; text: string } {
+function getStatusBadge(status: string): { bg: string; text: string } {
   switch (status) {
     case 'active':
       return { bg: 'bg-emerald-50 border border-emerald-200', text: 'text-emerald-700' };
+    case 'no_account':
+      return { bg: 'bg-amber-50 border border-amber-200', text: 'text-amber-700' };
     case 'inactive':
       return { bg: 'bg-gray-100 border border-gray-200', text: 'text-gray-700' };
     case 'disconnected':
@@ -43,10 +45,12 @@ function getStatusBadge(status: ResidentRecord['connectionStatus']): { bg: strin
   }
 }
 
-function getStatusText(status: ResidentRecord['connectionStatus']): string {
+function getStatusText(status: string): string {
   switch (status) {
     case 'active':
       return 'Active';
+    case 'no_account':
+      return 'No Account Yet';
     case 'inactive':
       return 'Inactive';
     case 'disconnected':
@@ -56,6 +60,14 @@ function getStatusText(status: ResidentRecord['connectionStatus']): string {
     default:
       return 'Unknown';
   }
+}
+
+function getDisplayStatus(resident: ResidentRecord): string {
+  if (!hasMobileAccount(resident)) return 'no_account';
+  if (resident.connectionStatus === 'inactive') return 'inactive';
+  if (resident.connectionStatus === 'disconnected') return 'disconnected';
+  if (resident.connectionStatus === 'applicant') return 'applicant';
+  return 'active';
 }
 
 function getReadingBadge(status: MeterReading['status']): string {
@@ -189,7 +201,8 @@ const ResidentOverviewModal: React.FC<{
     [bills]
   );
 
-  const statusBadge = getStatusBadge(resident.connectionStatus);
+  const displayStatus = getDisplayStatus(resident);
+  const statusBadge = getStatusBadge(displayStatus);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -206,7 +219,7 @@ const ResidentOverviewModal: React.FC<{
               <div className="flex items-center space-x-2.5">
                 <h2 className="text-lg font-bold text-gray-900 leading-tight">{resident.fullName}</h2>
                 <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${statusBadge.bg} ${statusBadge.text}`}>
-                  {getStatusText(resident.connectionStatus)}
+                  {getStatusText(displayStatus)}
                 </span>
               </div>
               <p className="text-xs text-gray-500 font-medium mt-0.5">
@@ -309,7 +322,7 @@ const ResidentOverviewModal: React.FC<{
                     label="Connection Status"
                     value={
                       <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${statusBadge.bg} ${statusBadge.text}`}>
-                        {getStatusText(resident.connectionStatus)}
+                        {getStatusText(displayStatus)}
                       </span>
                     }
                   />

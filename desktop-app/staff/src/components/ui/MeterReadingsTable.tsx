@@ -28,7 +28,7 @@ function formatDate(value: string | null): string {
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; border: string }> = {
   assigned: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   pending_review: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  approved: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  approved: { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
   rejected: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
   billed: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
 };

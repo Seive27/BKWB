@@ -1,6 +1,15 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { X, Printer, Receipt, Loader2 } from 'lucide-react';
 import type { BillReceiptData } from '../../services/billService';
+import {
+  buildBillReceiptHtml,
+  billReceiptPrintStyles,
+  formatAmount,
+  formatPeriodMMYYYY,
+  formatReading,
+  formatReceiptDate,
+  printHtmlDocument,
+} from '../../utils/billReceipt';
 
 interface GenerateBillModalProps {
   isOpen: boolean;
@@ -11,34 +20,6 @@ interface GenerateBillModalProps {
   billNumber?: string | null;
 }
 
-/** '2026-05' -> '05-2026' (matches printed BKWB receipts). */
-function formatPeriodMMYYYY(period: string | null | undefined): string {
-  if (!period) return '—';
-  const m = period.match(/^(\d{4})-(\d{2})$/);
-  if (m) return `${m[2]}-${m[1]}`;
-  return period;
-}
-
-function formatReceiptDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return value;
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${mm}-${dd}-${yyyy}`;
-}
-
-function formatAmount(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatReading(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return String(Math.round(value));
-}
-
 const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
   isOpen,
   onClose,
@@ -47,36 +28,18 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
   error = null,
   billNumber = null,
 }) => {
-  const printRef = useRef<HTMLDivElement>(null);
-
   if (!isOpen) return null;
 
   const handlePrint = () => {
-    const node = printRef.current;
-    if (!node) return;
-
-    const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
-    if (!win) return;
-
-    win.document.write(`<!DOCTYPE html><html><head><title>Bill ${billNumber ?? ''}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; margin: 24px; }
-  .rate { text-align: right; margin-bottom: 8px; font-size: 11px; }
-  .frame { border: 2px solid #111; padding: 16px 18px; }
-  .header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
-  .header-col { flex: 1; }
-  .row { display: flex; gap: 8px; margin-bottom: 4px; }
-  .label { font-weight: 700; min-width: 120px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { padding: 4px 6px; border-bottom: 1px solid #ddd; }
-  th { text-align: left; font-size: 11px; border-bottom: 2px solid #111; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .total-row td { border-top: 2px solid #111; border-bottom: none; padding-top: 10px; font-weight: 700; }
-</style></head><body>${node.innerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    win.print();
+    if (!receipt) return;
+    const html = `<!DOCTYPE html><html><head><title>Bill ${billNumber ?? ''}</title>
+<style>${billReceiptPrintStyles({ multi: false })}</style>
+</head><body>
+  <div class="sheet">
+    <div class="receipt-slot">${buildBillReceiptHtml(receipt)}</div>
+  </div>
+</body></html>`;
+    void printHtmlDocument(html);
   };
 
   return (
@@ -97,12 +60,12 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
             </div>
             <div>
               <h2 id="generate-bill-title" className="text-xl font-bold text-gray-900">
-                Generate Bill
+                Bill Issued
               </h2>
               <p className="text-sm text-gray-500 mt-0.5">
                 {billNumber
-                  ? `Bill ${billNumber} ready to print`
-                  : 'Billing receipt for this approved reading'}
+                  ? `Bill ${billNumber} is pending on the Bills page`
+                  : 'Billing receipt for this reading'}
               </p>
             </div>
           </div>
@@ -119,7 +82,7 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
           {loading && (
             <div className="flex items-center justify-center py-16 text-gray-500">
               <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              <span className="text-sm">Generating bill receipt…</span>
+              <span className="text-sm">Issuing bill…</span>
             </div>
           )}
 
@@ -130,51 +93,51 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
           )}
 
           {!loading && !error && receipt && (
-            <div ref={printRef}>
-              <p className="rate text-right text-xs text-gray-600 mb-2">
+            <div>
+              <p className="text-right text-xs text-gray-600 mb-2">
                 Water Rate = {formatAmount(receipt.waterRate)} / m³
               </p>
 
-              <div className="frame border-2 border-gray-900 rounded-sm px-5 py-4 text-[13px] text-gray-900 font-sans">
-                <div className="header flex flex-col sm:flex-row sm:justify-between gap-4 mb-5">
-                  <div className="header-col space-y-1 min-w-0">
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-28 shrink-0">Cons Code:</span>
+              <div className="border-2 border-gray-900 rounded-sm px-5 py-4 text-[13px] text-gray-900 font-sans">
+                <div className="flex flex-col sm:flex-row sm:justify-between gap-4 mb-5">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex gap-2">
+                      <span className="font-bold w-28 shrink-0">Cons Code:</span>
                       <span>{receipt.consCode}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-28 shrink-0">Name:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-28 shrink-0">Name:</span>
                       <span className="uppercase break-words">{receipt.residentName}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-28 shrink-0">Address:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-28 shrink-0">Address:</span>
                       <span className="uppercase break-words">{receipt.address}</span>
                     </div>
                   </div>
 
-                  <div className="header-col space-y-1 sm:text-left sm:min-w-[240px]">
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Meter Serial No.:</span>
+                  <div className="space-y-1 sm:min-w-[240px]">
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Meter Serial No.:</span>
                       <span>{receipt.meterSerial}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Prev. Bill Period:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Prev. Bill Period:</span>
                       <span>{formatPeriodMMYYYY(receipt.prevBillPeriod)}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Prev. Consumption:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Prev. Consumption:</span>
                       <span>{formatReading(receipt.prevConsumption)}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Bill Period:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Bill Period:</span>
                       <span>{formatPeriodMMYYYY(receipt.billPeriod)}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Due Date:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Due Date:</span>
                       <span>{formatReceiptDate(receipt.dueDate)}</span>
                     </div>
-                    <div className="row flex gap-2">
-                      <span className="label font-bold w-36 shrink-0">Last Payment:</span>
+                    <div className="flex gap-2">
+                      <span className="font-bold w-36 shrink-0">Last Payment:</span>
                       <span>
                         {receipt.lastPayment
                           ? `${formatReceiptDate(receipt.lastPayment.date)} - ${formatReading(receipt.lastPayment.amount)}`
@@ -190,10 +153,11 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
                       <tr className="border-b-2 border-gray-900">
                         <th className="text-left py-2 pr-2 font-bold">Account Name</th>
                         <th className="text-left py-2 px-2 font-bold">Bill Period</th>
-                        <th className="num text-right py-2 px-2 font-bold">Prev Reading</th>
-                        <th className="num text-right py-2 px-2 font-bold">Curr Reading</th>
-                        <th className="num text-right py-2 px-2 font-bold">Consumption</th>
-                        <th className="num text-right py-2 pl-2 font-bold">Amount</th>
+                        <th className="text-left py-2 px-2 font-bold">Status</th>
+                        <th className="text-right py-2 px-2 font-bold">Prev Reading</th>
+                        <th className="text-right py-2 px-2 font-bold">Curr Reading</th>
+                        <th className="text-right py-2 px-2 font-bold">Consumption</th>
+                        <th className="text-right py-2 pl-2 font-bold">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -201,25 +165,26 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
                         <tr key={`${line.accountName}-${line.billPeriod}-${idx}`} className="border-b border-gray-200">
                           <td className="py-1.5 pr-2 uppercase">{line.accountName}</td>
                           <td className="py-1.5 px-2">{formatPeriodMMYYYY(line.billPeriod)}</td>
-                          <td className="num text-right py-1.5 px-2 tabular-nums">
+                          <td className="py-1.5 px-2">{line.status}</td>
+                          <td className="text-right py-1.5 px-2 tabular-nums">
                             {formatReading(line.previousReading)}
                           </td>
-                          <td className="num text-right py-1.5 px-2 tabular-nums">
+                          <td className="text-right py-1.5 px-2 tabular-nums">
                             {formatReading(line.currentReading)}
                           </td>
-                          <td className="num text-right py-1.5 px-2 tabular-nums">
+                          <td className="text-right py-1.5 px-2 tabular-nums">
                             {formatReading(line.consumption)}
                           </td>
-                          <td className="num text-right py-1.5 pl-2 tabular-nums">
+                          <td className="text-right py-1.5 pl-2 tabular-nums">
                             {formatAmount(line.amount)}
                           </td>
                         </tr>
                       ))}
-                      <tr className="total-row">
-                        <td colSpan={5} className="text-right pt-3 font-bold">
+                      <tr>
+                        <td colSpan={6} className="text-right pt-3 font-bold">
                           Total Amount Due:
                         </td>
-                        <td className="num text-right pt-3 font-bold tabular-nums border-t-2 border-gray-900">
+                        <td className="text-right pt-3 font-bold tabular-nums border-t-2 border-gray-900">
                           {formatAmount(receipt.totalAmountDue)}
                         </td>
                       </tr>

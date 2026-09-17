@@ -200,7 +200,9 @@ export async function getAccountReadings(accountId: string): Promise<MeterReadin
 
 /**
  * Resolve the previous reading for an account: the current_reading of its
- * most recent Approved (or Billed) reading, or 0 when none exists.
+ * most recent Approved (or Billed) reading. Falls back to the account
+ * snapshot dial position, then 0. The DB trigger also re-resolves this on
+ * insert/submit/approve so early assignments are corrected later.
  */
 async function getPreviousReading(accountId: string): Promise<number> {
   const { data, error } = await supabase
@@ -218,7 +220,21 @@ async function getPreviousReading(accountId: string): Promise<number> {
     throw new Error(getMeterReadingErrorMessage(error));
   }
 
-  return data?.current_reading ?? 0;
+  if (data?.current_reading != null) {
+    return data.current_reading;
+  }
+
+  const { data: account, error: accountError } = await supabase
+    .from('resident_accounts')
+    .select('current_reading, previous_reading')
+    .eq('id', accountId)
+    .maybeSingle();
+
+  if (accountError) {
+    throw new Error(getMeterReadingErrorMessage(accountError));
+  }
+
+  return account?.current_reading ?? account?.previous_reading ?? 0;
 }
 
 /** Create a new assignment for a resident account. */

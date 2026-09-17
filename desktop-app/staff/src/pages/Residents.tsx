@@ -29,6 +29,7 @@ import {
   getSitioOptions,
   generateTemporaryPassword,
   validatePhone,
+  hasMobileAccount,
   type ResidentRecord,
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
@@ -36,6 +37,51 @@ import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
 import { useAuth } from '../hooks/useAuth';
 
 const PAGE_SIZE = 10;
+
+/** Display status: No Account Yet until mobile login is issued; otherwise connection status. */
+type DisplayStatus = 'no_account' | 'active' | 'inactive' | 'disconnected' | 'applicant' | null;
+
+function getDisplayStatus(resident: ResidentRecord): DisplayStatus {
+  if (!hasMobileAccount(resident)) return 'no_account';
+  // Once a mobile login exists, treat the account as Active for staff status
+  // (connection_status may still be toggled via Activate/Deactivate actions).
+  if (resident.connectionStatus === 'inactive') return 'inactive';
+  if (resident.connectionStatus === 'disconnected') return 'disconnected';
+  if (resident.connectionStatus === 'applicant') return 'applicant';
+  return 'active';
+}
+
+function getStatusBadge(status: DisplayStatus) {
+  switch (status) {
+    case 'active':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'no_account':
+      return 'bg-amber-100 text-amber-700';
+    case 'inactive':
+      return 'bg-gray-100 text-gray-700';
+    case 'disconnected':
+      return 'bg-red-100 text-red-700';
+    case 'applicant':
+      return 'bg-amber-100 text-amber-700';
+    default:
+      return 'bg-gray-100 text-gray-700';
+  }
+}
+
+function getStatusText(status: DisplayStatus) {
+  switch (status) {
+    case 'active':
+      return 'Active';
+    case 'no_account':
+      return 'No Account Yet';
+    case 'disconnected':
+      return 'Disconnected';
+    case 'applicant':
+      return 'Applicant';
+    default:
+      return 'Inactive';
+  }
+}
 
 interface AddResidentForm {
   firstName: string;
@@ -69,34 +115,6 @@ const EMPTY_FORM: AddResidentForm = {
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-}
-
-function getStatusBadge(status: string | null) {
-  switch (status) {
-    case 'active':
-      return 'bg-emerald-100 text-emerald-700';
-    case 'inactive':
-      return 'bg-gray-100 text-gray-700';
-    case 'disconnected':
-      return 'bg-red-100 text-red-700';
-    case 'applicant':
-      return 'bg-amber-100 text-amber-700';
-    default:
-      return 'bg-gray-100 text-gray-700';
-  }
-}
-
-function getStatusText(status: string | null) {
-  switch (status) {
-    case 'active':
-      return 'Active';
-    case 'disconnected':
-      return 'Disconnected';
-    case 'applicant':
-      return 'Applicant';
-    default:
-      return 'Inactive';
-  }
 }
 
 const AddResidentModal: React.FC<{
@@ -798,12 +816,19 @@ const Residents: React.FC = () => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [issuingLoginId, setIssuingLoginId] = useState<string | null>(null);
+  const [bulkIssuing, setBulkIssuing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [issuedCredentials, setIssuedCredentials] = useState<{
     accountNumber: string;
     temporaryPassword: string;
-    generatedFrom: 'dob' | 'random';
+    generatedFrom: 'dob' | 'random' | 'account_lastname';
     profileIsActive: boolean;
   } | null>(null);
+  const [bulkIssuedCredentials, setBulkIssuedCredentials] = useState<
+    { fullName: string; accountNumber: string; temporaryPassword: string }[] | null
+  >(null);
+  /** Pending Issue Login targets awaiting staff confirmation. */
+  const [issueLoginConfirm, setIssueLoginConfirm] = useState<ResidentRecord[] | null>(null);
   /** Issue-Login failures show in a modal — the page-top banner is invisible
    *  when the user is scrolled down at the table row. */
   const [issueLoginError, setIssueLoginError] = useState<string | null>(null);
@@ -841,16 +866,17 @@ const Residents: React.FC = () => {
     return () => document.removeEventListener('click', close);
   }, [openMenuId]);
 
-  // Reset pagination whenever search/filters change.
+  // Reset pagination and selection whenever search/filters change.
   useEffect(() => {
     setPage(1);
+    setSelectedIds(new Set());
   }, [searchQuery, sitioFilter, statusFilter]);
 
   const stats = useMemo(
     () => ({
       totalResidents: residents.length,
-      activeAccounts: residents.filter((r) => r.connectionStatus === 'active').length,
-      inactiveAccounts: residents.filter((r) => r.connectionStatus !== 'active').length,
+      activeAccounts: residents.filter((r) => hasMobileAccount(r)).length,
+      noAccountYet: residents.filter((r) => !hasMobileAccount(r)).length,
     }),
     [residents]
   );
@@ -866,7 +892,8 @@ const Residents: React.FC = () => {
           (r.sitio ?? '').toLowerCase().includes(q) ||
           (r.email ?? '').toLowerCase().includes(q);
         const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
-        const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+        const displayStatus = getDisplayStatus(r);
+        const matchesStatus = statusFilter === '' || displayStatus === statusFilter;
         return matchesSearch && matchesSitio && matchesStatus;
       }),
     [residents, searchQuery, sitioFilter, statusFilter]
@@ -875,6 +902,42 @@ const Residents: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(filteredResidents.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = filteredResidents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  /** Residents eligible for Issue Login (No Account Yet + account number). */
+  const canIssueLogin = (r: ResidentRecord): boolean =>
+    canManageResidents && !!r.accountNumber && !hasMobileAccount(r);
+
+  const selectablePageRows = useMemo(
+    () => pageRows.filter(canIssueLogin),
+    // canIssueLogin closes over canManageResidents which is stable per render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageRows, canManageResidents]
+  );
+
+  const allPageSelected =
+    selectablePageRows.length > 0 &&
+    selectablePageRows.every((r) => selectedIds.has(r.id));
+
+  const handleToggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        selectablePageRows.forEach((r) => next.delete(r.id));
+      } else {
+        selectablePageRows.forEach((r) => next.add(r.id));
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleStatusChange = async (
     resident: ResidentRecord,
@@ -908,7 +971,7 @@ const Residents: React.FC = () => {
       r.previousReadingDate ?? '',
       r.previousReading !== null ? String(r.previousReading) : '',
       r.currentReading !== null ? String(r.currentReading) : '',
-      getStatusText(r.connectionStatus),
+      getStatusText(getDisplayStatus(r)),
       new Date(r.createdAt).toLocaleDateString(),
     ]);
     const csv = [header, ...rows]
@@ -925,13 +988,6 @@ const Residents: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  /** Login credentials can be issued while a record has no real contact */
-  /** email yet (masterlist imports), or still uses the internal handle. */
-  const canIssueLogin = (r: ResidentRecord): boolean =>
-    canManageResidents &&
-    !!r.accountNumber &&
-    (!r.email || /^acc-[a-z0-9-]+@example\.com$/i.test(r.email));
-
   const handleIssueLogin = async (resident: ResidentRecord) => {
     if (!resident.accountNumber) return;
     setOpenMenuId(null);
@@ -945,12 +1001,91 @@ const Residents: React.FC = () => {
         generatedFrom: result.generated_from,
         profileIsActive: result.profile_is_active,
       });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resident.id);
+        return next;
+      });
+      await load();
     } catch (err) {
       setIssueLoginError(
         err instanceof Error ? err.message : 'Failed to issue login credentials.'
       );
     } finally {
       setIssuingLoginId(null);
+    }
+  };
+
+  /** Resolve who to issue login for, then ask for confirmation. */
+  const requestToolbarIssueLogin = () => {
+    if (!canManageResidents || bulkIssuing || issuingLoginId) return;
+
+    const selectedTargets = residents.filter(
+      (r) => selectedIds.has(r.id) && canIssueLogin(r)
+    );
+    const targets =
+      selectedTargets.length > 0
+        ? selectedTargets
+        : residents.filter(canIssueLogin);
+
+    if (targets.length === 0) {
+      setIssueLoginError('There are no residents with No Account Yet to issue login for.');
+      return;
+    }
+
+    setIssueLoginConfirm(targets);
+  };
+
+  /** Run account creation after staff confirms. */
+  const confirmIssueLogin = async () => {
+    if (!issueLoginConfirm || issueLoginConfirm.length === 0) return;
+    const targets = issueLoginConfirm;
+    setIssueLoginConfirm(null);
+
+    if (targets.length === 1) {
+      await handleIssueLogin(targets[0]);
+      return;
+    }
+
+    setBulkIssuing(true);
+    setIssueLoginError(null);
+    const created: { fullName: string; accountNumber: string; temporaryPassword: string }[] = [];
+    const failures: string[] = [];
+
+    try {
+      for (const resident of targets) {
+        if (!resident.accountNumber) continue;
+        try {
+          const result = await issueResidentLogin(resident.accountNumber);
+          created.push({
+            fullName: resident.fullName,
+            accountNumber: resident.accountNumber,
+            temporaryPassword: result.temporary_password,
+          });
+        } catch (err) {
+          failures.push(
+            `${resident.fullName} (${resident.accountNumber}): ${
+              err instanceof Error ? err.message : 'Failed'
+            }`
+          );
+        }
+      }
+
+      if (created.length > 0) {
+        setBulkIssuedCredentials(created);
+        setSelectedIds(new Set());
+        await load();
+      }
+
+      if (failures.length > 0) {
+        setIssueLoginError(
+          created.length > 0
+            ? `Created ${created.length} account(s), but ${failures.length} failed:\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? '\n…' : ''}`
+            : `Could not issue login:\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}`
+        );
+      }
+    } finally {
+      setBulkIssuing(false);
     }
   };
 
@@ -980,8 +1115,11 @@ const Residents: React.FC = () => {
       items.push({
         label: issuingLoginId === resident.id ? 'Issuing…' : 'Issue Login',
         icon: KeyRound,
-        onClick: () => handleIssueLogin(resident),
-        disabled: issuingLoginId === resident.id,
+        onClick: () => {
+          setOpenMenuId(null);
+          setIssueLoginConfirm([resident]);
+        },
+        disabled: issuingLoginId === resident.id || bulkIssuing,
       });
     }
     if (resident.connectionStatus !== 'active') {
@@ -1055,11 +1193,11 @@ const Residents: React.FC = () => {
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">INACTIVE / DISCONNECTED</p>
-                  <h3 className="text-3xl font-bold text-gray-900">{stats.inactiveAccounts.toLocaleString()}</h3>
+                  <p className="text-sm text-gray-600 mb-1">NO ACCOUNT YET</p>
+                  <h3 className="text-3xl font-bold text-gray-900">{stats.noAccountYet.toLocaleString()}</h3>
                 </div>
-                <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
                 </div>
               </div>
             </div>
@@ -1104,6 +1242,7 @@ const Residents: React.FC = () => {
                     >
                       <option value="">All Statuses</option>
                       <option value="active">Active</option>
+                      <option value="no_account">No Account Yet</option>
                       <option value="inactive">Inactive</option>
                       <option value="applicant">Applicant</option>
                       <option value="disconnected">Disconnected</option>
@@ -1113,21 +1252,53 @@ const Residents: React.FC = () => {
                 </div>
 
                 <div className="flex items-center space-x-3">
-                  <button
-                    onClick={load}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                    title="Refresh"
-                  >
-                    <RefreshCw className="w-5 h-5 text-gray-600" />
-                  </button>
-                  <button
-                    onClick={handleExport}
-                    disabled={filteredResidents.length === 0}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
-                    title="Export CSV"
-                  >
-                    <Download className="w-5 h-5 text-gray-600" />
-                  </button>
+                  {statusFilter === 'no_account' && canManageResidents ? (
+                    <button
+                      onClick={requestToolbarIssueLogin}
+                      disabled={
+                        bulkIssuing ||
+                        !!issuingLoginId ||
+                        residents.filter(canIssueLogin).length === 0
+                      }
+                      className="flex items-center space-x-2 px-4 py-2 border border-primary-600 text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-40"
+                      title={
+                        selectedIds.size > 0
+                          ? `Issue login for ${selectedIds.size} selected`
+                          : 'Issue login for all No Account Yet residents'
+                      }
+                    >
+                      {bulkIssuing || issuingLoginId ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <KeyRound className="w-4 h-4" />
+                      )}
+                      <span className="text-sm font-medium">
+                        {bulkIssuing
+                          ? 'Issuing…'
+                          : selectedIds.size > 0
+                            ? `Issue Login (${selectedIds.size})`
+                            : 'Issue Login'}
+                      </span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={load}
+                        className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        title="Refresh"
+                      >
+                        <RefreshCw className="w-5 h-5 text-gray-600" />
+                      </button>
+                      <button
+                        onClick={handleExport}
+                        disabled={filteredResidents.length === 0}
+                        className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+                        title="Export CSV"
+                      >
+                        <Download className="w-5 h-5 text-gray-600" />
+                      </button>
+                    </>
+                  )}
 
                   <button
                     onClick={() => setShowAddModal(true)}
@@ -1145,6 +1316,18 @@ const Residents: React.FC = () => {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    {canManageResidents && (
+                      <th className="px-4 py-3 text-left w-12">
+                        <input
+                          type="checkbox"
+                          checked={allPageSelected}
+                          onChange={handleToggleSelectAll}
+                          disabled={selectablePageRows.length === 0}
+                          className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer disabled:opacity-40"
+                          title="Select all on this page"
+                        />
+                      </th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Meter No.</th>
@@ -1157,7 +1340,7 @@ const Residents: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={canManageResidents ? 8 : 7} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading residents…</span>
@@ -1166,7 +1349,7 @@ const Residents: React.FC = () => {
                     </tr>
                   ) : pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={canManageResidents ? 8 : 7} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">
                           {residents.length === 0 ? 'No residents found.' : 'No residents match your search or filters.'}
@@ -1176,12 +1359,33 @@ const Residents: React.FC = () => {
                   ) : (
                     pageRows.map((resident) => {
                       const menuItems = getMenuItems(resident);
+                      const displayStatus = getDisplayStatus(resident);
+                      const selectable = canIssueLogin(resident);
+                      const isChecked = selectedIds.has(resident.id);
                       return (
                         <tr
                           key={resident.id}
                           onClick={() => setViewingResident(resident)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                            isChecked ? 'bg-primary-50/40' : ''
+                          }`}
                         >
+                          {canManageResidents && (
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                disabled={!selectable}
+                                onChange={() => handleToggleSelect(resident.id)}
+                                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer disabled:opacity-40"
+                                title={
+                                  selectable
+                                    ? 'Select for Issue Login'
+                                    : 'Already has a mobile account'
+                                }
+                              />
+                            </td>
+                          )}
                           <td className="px-6 py-3 whitespace-nowrap">
                             <div className="flex items-center">
                               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
@@ -1211,8 +1415,8 @@ const Residents: React.FC = () => {
                             )}
                           </td>
                           <td className="px-6 py-3 whitespace-nowrap">
-                            <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
-                              {getStatusText(resident.connectionStatus)}
+                            <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(displayStatus)}`}>
+                              {getStatusText(displayStatus)}
                             </span>
                           </td>
                           <td className="px-6 py-3 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
@@ -1310,6 +1514,76 @@ const Residents: React.FC = () => {
           onClose={() => setIssuedCredentials(null)}
         />
       )}
+      {bulkIssuedCredentials && (
+        <BulkIssuedCredentialsModal
+          credentials={bulkIssuedCredentials}
+          onClose={() => setBulkIssuedCredentials(null)}
+        />
+      )}
+      {issueLoginConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="border-b border-gray-200 px-8 py-6 flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <div className="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center flex-shrink-0">
+                  <KeyRound className="w-5 h-5 text-primary-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Issue Login?</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {issueLoginConfirm.length === 1 ? (
+                      <>
+                        Create a mobile app account for{' '}
+                        <span className="font-semibold text-gray-900">
+                          {issueLoginConfirm[0].fullName}
+                        </span>
+                        {issueLoginConfirm[0].accountNumber
+                          ? ` (${issueLoginConfirm[0].accountNumber})`
+                          : ''}
+                        ? Temporary credentials will be generated and shown once.
+                      </>
+                    ) : (
+                      <>
+                        Create mobile app accounts for{' '}
+                        <span className="font-semibold text-gray-900">
+                          {issueLoginConfirm.length} residents
+                        </span>{' '}
+                        with No Account Yet? Temporary credentials will be generated for each
+                        account.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIssueLoginConfirm(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="px-8 py-4">
+              <p className="text-xs text-gray-400">
+                Temporary format — Login: Account Number · Password: AccountNumber@LastName
+              </p>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end space-x-3">
+              <button
+                onClick={() => setIssueLoginConfirm(null)}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmIssueLogin}
+                className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {issueLoginError && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md">
@@ -1331,7 +1605,7 @@ const Residents: React.FC = () => {
               </button>
             </div>
             <div className="px-8 py-6">
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm whitespace-pre-wrap">
                 {issueLoginError}
               </div>
               <p className="mt-3 text-xs text-gray-400">
@@ -1358,7 +1632,7 @@ const Residents: React.FC = () => {
 const IssuedCredentialsModal: React.FC<{
   accountNumber: string;
   temporaryPassword: string;
-  generatedFrom: 'dob' | 'random';
+  generatedFrom: 'dob' | 'random' | 'account_lastname';
   profileIsActive: boolean;
   onClose: () => void;
 }> = ({ accountNumber, temporaryPassword, generatedFrom, profileIsActive, onClose }) => {
@@ -1366,7 +1640,9 @@ const IssuedCredentialsModal: React.FC<{
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(temporaryPassword);
+      await navigator.clipboard.writeText(
+        `Account Number: ${accountNumber}\nPassword: ${temporaryPassword}`
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -1398,7 +1674,9 @@ const IssuedCredentialsModal: React.FC<{
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
+              Email Address (Account Number)
+            </label>
             <div className="w-full px-4 py-2 border border-gray-200 bg-gray-50 rounded-lg font-mono text-sm text-gray-900">
               {accountNumber}
             </div>
@@ -1413,7 +1691,7 @@ const IssuedCredentialsModal: React.FC<{
               <button
                 onClick={handleCopy}
                 className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                title="Copy password"
+                title="Copy credentials"
               >
                 {copied ? (
                   <Check className="w-4 h-4 text-emerald-600" />
@@ -1423,9 +1701,11 @@ const IssuedCredentialsModal: React.FC<{
               </button>
             </div>
             <p className="mt-2 text-xs text-gray-400">
-              {generatedFrom === 'dob'
-                ? 'Generated from the resident\'s date of birth (LastNameFirstNameMMDDYYYY).'
-                : 'Randomly generated because no date of birth is on record.'}
+              {generatedFrom === 'account_lastname'
+                ? 'Format: AccountNumber@LastName (temporary migration credentials).'
+                : generatedFrom === 'dob'
+                  ? 'Generated from the resident\'s date of birth (LastNameFirstNameMMDDYYYY).'
+                  : 'Randomly generated because no date of birth is on record.'}
               {' '}The resident signs in with their Account Number + this password, then can update their profile.
             </p>
           </div>
@@ -1437,6 +1717,92 @@ const IssuedCredentialsModal: React.FC<{
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
           >
             Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Bulk Issue Login success — export all temporary credentials as CSV. */
+const BulkIssuedCredentialsModal: React.FC<{
+  credentials: { fullName: string; accountNumber: string; temporaryPassword: string }[];
+  onClose: () => void;
+}> = ({ credentials, onClose }) => {
+  const handleExportCsv = () => {
+    const header = ['Name', 'Account Number (Email)', 'Temporary Password'];
+    const rows = credentials.map((c) => [
+      c.fullName,
+      c.accountNumber,
+      c.temporaryPassword,
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `issued-logins-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md">
+        <div className="border-b border-gray-200 px-8 py-6 flex items-start justify-between">
+          <div className="flex items-start space-x-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">All Accounts are Issued with Login</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {credentials.length} accounts were created successfully. Download the CSV to save
+                the temporary credentials.
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-8 py-6">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2 max-h-48 overflow-y-auto">
+            {credentials.slice(0, 8).map((c) => (
+              <div key={c.accountNumber} className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-900 truncate mr-2">{c.fullName}</span>
+                <span className="font-mono text-xs text-gray-500 shrink-0">{c.accountNumber}</span>
+              </div>
+            ))}
+            {credentials.length > 8 && (
+              <p className="text-xs text-gray-400 pt-1">
+                +{credentials.length - 8} more in the CSV download
+              </p>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-gray-400">
+            Temporary format — Email: Account Number · Password: AccountNumber@LastName
+          </p>
+        </div>
+
+        <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            Done
+          </button>
+          <button
+            onClick={handleExportCsv}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span className="text-sm font-medium">Download CSV</span>
           </button>
         </div>
       </div>

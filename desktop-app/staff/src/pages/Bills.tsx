@@ -12,9 +12,11 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronDown,
+  FileText,
 } from 'lucide-react';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import BillOverviewModal from '../components/modals/BillOverviewModal';
+import PrintBillsModal from '../components/modals/PrintBillsModal';
 import {
   getBills,
   setBillStatus
@@ -82,6 +84,10 @@ const Bills: React.FC = () => {
   const [showConfigureBills, setShowConfigureBills] = useState(false);
   const [detailBill, setDetailBill] = useState<Bill | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printBillIds, setPrintBillIds] = useState<string[]>([]);
   const toastTimer = useRef<number | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -116,6 +122,20 @@ const Bills: React.FC = () => {
     setPage(1);
   }, [searchQuery, statusFilter, periodFilter]);
 
+  // Clear selection when filters change; prune stale ids after reloads.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [searchQuery, statusFilter, periodFilter]);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(bills.map((b) => b.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [bills]);
+
   const periods = useMemo(
     () => [...new Set(bills.map((b) => b.billing_period))].sort().reverse(),
     [bills]
@@ -143,6 +163,10 @@ const Bills: React.FC = () => {
   const safePage = Math.min(page, totalPages);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((b) => selectedIds.has(b.id));
+  const someFilteredSelected = filtered.some((b) => selectedIds.has(b.id));
+
   const stats = useMemo(() => {
     let collected = 0;
     let pendingCount = 0;
@@ -154,6 +178,44 @@ const Bills: React.FC = () => {
     }
     return { total: bills.length, collected, pendingCount, overdueCount };
   }, [bills]);
+
+  const toggleSelect = (billId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(billId)) next.delete(billId);
+      else next.add(billId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedIds((prev) => {
+      if (filtered.length === 0) return prev;
+      const allSelected = filtered.every((b) => prev.has(b.id));
+      if (allSelected) {
+        const next = new Set(prev);
+        for (const b of filtered) next.delete(b.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const b of filtered) next.add(b.id);
+      return next;
+    });
+  };
+
+  const handleGenerateBills = () => {
+    if (selectedIds.size === 0) {
+      showToast('error', 'Select one or more bills first.');
+      return;
+    }
+    setShowGenerateConfirm(true);
+  };
+
+  const confirmGenerateBills = () => {
+    setShowGenerateConfirm(false);
+    setPrintBillIds([...selectedIds]);
+    setShowPrintModal(true);
+  };
 
   const handleMarkPaid = async (bill: Bill) => {
     setBusyId(bill.id);
@@ -234,17 +296,28 @@ const Bills: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Bills Management</h1>
               <p className="text-gray-600">
-                Bills are generated automatically when meter readings are approved. Track payments and billing status here.
+                Bills appear as Pending after you Issue Bill from Meter Readings. Select receipts to generate and print.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowConfigureBills(true)}
-              className="flex-shrink-0 inline-flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm"
-            >
-              <Settings2 className="w-4 h-4" />
-              <span className="text-sm font-medium">Configure Bills</span>
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleGenerateBills}
+                disabled={selectedIds.size === 0}
+                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-40"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-medium">Generate Bills</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowConfigureBills(true)}
+                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm"
+              >
+                <Settings2 className="w-4 h-4" />
+                <span className="text-sm font-medium">Configure Bills</span>
+              </button>
+            </div>
           </div>
 
           {toast && (
@@ -358,6 +431,11 @@ const Bills: React.FC = () => {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   </div>
+                  {selectedIds.size > 0 && (
+                    <span className="text-sm text-gray-600">
+                      {selectedIds.size} selected
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center space-x-3">
@@ -385,6 +463,20 @@ const Bills: React.FC = () => {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-4 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected;
+                        }}
+                        onChange={toggleSelectAllFiltered}
+                        disabled={filtered.length === 0}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        aria-label="Select all filtered bills"
+                        title="Select all filtered bills"
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Billing ID</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Resident</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
@@ -399,7 +491,7 @@ const Bills: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center">
+                      <td colSpan={10} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading bills…</span>
@@ -408,11 +500,11 @@ const Bills: React.FC = () => {
                     </tr>
                   ) : pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center">
+                      <td colSpan={10} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">
                           {bills.length === 0
-                            ? 'No bills yet. Approve an approved-rate reading in Meter Readings to generate the first bill.'
+                            ? 'No bills yet. Approve a reading, then use Issue Bill on Meter Readings.'
                             : 'No bills match your search or filters.'}
                         </p>
                       </td>
@@ -422,12 +514,27 @@ const Bills: React.FC = () => {
                       const residentName = bill.resident
                         ? `${bill.resident.first_name} ${bill.resident.last_name}`
                         : 'Unknown resident';
+                      const checked = selectedIds.has(bill.id);
                       return (
                         <tr
                           key={bill.id}
                           onClick={() => setDetailBill(bill)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                            checked ? 'bg-primary-50/40' : ''
+                          }`}
                         >
+                          <td
+                            className="px-4 py-4 whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleSelect(bill.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                              aria-label={`Select bill ${bill.bill_number}`}
+                            />
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                             {bill.bill_number}
                           </td>
@@ -539,12 +646,60 @@ const Bills: React.FC = () => {
         </div>
       </div>
 
+      {showGenerateConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowGenerateConfirm(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-slide-up">
+            <div className="flex items-start space-x-4 mb-5">
+              <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-primary-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Generate Bills</h2>
+                <p className="text-sm text-gray-500">
+                  Prepare receipts for{' '}
+                  <span className="font-semibold text-gray-800">{selectedIds.size}</span>{' '}
+                  selected bill{selectedIds.size === 1 ? '' : 's'}? After confirming you can use
+                  Print Preview or Download as PDF (3 receipts per A4 with cut margins).
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowGenerateConfirm(false)}
+                className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmGenerateBills}
+                className="px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showConfigureBills && <ConfigureBillsModal isOpen={showConfigureBills} onClose={() => setShowConfigureBills(false)} />}
       {detailBill && <BillOverviewModal bill={detailBill} onClose={() => setDetailBill(null)} />}
+      <PrintBillsModal
+        isOpen={showPrintModal}
+        billIds={printBillIds}
+        onClose={() => {
+          setShowPrintModal(false);
+          setPrintBillIds([]);
+        }}
+      />
     </>
   );
 };
 
 export default Bills;
-
-

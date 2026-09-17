@@ -916,8 +916,38 @@ CREATE INDEX IF NOT EXISTS idx_meter_readings_account_prev
 CREATE OR REPLACE FUNCTION public.calculate_consumption()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = ''
 AS $$
+DECLARE
+  v_resolved NUMERIC;
 BEGIN
+  -- Refresh previous when assigning, submitting, or approving.
+  -- Meter readers cannot set this column themselves; the DB owns it.
+  IF TG_OP = 'INSERT'
+     OR NEW.status IN ('assigned', 'pending_review')
+     OR (NEW.status = 'approved' AND OLD.status IS DISTINCT FROM NEW.status)
+  THEN
+    SELECT mr.current_reading
+    INTO v_resolved
+    FROM public.meter_readings mr
+    WHERE mr.account_id = NEW.account_id
+      AND mr.id IS DISTINCT FROM NEW.id
+      AND mr.deleted_at IS NULL
+      AND mr.status IN ('approved', 'billed')
+      AND mr.current_reading IS NOT NULL
+    ORDER BY COALESCE(mr.reading_date, mr.created_at) DESC, mr.created_at DESC
+    LIMIT 1;
+
+    IF v_resolved IS NULL THEN
+      SELECT COALESCE(ra.current_reading, ra.previous_reading)
+      INTO v_resolved
+      FROM public.resident_accounts ra
+      WHERE ra.id = NEW.account_id;
+    END IF;
+
+    NEW.previous_reading := COALESCE(v_resolved, 0);
+  END IF;
+
   IF NEW.current_reading IS NOT NULL THEN
     IF NEW.current_reading < NEW.previous_reading THEN
       RAISE EXCEPTION 'current_reading must be greater than or equal to previous_reading';
@@ -1142,9 +1172,9 @@ BEGIN
   END IF;
 
   -- Meter readers must not alter assignment-level fields.
+  -- previous_reading is owned by calculate_consumption and may change on submit.
   IF (
-    NEW.previous_reading IS DISTINCT FROM OLD.previous_reading
-    OR NEW.assignment_date IS DISTINCT FROM OLD.assignment_date
+    NEW.assignment_date IS DISTINCT FROM OLD.assignment_date
     OR NEW.meter_reader_id IS DISTINCT FROM OLD.meter_reader_id
     OR NEW.assigned_by IS DISTINCT FROM OLD.assigned_by
     OR NEW.resident_id IS DISTINCT FROM OLD.resident_id

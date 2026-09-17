@@ -1,14 +1,11 @@
 import React from 'react';
-import { X, Printer, Receipt, Loader2 } from 'lucide-react';
+import { X, Receipt, Loader2 } from 'lucide-react';
 import type { BillReceiptData } from '../../services/billService';
 import {
-  buildBillReceiptHtml,
-  billReceiptPrintStyles,
   formatAmount,
   formatPeriodMMYYYY,
   formatReading,
   formatReceiptDate,
-  printHtmlDocument,
 } from '../../utils/billReceipt';
 
 interface GenerateBillModalProps {
@@ -29,18 +26,6 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
   billNumber = null,
 }) => {
   if (!isOpen) return null;
-
-  const handlePrint = () => {
-    if (!receipt) return;
-    const html = `<!DOCTYPE html><html><head><title>Bill ${billNumber ?? ''}</title>
-<style>${billReceiptPrintStyles({ multi: false })}</style>
-</head><body>
-  <div class="sheet">
-    <div class="receipt-slot">${buildBillReceiptHtml(receipt)}</div>
-  </div>
-</body></html>`;
-    void printHtmlDocument(html);
-  };
 
   return (
     <div
@@ -196,22 +181,13 @@ const GenerateBillModal: React.FC<GenerateBillModalProps> = ({
           )}
         </div>
 
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end space-x-3 rounded-b-2xl">
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end rounded-b-2xl">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
+            className="px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm"
           >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={loading || !receipt}
-            className="px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Print Receipt</span>
+            Done
           </button>
         </div>
       </div>

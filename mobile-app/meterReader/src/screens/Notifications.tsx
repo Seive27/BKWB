@@ -11,9 +11,14 @@ import {
 } from '@/services/notificationService';
 import type { AppNotification, NotificationType } from '@/types/notifications';
 import { NOTIFICATION_TYPE_LABELS } from '@/types/notifications';
+import {
+  resolveNotificationDestination,
+  type NotificationDestination,
+} from '@/utils/notificationNavigation';
 
 type NotificationsProps = {
   onBack?: () => void;
+  onOpenRelated?: (destination: NotificationDestination) => void;
 };
 
 type Filter = 'all' | 'unread';
@@ -58,7 +63,7 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function Notifications({ onBack }: NotificationsProps) {
+export default function Notifications({ onBack, onOpenRelated }: NotificationsProps) {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<Filter>('all');
 
@@ -67,12 +72,18 @@ export default function Notifications({ onBack }: NotificationsProps) {
   const visible = activeFilter === 'unread' ? notifications.filter((n) => !n.is_read) : notifications;
 
   const handlePress = async (item: AppNotification) => {
-    if (item.is_read) return;
-    try {
-      await markNotificationRead(item.id);
-      await refresh();
-    } catch {
-      // Best-effort.
+    if (!item.is_read) {
+      try {
+        await markNotificationRead(item.id);
+        await refresh();
+      } catch {
+        // Best-effort.
+      }
+    }
+
+    const destination = resolveNotificationDestination(item);
+    if (destination) {
+      onOpenRelated?.(destination);
     }
   };
 

@@ -17,7 +17,7 @@ import {
   Inbox,
   Trash2,
 } from 'lucide-react';
-import type { NotificationType } from '../types';
+import type { NotificationType, AppNotification } from '../types';
 import { NOTIFICATION_TYPE_LABELS } from '../types';
 import { useNotifications } from '../hooks/useNotifications';
 import { useAuth } from '../hooks/useAuth';
@@ -27,6 +27,10 @@ import {
   softDeleteNotification,
   softDeleteAllNotifications,
 } from '../services/notificationService';
+
+type NotificationsProps = {
+  onNavigateToRelated?: (notification: AppNotification) => void;
+};
 
 const typeConfig: Record<
   NotificationType,
@@ -61,7 +65,7 @@ function formatRelativeTime(iso: string): string {
   });
 }
 
-const Notifications: React.FC = () => {
+const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) => {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
 
@@ -99,16 +103,19 @@ const Notifications: React.FC = () => {
     });
   }, [notifications, filter, searchQuery]);
 
-  const handleToggleRead = async (id: string) => {
-    setBusyId(id);
-    try {
-      await markNotificationRead(id);
-      await refresh();
-    } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to update notification.');
-    } finally {
-      setBusyId(null);
+  const handleOpenNotification = async (notification: AppNotification) => {
+    if (!notification.is_read) {
+      setBusyId(notification.id);
+      try {
+        await markNotificationRead(notification.id);
+        await refresh();
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Failed to update notification.');
+      } finally {
+        setBusyId(null);
+      }
     }
+    onNavigateToRelated?.(notification);
   };
 
   const handleMarkAllRead = async () => {
@@ -288,7 +295,7 @@ const Notifications: React.FC = () => {
                 return (
                   <div
                     key={notification.id}
-                    onClick={() => !notification.is_read && handleToggleRead(notification.id)}
+                    onClick={() => handleOpenNotification(notification)}
                     className={`px-6 py-4 flex items-start space-x-4 cursor-pointer transition-all ${!notification.is_read ? 'bg-primary-50/30 hover:bg-primary-50/60' : 'hover:bg-gray-50'}`}
                   >
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${config.color}`}>

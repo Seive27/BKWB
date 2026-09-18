@@ -24,6 +24,7 @@ import PaymentsScreen from '@/screens/Payments';
 import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
+import type { NotificationDestination } from '@/utils/notificationNavigation';
 
 export type DashboardDeepLink = 'tickets' | 'waterSchedule' | 'createTicket' | null;
 
@@ -34,6 +35,10 @@ type DashboardProps = {
   /** One-shot deep link from Lunas (consumed on mount / change). */
   deepLink?: DashboardDeepLink;
   onDeepLinkConsumed?: () => void;
+  /** Open announcements tab (optionally a specific announcement). */
+  onOpenAnnouncement?: (announcementId?: string) => void;
+  /** Open bills tab from a notification. */
+  onOpenBills?: () => void;
 };
 
 type QuickActionScreen =
@@ -51,10 +56,16 @@ export default function Dashboard({
   onOpenChatBot,
   deepLink = null,
   onDeepLinkConsumed,
+  onOpenAnnouncement,
+  onOpenBills,
 }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
+  const [focusTicketId, setFocusTicketId] = useState<string | null>(null);
+  const [residentName, setResidentName] = useState('Resident');
+  const [currentBill, setCurrentBill] = useState<ResidentBill | null>(null);
+  const [billLoading, setBillLoading] = useState(true);
 
   useEffect(() => {
     if (!deepLink) return;
@@ -63,9 +74,32 @@ export default function Dashboard({
     else if (deepLink === 'createTicket') setQuickActionScreen('createTicket');
     onDeepLinkConsumed?.();
   }, [deepLink, onDeepLinkConsumed]);
-  const [residentName, setResidentName] = useState('Resident');
-  const [currentBill, setCurrentBill] = useState<ResidentBill | null>(null);
-  const [billLoading, setBillLoading] = useState(true);
+
+  const handleNotificationNavigate = (destination: NotificationDestination) => {
+    if (!destination) return;
+    setQuickActionScreen(null);
+    setFocusTicketId(null);
+
+    switch (destination.kind) {
+      case 'ticket':
+        setFocusTicketId(destination.ticketId ?? null);
+        setQuickActionScreen('tickets');
+        break;
+      case 'announcement':
+        onOpenAnnouncement?.(destination.announcementId);
+        break;
+      case 'bills':
+        onOpenBills?.();
+        break;
+      case 'payments':
+        if (currentBill) {
+          setQuickActionScreen('payments');
+        } else {
+          onOpenBills?.();
+        }
+        break;
+    }
+  };
 
   // Greet the resident by their real first name from the profiles table.
   useEffect(() => {
@@ -151,10 +185,15 @@ export default function Dashboard({
         activeTab={activeTab}
         onTabPress={(tab) => {
           setQuickActionScreen(null);
+          setFocusTicketId(null);
           onTabPress?.(tab);
         }}
-        onBack={() => setQuickActionScreen(null)}
+        onBack={() => {
+          setQuickActionScreen(null);
+          setFocusTicketId(null);
+        }}
         initialView={quickActionScreen === 'createTicket' ? 'create' : 'list'}
+        initialTicketId={focusTicketId}
       />
     );
   }
@@ -168,6 +207,7 @@ export default function Dashboard({
           onTabPress?.(tab);
         }}
         onBack={() => setQuickActionScreen(null)}
+        onOpenRelated={handleNotificationNavigate}
       />
     );
   }

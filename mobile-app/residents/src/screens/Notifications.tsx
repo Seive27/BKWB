@@ -18,11 +18,17 @@ import {
   softDeleteNotification,
 } from '@/services/notificationService';
 import type { AppNotification } from '@/types/notifications';
+import {
+  resolveNotificationDestination,
+  type NotificationDestination,
+} from '@/utils/notificationNavigation';
 
 type NotificationsScreenProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
   onBack?: () => void;
+  /** Navigate to the entity this notification references. */
+  onOpenRelated?: (destination: NotificationDestination) => void;
 };
 
 function BackButton({ onPress }: { onPress?: () => void }) {
@@ -46,6 +52,7 @@ export default function NotificationsScreen({
   activeTab = 'dashboard',
   onTabPress,
   onBack,
+  onOpenRelated,
 }: NotificationsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
@@ -55,12 +62,18 @@ export default function NotificationsScreen({
   const { notifications, unreadCount, loading, refreshing, error, refresh } = useNotifications();
 
   const handlePressItem = async (item: AppNotification) => {
-    if (item.is_read) return;
-    try {
-      await markNotificationRead(item.id);
-      await refresh();
-    } catch {
-      // Best-effort; the feed will re-sync on the next realtime event.
+    if (!item.is_read) {
+      try {
+        await markNotificationRead(item.id);
+        await refresh();
+      } catch {
+        // Best-effort; the feed will re-sync on the next realtime event.
+      }
+    }
+
+    const destination = resolveNotificationDestination(item);
+    if (destination) {
+      onOpenRelated?.(destination);
     }
   };
 

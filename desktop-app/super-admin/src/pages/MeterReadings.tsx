@@ -42,11 +42,30 @@ function formatNumber(value: number | null): string {
   return value.toLocaleString('en-US');
 }
 
-const MeterReadings: React.FC = () => {
+const MeterReadings: React.FC<{
+  initialSelectedId?: string | null;
+  onInitialSelectedIdConsumed?: () => void;
+}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
+  useEffect(() => {
+    if (!initialSelectedId || readings.length === 0) return;
+    const found = readings.find((r) => r.id === initialSelectedId);
+    if (found) {
+      // Super-admin list has no detail modal — surface the row via search.
+      setSearchQuery(
+        found.account?.account_number ||
+          (found.resident
+            ? `${found.resident.first_name} ${found.resident.last_name}`.trim()
+            : found.meter?.meter_number) ||
+          ''
+      );
+      onInitialSelectedIdConsumed?.();
+    }
+  }, [initialSelectedId, readings, onInitialSelectedIdConsumed]);
 
   const stats = useMemo(() => {
     let assigned = 0;

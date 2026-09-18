@@ -89,7 +89,10 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const MeterReadings: React.FC = () => {
+const MeterReadings: React.FC<{
+  initialSelectedId?: string | null;
+  onInitialSelectedIdConsumed?: () => void;
+}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
   const { user } = useAuth();
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
 
@@ -101,7 +104,7 @@ const MeterReadings: React.FC = () => {
   const [page, setPage] = useState(1);
 
   // ── Selection ──
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showGenerateBillModal, setShowGenerateBillModal] = useState(false);
@@ -131,6 +134,13 @@ const MeterReadings: React.FC = () => {
       if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialSelectedId) return;
+    setSelectedId(initialSelectedId);
+    setShowReviewModal(true);
+    onInitialSelectedIdConsumed?.();
+  }, [initialSelectedId, onInitialSelectedIdConsumed]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);

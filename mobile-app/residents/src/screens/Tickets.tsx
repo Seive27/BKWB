@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
 import {
   Pressable,
@@ -31,6 +31,8 @@ type TicketsScreenProps = {
   onBack?: () => void;
   /** Open create form immediately (e.g. from Lunas deep link). */
   initialView?: 'list' | 'create';
+  /** Open a specific ticket detail (e.g. from a notification tap). */
+  initialTicketId?: string | null;
 };
 
 type TicketView = 'list' | 'create' | 'details';
@@ -109,17 +111,26 @@ export default function TicketsScreen({
   onTabPress,
   onBack,
   initialView = 'list',
+  initialTicketId = null,
 }: TicketsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
 
-  const [view, setView] = useState<TicketView>(initialView === 'create' ? 'create' : 'list');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<TicketView>(
+    initialTicketId ? 'details' : initialView === 'create' ? 'create' : 'list'
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(initialTicketId);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TicketFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
 
   const { tickets, loading, refreshing, error, refresh } = useTickets();
+
+  useEffect(() => {
+    if (!initialTicketId) return;
+    setSelectedId(initialTicketId);
+    setView('details');
+  }, [initialTicketId]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

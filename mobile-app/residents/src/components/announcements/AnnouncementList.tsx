@@ -139,13 +139,25 @@ function AnnouncementCard({
 type AnnouncementListProps = {
   filter?: AnnouncementFilter;
   limit?: number;
+  /** Open this announcement once data is loaded (e.g. from a notification). */
+  initialAnnouncementId?: string | null;
 };
 
-export function AnnouncementList({ filter = 'all', limit }: AnnouncementListProps) {
+export function AnnouncementList({
+  filter = 'all',
+  limit,
+  initialAnnouncementId = null,
+}: AnnouncementListProps) {
   const { announcements, loading, refreshing, error, refresh } = useAnnouncements({
     audience: 'residents',
   });
   const [selected, setSelected] = useState<Announcement | null>(null);
+
+  useEffect(() => {
+    if (!initialAnnouncementId || announcements.length === 0) return;
+    const found = announcements.find((a) => a.id === initialAnnouncementId);
+    if (found) setSelected(found);
+  }, [initialAnnouncementId, announcements]);
 
   const items = announcements.filter(
     (item) => filter === 'all' || item.category === filter,

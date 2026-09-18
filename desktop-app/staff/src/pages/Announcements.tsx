@@ -583,7 +583,10 @@ function ViewAnnouncementModal({ announcement, onClose }: { announcement: Announ
 
 // ── Main Page ──
 
-const Announcements: React.FC = () => {
+const Announcements: React.FC<{
+  initialSelectedId?: string | null;
+  onInitialSelectedIdConsumed?: () => void;
+}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
   const { announcements, loading, refreshing, error, refresh } = useAnnouncements();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -612,6 +615,15 @@ const Announcements: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialSelectedId || announcements.length === 0) return;
+    const found = announcements.find((a) => a.id === initialSelectedId);
+    if (found) {
+      setViewingAnnouncement(found);
+      onInitialSelectedIdConsumed?.();
+    }
+  }, [initialSelectedId, announcements, onInitialSelectedIdConsumed]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) {

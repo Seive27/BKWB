@@ -11,6 +11,7 @@ import Login from '@/screens/Login';
 import Notifications from '@/screens/Notifications';
 import Profile from '@/screens/Profile';
 import Tickets from '@/screens/Tickets';
+import type { NotificationDestination } from '@/utils/notificationNavigation';
 
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -55,6 +56,19 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const handleNotificationNavigate = (destination: NotificationDestination) => {
+    if (!destination) return;
+    setShowNotifications(false);
+    if (destination.kind === 'announcements') {
+      setShowAnnouncements(true);
+      return;
+    }
+    if (destination.kind === 'tab') {
+      setShowAnnouncements(false);
+      setActiveTab(destination.tab);
+    }
+  };
+
   // Avoid flashing the login screen while the session is being restored.
   if (!sessionChecked) {
     return null;
@@ -69,7 +83,12 @@ export default function HomeScreen() {
   }
 
   if (showNotifications) {
-    return <Notifications onBack={() => setShowNotifications(false)} />;
+    return (
+      <Notifications
+        onBack={() => setShowNotifications(false)}
+        onOpenRelated={handleNotificationNavigate}
+      />
+    );
   }
 
   if (activeTab === 'dashboard') {

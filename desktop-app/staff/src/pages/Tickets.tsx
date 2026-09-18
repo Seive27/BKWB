@@ -151,7 +151,10 @@ function timelineTitle(event: TicketTimelineEvent): string {
   }
 }
 
-const Tickets: React.FC = () => {
+const Tickets: React.FC<{
+  initialSelectedId?: string | null;
+  onInitialSelectedIdConsumed?: () => void;
+}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
   const { user } = useAuth();
   const { tickets, loading, refreshing, error, refresh } = useTickets();
 
@@ -163,7 +166,7 @@ const Tickets: React.FC = () => {
   const [sortKey, setSortKey] = useState<SortKey>('newest');
 
   // ──── Selection / details ────
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [timeline, setTimeline] = useState<TicketTimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
@@ -189,6 +192,12 @@ const Tickets: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialSelectedId) return;
+    setSelectedId(initialSelectedId);
+    onInitialSelectedIdConsumed?.();
+  }, [initialSelectedId, onInitialSelectedIdConsumed]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) {

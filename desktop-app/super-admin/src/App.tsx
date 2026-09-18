@@ -25,30 +25,62 @@ import Analytics from './pages/Analytics';
 import AuditLogs from './pages/AuditLogs';
 import AuditLogsConsole from './pages/AuditLogsConsole';
 import SystemSettings from './pages/SystemSettings';
+import type { AppNotification } from './types';
+import { resolveNotificationDestination } from './utils/notificationNavigation';
 
 function AppContent() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [focusSelectedId, setFocusSelectedId] = useState<string | null>(null);
   const { showLogin, isClosing, isAuthenticated, login, logout } = useAuth();
+
+  const handlePageChange = (page: string) => {
+    setFocusSelectedId(null);
+    setActivePage(page);
+  };
+
+  const handleNotificationNavigate = (notification: AppNotification) => {
+    const destination = resolveNotificationDestination(notification);
+    if (!destination) return;
+    setFocusSelectedId(destination.selectedId ?? null);
+    setActivePage(destination.page);
+  };
+
+  const clearFocusSelectedId = () => setFocusSelectedId(null);
 
   const renderContent = () => {
     switch (activePage) {
       // Staff Feature Pages
       case 'dashboard':
-        return <Dashboard onNavigate={setActivePage} />;
+        return <Dashboard onNavigate={handlePageChange} />;
       case 'residents':
         return <Residents />;
       case 'meter-readings':
-        return <MeterReadings />;
+        return (
+          <MeterReadings
+            initialSelectedId={focusSelectedId}
+            onInitialSelectedIdConsumed={clearFocusSelectedId}
+          />
+        );
       case 'bills':
         return <Bills />;
       case 'payments':
         return <Payments />;
       case 'announcements':
-        return <Announcements />;
+        return (
+          <Announcements
+            initialSelectedId={focusSelectedId}
+            onInitialSelectedIdConsumed={clearFocusSelectedId}
+          />
+        );
       case 'ticket-management':
-        return <Tickets />;
+        return (
+          <Tickets
+            initialSelectedId={focusSelectedId}
+            onInitialSelectedIdConsumed={clearFocusSelectedId}
+          />
+        );
       case 'notifications':
-        return <Notifications />;
+        return <Notifications onNavigateToRelated={handleNotificationNavigate} />;
       case 'reports':
         return <Reports />;
       case 'profile-settings':
@@ -59,13 +91,13 @@ function AppContent() {
       case 'analytics':
         return <Analytics />;
       case 'audit-logs':
-        return <AuditLogs onNavigateToConsole={() => setActivePage('audit-logs-console')} />;
+        return <AuditLogs onNavigateToConsole={() => handlePageChange('audit-logs-console')} />;
       case 'audit-logs-console':
-        return <AuditLogsConsole onNavigateBack={() => setActivePage('audit-logs')} />;
+        return <AuditLogsConsole onNavigateBack={() => handlePageChange('audit-logs')} />;
       case 'system-settings':
         return <SystemSettings />;
       default:
-        return <Dashboard onNavigate={setActivePage} />;
+        return <Dashboard onNavigate={handlePageChange} />;
     }
   };
 
@@ -82,9 +114,9 @@ function AppContent() {
         `}
         aria-hidden={lockBackdrop}
       >
-        <Sidebar activePage={activePage} onPageChange={setActivePage} onLogout={logout} />
+        <Sidebar activePage={activePage} onPageChange={handlePageChange} onLogout={logout} />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header onNavigate={setActivePage} />
+          <Header onNavigate={handlePageChange} />
           {renderContent()}
         </div>
       </div>

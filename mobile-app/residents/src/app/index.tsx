@@ -22,6 +22,7 @@ export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [showChatBot, setShowChatBot] = useState(false);
   const [dashboardDeepLink, setDashboardDeepLink] = useState<DashboardDeepLink>(null);
+  const [focusAnnouncementId, setFocusAnnouncementId] = useState<string | null>(null);
 
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
@@ -124,6 +125,11 @@ export default function HomeScreen() {
         onOpenChatBot={() => setShowChatBot(true)}
         deepLink={dashboardDeepLink}
         onDeepLinkConsumed={() => setDashboardDeepLink(null)}
+        onOpenAnnouncement={(announcementId) => {
+          setFocusAnnouncementId(announcementId ?? null);
+          setActiveTab('announcements');
+        }}
+        onOpenBills={() => setActiveTab('bills')}
       />
     );
   }
@@ -144,6 +150,8 @@ export default function HomeScreen() {
         activeTab={activeTab}
         onTabPress={setActiveTab}
         onOpenChatBot={() => setShowChatBot(true)}
+        initialAnnouncementId={focusAnnouncementId}
+        onInitialAnnouncementConsumed={() => setFocusAnnouncementId(null)}
       />
     );
   }

@@ -11,11 +11,11 @@ type TicketCardProps = {
 };
 
 const STATUS_ACCENT: Record<Ticket['status'], string> = {
-  open: 'bg-amber-400',
-  acknowledged: 'bg-slate-400',
-  assigned: 'bg-brand-400',
-  scheduled: 'bg-brand-400',
-  in_progress: 'bg-brand-500',
+  open: 'bg-red-500',
+  acknowledged: 'bg-blue-500',
+  assigned: 'bg-blue-500',
+  scheduled: 'bg-blue-500',
+  in_progress: 'bg-orange-500',
   work_completed: 'bg-emerald-500',
   resolved: 'bg-emerald-500',
   closed: 'bg-slate-400',

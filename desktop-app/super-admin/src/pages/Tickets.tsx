@@ -72,11 +72,11 @@ const PRIORITY_ORDER: Record<TicketPriority, number> = {
 };
 
 const statusStyles: Record<TicketStatus, { bg: string; text: string; dot: string }> = {
-  open: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
-  acknowledged: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' },
-  assigned: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
-  scheduled: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
-  in_progress: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-600' },
+  open: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
+  acknowledged: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  scheduled: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
   work_completed: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   resolved: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   closed: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },

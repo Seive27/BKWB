@@ -107,12 +107,12 @@ function TrendCard({
 }
 
 const TICKET_COLORS: Record<TicketStatus, string> = {
-  open: '#f59e0b',
-  acknowledged: '#94a3b8',
-  assigned: '#1f7a66',
-  scheduled: '#1f7a66',
-  in_progress: '#186252',
-  work_completed: '#059669',
+  open: '#ef4444',
+  acknowledged: '#3b82f6',
+  assigned: '#3b82f6',
+  scheduled: '#3b82f6',
+  in_progress: '#f97316',
+  work_completed: '#10b981',
   resolved: '#10b981',
   closed: '#64748b',
 };

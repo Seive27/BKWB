@@ -33,11 +33,11 @@ const priorityConfig: Record<TicketPriority, { label: string; color: string; ico
 };
 
 const statusConfig: Record<TicketStatus, { label: string; color: string; dot: string }> = {
-  open: { label: 'Open', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-  acknowledged: { label: 'Acknowledged', color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  assigned: { label: 'Assigned', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
-  scheduled: { label: 'Scheduled', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
-  in_progress: { label: 'Ongoing', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-600' },
+  open: { label: 'Open', color: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
+  acknowledged: { label: 'Acknowledged', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  scheduled: { label: 'Scheduled', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  in_progress: { label: 'Ongoing', color: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
   work_completed: { label: 'Work Completed', color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   resolved: { label: 'Resolved', color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   closed: { label: 'Closed', color: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' },

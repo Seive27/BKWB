@@ -592,7 +592,7 @@ const Tickets: React.FC<{
           {/* ──── Ticket Header ──── */}
           <div className="bg-white border-b border-gray-200 px-8 py-5">
             <div className="flex items-start justify-between mb-3">
-              <h1 className="text-xl font-bold text-gray-900 leading-tight">
+              <h1 className="text-xl font-bold text-gray-900 leading-tight break-words min-w-0">
                 {selectedTicket.subject}
               </h1>
               <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
@@ -803,9 +803,11 @@ const Tickets: React.FC<{
                 <FileText className="w-4 h-4 text-gray-500" />
                 <h3 className="text-sm font-semibold text-gray-700">Description</h3>
               </div>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {selectedTicket.description}
-              </p>
+              <div className="max-h-40 overflow-y-auto pr-1">
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">
+                  {selectedTicket.description}
+                </p>
+              </div>
             </div>
 
             {/* Resolution */}
@@ -815,9 +817,11 @@ const Tickets: React.FC<{
                   <CheckCircle className="w-4 h-4 text-emerald-600" />
                   <h3 className="text-sm font-semibold text-emerald-800">Resolution</h3>
                 </div>
-                <p className="text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap">
-                  {selectedTicket.resolution}
-                </p>
+                <div className="max-h-40 overflow-y-auto pr-1">
+                  <p className="text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap break-words">
+                    {selectedTicket.resolution}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -882,9 +886,9 @@ const Tickets: React.FC<{
                             {formatDateTime(event.created_at)}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 break-words">
                           {fullName(event.performer) || 'System'}
-                          {event.description ? ` — ${event.description}` : ''}
+                          {event.description ? ` — ${event.description}` : ''}
                         </p>
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Search,
   Bell,
@@ -21,6 +21,7 @@ import type { NotificationType, AppNotification } from '../types';
 import { NOTIFICATION_TYPE_LABELS } from '../types';
 import { useNotifications } from '../hooks/useNotifications';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../components/ui/ToastProvider';
 import {
   markNotificationRead,
   markAllNotificationsRead,
@@ -67,6 +68,7 @@ function formatRelativeTime(iso: string): string {
 
 const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const isSuperAdmin = user?.role === 'super_admin';
 
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -75,20 +77,10 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
 
   const { notifications, unreadCount, loading, error, refresh } = useNotifications({
     mineOnly: isSuperAdmin ? mineOnly : true,
   });
-
-  const showToast = (type: 'success' | 'error', message: string) => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-    setToast({ type, message });
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
-  };
 
   const filtered = useMemo(() => {
     return notifications.filter((n) => {
@@ -110,7 +102,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
         await markNotificationRead(notification.id);
         await refresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Failed to update notification.');
+        showToast('error', 'Failed to update notification', err instanceof Error ? err.message : undefined);
       } finally {
         setBusyId(null);
       }
@@ -122,9 +114,9 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
     try {
       await markAllNotificationsRead();
       await refresh();
-      showToast('success', 'All notifications marked as read.');
+      showToast('success', 'Marked as read', 'All notifications marked as read.');
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to update notifications.');
+      showToast('error', 'Failed to mark as read', err instanceof Error ? err.message : undefined);
     }
   };
 
@@ -133,9 +125,9 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
     try {
       await softDeleteNotification(id);
       await refresh();
-      showToast('success', 'Notification deleted.');
+      showToast('success', 'Deleted successfully');
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to remove notification.');
+      showToast('error', 'Failed to delete notification', err instanceof Error ? err.message : undefined);
     } finally {
       setBusyId(null);
     }
@@ -147,9 +139,9 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
       await softDeleteAllNotifications();
       await refresh();
       setConfirmDeleteAll(false);
-      showToast('success', 'All notifications deleted.');
+      showToast('success', 'Deleted successfully', 'All notifications removed.');
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to delete notifications.');
+      showToast('error', 'Failed to delete notifications', err instanceof Error ? err.message : undefined);
     } finally {
       setDeletingAll(false);
     }
@@ -369,13 +361,6 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className={`fixed bottom-6 right-6 flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${        toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
-          {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-          <span>{toast.message}</span>
         </div>
       )}
     </div>

@@ -263,6 +263,27 @@ ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAUL
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+-- Self-heal legacy payments.status check (pending/verified/rejected) so staff
+-- recording can insert status = 'completed' and mark bills paid / partial.
+DO $$
+BEGIN
+  ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_status_check;
+  ALTER TABLE public.payments
+    ADD CONSTRAINT payments_status_check
+    CHECK (status = ANY (ARRAY[
+      'completed'::text,
+      'pending'::text,
+      'cancelled'::text,
+      'refunded'::text,
+      'verified'::text,
+      'rejected'::text,
+      'paid'::text
+    ]));
+  ALTER TABLE public.payments ALTER COLUMN status SET DEFAULT 'completed';
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
 -- Explicit named foreign keys for PostgREST resource embedding
 DO $$
 BEGIN
@@ -315,6 +336,13 @@ CREATE INDEX IF NOT EXISTS idx_payments_resident_id ON public.payments (resident
 CREATE INDEX IF NOT EXISTS idx_payments_date ON public.payments (payment_date DESC);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payments (status);
 
+-- Official receipt delivery (staff Send Receipt → resident View Official Receipt)
+ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ;
+ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS receipt_snapshot JSONB;
+CREATE INDEX IF NOT EXISTS idx_payments_receipt_sent_at
+  ON public.payments (receipt_sent_at)
+  WHERE receipt_sent_at IS NOT NULL;
+
 DROP TRIGGER IF EXISTS on_payment_updated ON public.payments;
 CREATE TRIGGER on_payment_updated
   BEFORE UPDATE ON public.payments
@@ -362,7 +390,9 @@ NOTIFY pgrst, 'reload schema';
 -- ============================================================
 -- 1c. RECORD PAYMENT RPC
 -- Records payment against one or more bills atomically.
--- Marks each paid bill with status = 'paid' and sets paid_at.
+-- Allocates p_amount FIFO by due date / billing period.
+-- Full settlement → status = 'paid', amount_due = 0.
+-- Partial → reduces amount_due (remaining balance for period).
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.record_payment_transaction(
   p_bill_ids UUID[],
@@ -379,33 +409,51 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_bill_id UUID;
-  v_bill_amount NUMERIC;
+  v_bill RECORD;
   v_payment_ids UUID[] := ARRAY[]::UUID[];
   v_new_payment_id UUID;
   v_bill_count INTEGER := 0;
+  v_remaining NUMERIC;
+  v_apply NUMERIC;
+  v_new_balance NUMERIC;
+  v_bills_paid INTEGER := 0;
+  v_bills_partial INTEGER := 0;
 BEGIN
   IF NOT public.is_staff_or_admin() THEN
     RAISE EXCEPTION 'Only staff and administrators can record payments.';
   END IF;
 
-  IF p_amount IS NULL OR p_amount < 0 THEN
-    RAISE EXCEPTION 'Payment amount must be non-negative.';
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Payment amount must be greater than zero.';
   END IF;
 
   IF p_payment_method NOT IN ('cash', 'gcash', 'bank') THEN
     RAISE EXCEPTION 'Invalid payment method: %. Expected cash, gcash, or bank.', p_payment_method;
   END IF;
 
-  IF p_bill_ids IS NOT NULL AND array_length(p_bill_ids, 1) > 0 THEN
-    FOREACH v_bill_id IN ARRAY p_bill_ids
-    LOOP
-      SELECT amount_due INTO v_bill_amount
-      FROM public.bills
-      WHERE id = v_bill_id;
+  v_remaining := ROUND(p_amount, 2);
 
-      IF NOT FOUND THEN
-        RAISE EXCEPTION 'Bill not found: %', v_bill_id;
+  IF p_bill_ids IS NOT NULL AND cardinality(p_bill_ids) > 0 THEN
+    FOR v_bill IN
+      SELECT id, amount_due, status, billing_period, due_date
+      FROM public.bills
+      WHERE id = ANY (p_bill_ids)
+        AND deleted_at IS NULL
+      ORDER BY
+        COALESCE(due_date, DATE '9999-12-31') ASC,
+        billing_period ASC NULLS LAST,
+        created_at ASC
+      FOR UPDATE
+    LOOP
+      EXIT WHEN v_remaining < 0.01;
+
+      IF v_bill.status IN ('paid', 'void') OR COALESCE(v_bill.amount_due, 0) < 0.01 THEN
+        CONTINUE;
+      END IF;
+
+      v_apply := LEAST(ROUND(v_bill.amount_due, 2), v_remaining);
+      IF v_apply < 0.01 THEN
+        CONTINUE;
       END IF;
 
       INSERT INTO public.payments (
@@ -414,8 +462,8 @@ BEGIN
         notes, recorded_by, status
       )
       VALUES (
-        v_bill_id, p_account_id, p_resident_id,
-        COALESCE(v_bill_amount, 0),
+        v_bill.id, p_account_id, p_resident_id,
+        v_apply,
         p_payment_method, NOW(), p_reference_number,
         p_notes, auth.uid(), 'completed'
       )
@@ -423,13 +471,30 @@ BEGIN
 
       v_payment_ids := array_append(v_payment_ids, v_new_payment_id);
       v_bill_count := v_bill_count + 1;
+      v_new_balance := ROUND(v_bill.amount_due - v_apply, 2);
 
-      UPDATE public.bills
-      SET status = 'paid',
-          paid_at = NOW(),
-          updated_at = NOW()
-      WHERE id = v_bill_id;
+      IF v_new_balance < 0.01 THEN
+        UPDATE public.bills
+        SET amount_due = 0,
+            status = 'paid',
+            paid_at = NOW(),
+            updated_at = NOW()
+        WHERE id = v_bill.id;
+        v_bills_paid := v_bills_paid + 1;
+      ELSE
+        UPDATE public.bills
+        SET amount_due = v_new_balance,
+            updated_at = NOW()
+        WHERE id = v_bill.id;
+        v_bills_partial := v_bills_partial + 1;
+      END IF;
+
+      v_remaining := ROUND(v_remaining - v_apply, 2);
     END LOOP;
+
+    IF v_bill_count = 0 THEN
+      RAISE EXCEPTION 'No payable bills found for the selected billing periods.';
+    END IF;
   ELSE
     INSERT INTO public.payments (
       account_id, resident_id, amount,
@@ -437,23 +502,28 @@ BEGIN
       notes, recorded_by, status
     )
     VALUES (
-      p_account_id, p_resident_id, p_amount,
+      p_account_id, p_resident_id, v_remaining,
       p_payment_method, NOW(), p_reference_number,
       p_notes, auth.uid(), 'completed'
     )
     RETURNING id INTO v_new_payment_id;
     v_payment_ids := array_append(v_payment_ids, v_new_payment_id);
+    v_remaining := 0;
   END IF;
 
   RETURN jsonb_build_object(
     'success', TRUE,
-    'payment_ids', v_payment_ids,
-    'bills_paid', v_bill_count,
-    'total_amount', p_amount
+    'payment_ids', to_jsonb(v_payment_ids),
+    'bills_touched', v_bill_count,
+    'bills_paid', v_bills_paid,
+    'bills_partial', v_bills_partial,
+    'total_amount', ROUND(p_amount - v_remaining, 2),
+    'unallocated', v_remaining
   );
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.record_payment_transaction(UUID[], UUID, UUID, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_payment_transaction(UUID[], UUID, UUID, NUMERIC, TEXT, TEXT, TEXT) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

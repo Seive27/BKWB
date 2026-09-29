@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   KeyRound,
   Eye,
+  Loader2,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
 import {
@@ -27,6 +28,7 @@ import {
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
 import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
+import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
 
@@ -506,6 +508,7 @@ const Residents: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -556,35 +559,38 @@ const Residents: React.FC = () => {
   const safePage = Math.min(page, totalPages);
   const pageRows = filteredResidents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const handleExport = () => {
-    if (filteredResidents.length === 0) return;
-    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created'];
-    const rows = filteredResidents.map((r) => [
-      r.fullName,
-      r.email,
-      r.phone ?? '',
-      r.accountNumber ?? '',
-      r.meterNumber ?? '',
-      r.serviceAddress ?? '',
-      r.sitio ?? '',
-      r.previousReadingDate ?? '',
-      r.previousReading !== null ? String(r.previousReading) : '',
-      r.currentReading !== null ? String(r.currentReading) : '',
-      getStatusText(r.connectionStatus),
-      new Date(r.createdAt).toLocaleDateString(),
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'residents.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    if (filteredResidents.length === 0 || exporting) return;
+    setExporting(true);
+    try {
+      const headers = [
+        'Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio',
+        'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created',
+      ];
+      const rows = filteredResidents.map((r) => [
+        r.fullName,
+        r.email,
+        r.phone ?? '',
+        r.accountNumber ?? '',
+        r.meterNumber ?? '',
+        r.serviceAddress ?? '',
+        r.sitio ?? '',
+        r.previousReadingDate ?? '',
+        r.previousReading !== null ? String(r.previousReading) : '',
+        r.currentReading !== null ? String(r.currentReading) : '',
+        getStatusText(r.connectionStatus),
+        new Date(r.createdAt).toLocaleDateString(),
+      ]);
+      await exportSpreadsheet({
+        headers,
+        rows,
+        dataKind: 'Residents',
+        scope: sitioFilter || singleSharedScope(filteredResidents.map((r) => r.sitio)),
+        sheetName: 'Residents',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -699,11 +705,15 @@ const Residents: React.FC = () => {
                   </button>
                   <button
                     onClick={handleExport}
-                    disabled={filteredResidents.length === 0}
+                    disabled={filteredResidents.length === 0 || exporting}
                     className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
-                    title="Export CSV"
+                    title={exporting ? 'Saving…' : 'Export'}
                   >
-                    <Download className="w-5 h-5 text-gray-600" />
+                    {exporting ? (
+                      <Loader2 className="w-5 h-5 text-gray-600 animate-spin" />
+                    ) : (
+                      <Download className="w-5 h-5 text-gray-600" />
+                    )}
                   </button>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Loader2, Printer, Receipt, X } from 'lucide-react';
+import { Download, FileSpreadsheet, Loader2, Printer, Receipt, X } from 'lucide-react';
 import { getBillReceiptData, type BillReceiptData } from '../../services/billService';
 import {
   RECEIPTS_PER_PAGE,
@@ -8,6 +8,7 @@ import {
   downloadReceiptsPdf,
   printHtmlDocument,
 } from '../../utils/billReceipt';
+import { exportSpreadsheet, singleSharedScope } from '../../utils/exportSpreadsheet';
 
 interface PrintBillsModalProps {
   isOpen: boolean;
@@ -17,16 +18,32 @@ interface PrintBillsModalProps {
 
 type View = 'actions' | 'preview';
 
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'paid':
+      return 'Paid';
+    case 'pending':
+      return 'Pending';
+    case 'overdue':
+      return 'Overdue';
+    case 'void':
+      return 'Void';
+    default:
+      return status;
+  }
+}
+
 /**
  * After Generate Bills confirm:
- * 1) Compact actions dialog (Download / Print Preview)
+ * 1) Compact actions dialog (Download PDF / CSV / Print Preview)
  * 2) In-app preview → Print opens the system print dialog (Tauri-safe iframe)
  */
 const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onClose }) => {
   const [receipts, setReceipts] = useState<BillReceiptData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [view, setView] = useState<View>('actions');
 
@@ -67,16 +84,72 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
 
   if (!isOpen) return null;
 
+  const busy = downloadingPdf || downloadingCsv;
+
   const handleDownloadPdf = async () => {
-    if (receipts.length === 0 || downloading) return;
-    setDownloading(true);
+    if (receipts.length === 0 || busy) return;
+    setDownloadingPdf(true);
     setError(null);
     try {
       await downloadReceiptsPdf(receipts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download PDF.');
     } finally {
-      setDownloading(false);
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadCsv = async () => {
+    if (receipts.length === 0 || busy) return;
+    setDownloadingCsv(true);
+    setError(null);
+    try {
+      const headers = [
+        'Bill Number',
+        'Resident',
+        'Account No.',
+        'Sitio',
+        'Billing Period',
+        'Previous Reading',
+        'Current Reading',
+        'Consumption',
+        'Water Rate',
+        'Extra Components',
+        'Amount Due',
+        'Due Date',
+        'Status',
+        'Paid At',
+      ];
+      const rows = receipts.map((r) => {
+        const b = r.bill;
+        return [
+          b.bill_number,
+          r.residentName,
+          b.account?.account_number ?? '',
+          b.account?.sitio ?? '',
+          b.billing_period,
+          b.previous_reading ?? '',
+          b.current_reading ?? '',
+          b.consumption ?? '',
+          b.water_rate,
+          (b.extra_components ?? []).map((c) => `${c.category}: ${c.price}`).join('; '),
+          b.amount_due,
+          b.due_date ?? '',
+          statusLabel(b.status),
+          b.paid_at ?? '',
+        ];
+      });
+      await exportSpreadsheet({
+        headers,
+        rows,
+        dataKind: 'Billing',
+        scope: singleSharedScope(receipts.map((r) => r.bill.account?.sitio)),
+        sheetName: 'Billing',
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download spreadsheet.');
+    } finally {
+      setDownloadingCsv(false);
     }
   };
 
@@ -123,28 +196,28 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
             <button
               type="button"
               onClick={handleDownloadPdf}
-              disabled={downloading}
+              disabled={downloadingPdf || receipts.length === 0}
               className="inline-flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
             >
-              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>Download as PDF</span>
+              {downloadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>{downloadingPdf ? 'Saving…' : 'Download as PDF'}</span>
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              disabled={printing}
+              disabled={printing || receipts.length === 0}
               className="inline-flex items-center space-x-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
             >
               {printing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-              <span>Print</span>
+              <span>{printing ? 'Opening…' : 'Print'}</span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="p-2.5 hover:bg-gray-100 rounded-lg"
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
               aria-label="Close"
             >
-              <X className="w-5 h-5 text-gray-500" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -167,12 +240,12 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
             .bkwb-preview-host .uppercase { text-transform: uppercase; }
             .bkwb-preview-host table.receipt-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 4px; font-size: 10px; }
             .bkwb-preview-host table.receipt-table th,
-            .bkwb-preview-host table.receipt-table td { padding: 5px 6px; vertical-align: middle; border: none; background: #fff; }
+            .bkwb-preview-host table.receipt-table td { padding: 5px 6px; vertical-align: middle; border: none; background: #fff; text-align: left; }
             .bkwb-preview-host table.receipt-table thead th { text-align: left; font-weight: 700; box-shadow: inset 0 -2px 0 #111; }
             .bkwb-preview-host table.receipt-table tbody td { box-shadow: inset 0 -1px 0 #ddd; }
             .bkwb-preview-host table.receipt-table tbody tr.total-row td { box-shadow: inset 0 2px 0 #111; padding-top: 8px; font-weight: 700; }
-            .bkwb-preview-host .num { text-align: right; font-variant-numeric: tabular-nums; }
-            .bkwb-preview-host .total-label { text-align: right; }
+            .bkwb-preview-host .num { text-align: left; font-variant-numeric: tabular-nums; }
+            .bkwb-preview-host .total-label { text-align: left; }
             .bkwb-preview-host .cut-hint { text-align: center; font-size: 8px; color: #888; letter-spacing: 0.06em; text-transform: uppercase; margin: 8px 0 0; }
           `}</style>
           <div className="bkwb-preview-host mx-auto space-y-6" style={{ width: '210mm' }}>
@@ -236,17 +309,17 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-xl"
+            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
             aria-label="Close"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-4">
           {loading && (
-            <div className="flex items-center justify-center py-8 text-gray-500">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+            <div className="flex items-center justify-center gap-2 py-8 text-gray-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
               <span className="text-sm">Loading bill receipts…</span>
             </div>
           )}
@@ -261,13 +334,13 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
             <>
               <p className="text-sm text-gray-600 leading-relaxed">
                 {RECEIPTS_PER_PAGE} receipts per A4 with cut margins. Open preview to print, or
-                download a PDF.
+                download a PDF / spreadsheet.
               </p>
               <ul className="max-h-48 overflow-y-auto divide-y divide-gray-100 rounded-xl border border-gray-200 text-sm">
                 {receipts.map((r) => (
-                  <li key={r.bill.id} className="px-4 py-2.5 flex justify-between gap-3">
-                    <span className="font-medium text-gray-900 truncate">{r.bill.bill_number}</span>
-                    <span className="text-gray-500 truncate">{r.residentName}</span>
+                  <li key={r.bill.id} className="px-4 py-2.5 flex flex-col gap-0.5 min-w-0">
+                    <span className="font-medium text-gray-900 truncate text-left">{r.bill.bill_number}</span>
+                    <span className="text-gray-500 truncate text-left">{r.residentName}</span>
                   </li>
                 ))}
               </ul>
@@ -275,31 +348,37 @@ const PrintBillsModal: React.FC<PrintBillsModalProps> = ({ isOpen, billIds, onCl
           )}
         </div>
 
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium"
-          >
-            <span>Close</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={loading || receipts.length === 0 || downloading}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
-          >
-            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span>{downloading ? 'Preparing…' : 'Download as PDF'}</span>
-          </button>
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 grid grid-cols-2 gap-2.5">
           <button
             type="button"
             onClick={handleOpenPreview}
             disabled={loading || receipts.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
+            className="col-span-2 inline-flex items-center justify-center space-x-2 px-4 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors shadow-sm text-sm font-semibold disabled:opacity-40"
           >
             <Printer className="w-4 h-4" />
             <span>Print Preview</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={loading || receipts.length === 0 || busy}
+            className="inline-flex items-center justify-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-xl hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
+          >
+            {downloadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span>{downloadingPdf ? 'Saving…' : 'Download PDF'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            disabled={loading || receipts.length === 0 || busy}
+            className="inline-flex items-center justify-center space-x-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-xl hover:bg-gray-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-40"
+          >
+            {downloadingCsv ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            <span>{downloadingCsv ? 'Saving…' : 'Download CSV'}</span>
           </button>
         </div>
       </div>

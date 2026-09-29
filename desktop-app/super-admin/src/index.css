@@ -44,6 +44,29 @@
     animation: slide-up 0.3s ease-out;
   }
 
+  @keyframes toast-lifecycle {
+    0% {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    6% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    86% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(0.35rem);
+    }
+  }
+
+  .animate-toast {
+    animation: toast-lifecycle 5s ease forwards;
+  }
+
   @keyframes slide-down {
     from {
       opacity: 0;

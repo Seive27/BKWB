@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -22,6 +22,7 @@ type NotificationsProps = {
 };
 
 type Filter = 'all' | 'unread';
+type ToastTone = 'success' | 'error';
 
 const TYPE_COLORS: Record<NotificationType, string> = {
   announcement: 'bg-brand-100',
@@ -66,10 +67,24 @@ function formatRelativeTime(iso: string): string {
 export default function Notifications({ onBack, onOpenRelated }: NotificationsProps) {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<Filter>('all');
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { notifications, unreadCount, loading, refreshing, error, refresh } = useNotifications();
 
   const visible = activeFilter === 'unread' ? notifications.filter((n) => !n.is_read) : notifications;
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const showToast = (message: string, tone: ToastTone = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, tone });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
+  };
 
   const handlePress = async (item: AppNotification) => {
     if (!item.is_read) {
@@ -91,8 +106,9 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
     try {
       await markAllNotificationsRead();
       await refresh();
-    } catch {
-      // Best-effort.
+      showToast('Marked as read');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to mark as read', 'error');
     }
   };
 
@@ -106,10 +122,11 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
           try {
             await softDeleteNotification(item.id);
             await refresh();
+            showToast('Deleted successfully');
           } catch (err) {
-            Alert.alert(
-              'Delete failed',
-              err instanceof Error ? err.message : 'Could not delete this notification.'
+            showToast(
+              err instanceof Error ? err.message : 'Could not delete this notification.',
+              'error'
             );
           }
         },
@@ -128,10 +145,11 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
           try {
             await softDeleteAllNotifications();
             await refresh();
+            showToast('Deleted successfully');
           } catch (err) {
-            Alert.alert(
-              'Delete failed',
-              err instanceof Error ? err.message : 'Could not delete notifications.'
+            showToast(
+              err instanceof Error ? err.message : 'Could not delete notifications.',
+              'error'
             );
           }
         },
@@ -269,6 +287,17 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
           ) : null}
         </View>
       </ScrollView>
+
+      {toast ? (
+        <View
+          className={`absolute left-4 right-4 bottom-8 rounded-xl px-4 py-3 ${
+            toast.tone === 'success' ? 'bg-emerald-600' : 'bg-red-600'
+          }`}
+          pointerEvents="none"
+        >
+          <Text className="text-center text-sm font-semibold text-white">{toast.message}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }

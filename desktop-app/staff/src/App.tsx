@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthOverlay from './components/layout/AuthOverlay';
 import SessionTimeout from './components/ui/SessionTimeout';
+import { ToastProvider } from './components/ui/ToastProvider';
 import LoginModal from './components/modals/LoginModal';
 import Dashboard from './pages/Dashboard';
 import Residents from './pages/Residents';
@@ -122,7 +123,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider allowedRole="staff" portalName="Staff Portal">
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

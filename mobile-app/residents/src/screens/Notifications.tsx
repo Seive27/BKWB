@@ -81,8 +81,12 @@ export default function NotificationsScreen({
     try {
       await markAllNotificationsRead();
       await refresh();
-    } catch {
-      // Best-effort.
+      dialog.toast('Marked as read');
+    } catch (err) {
+      dialog.toast(
+        err instanceof Error ? err.message : 'Failed to mark as read',
+        'error'
+      );
     }
   };
 
@@ -96,7 +100,7 @@ export default function NotificationsScreen({
         try {
           await softDeleteNotification(item.id);
           await refresh();
-          dialog.toast('Notification deleted');
+          dialog.toast('Deleted successfully');
         } catch (err) {
           dialog.toast(
             err instanceof Error ? err.message : 'Failed to delete notification',
@@ -118,7 +122,7 @@ export default function NotificationsScreen({
         try {
           await softDeleteAllNotifications();
           await refresh();
-          dialog.toast('All notifications deleted');
+          dialog.toast('Deleted successfully');
         } catch (err) {
           dialog.toast(
             err instanceof Error ? err.message : 'Failed to delete notifications',

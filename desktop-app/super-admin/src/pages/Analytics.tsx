@@ -8,11 +8,13 @@ import {
   RefreshCcw,
   TrendingUp,
   ClipboardList,
+  Loader2,
 } from 'lucide-react';
 import type { AnalyticsData, TrendPoint } from '../types';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { TICKET_STATUS_LABELS, METER_READING_STATUS_LABELS } from '../types';
 import type { TicketStatus, MeterReadingStatus } from '../types';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 const PERIODS = [
   { days: 7, label: '7D' },
@@ -125,41 +127,36 @@ const READING_COLORS: Record<MeterReadingStatus, string> = {
   billed: '#059669',
 };
 
-function exportAnalyticsCsv(data: AnalyticsData) {
-  const rows: string[][] = [
-    ['Metric', 'Value'],
-    ['Total Residents', String(data.summary.totalResidents)],
-    ['Active Staff', String(data.summary.activeStaff)],
-    ['Meter Readers', String(data.summary.totalMeterReaders)],
-    ['Total Announcements', String(data.summary.totalAnnouncements)],
+async function exportAnalyticsCsv(data: AnalyticsData) {
+  const headers = ['Metric', 'Value', 'Detail'];
+  const rows: (string | number)[][] = [
+    ['Total Residents', data.summary.totalResidents, ''],
+    ['Active Staff', data.summary.activeStaff, ''],
+    ['Meter Readers', data.summary.totalMeterReaders, ''],
+    ['Total Announcements', data.summary.totalAnnouncements, ''],
   ];
   (Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).forEach((s) => {
-    rows.push(['Tickets - ' + TICKET_STATUS_LABELS[s], String(data.summary.tickets[s])]);
+    rows.push(['Tickets', data.summary.tickets[s], TICKET_STATUS_LABELS[s]]);
   });
   (Object.keys(METER_READING_STATUS_LABELS) as MeterReadingStatus[]).forEach((s) => {
-    rows.push(['Readings - ' + METER_READING_STATUS_LABELS[s], String(data.summary.readings[s])]);
+    rows.push(['Readings', data.summary.readings[s], METER_READING_STATUS_LABELS[s]]);
   });
-  rows.push([]);
-  rows.push(['Trend', 'Label', 'Value']);
-  data.ticketTrends.forEach((p) => rows.push(['Ticket Trends', p.label, String(p.value)]));
-  data.readingCompletionTrends.forEach((p) => rows.push(['Reading Submissions', p.label, String(p.value)]));
-  data.announcementActivity.forEach((p) => rows.push(['Announcements', p.label, String(p.value)]));
-  data.residentGrowth.forEach((p) => rows.push(['Resident Growth', p.label, String(p.value)]));
+  data.ticketTrends.forEach((p) => rows.push(['Ticket Trends', p.value, p.label]));
+  data.readingCompletionTrends.forEach((p) => rows.push(['Reading Submissions', p.value, p.label]));
+  data.announcementActivity.forEach((p) => rows.push(['Announcements', p.value, p.label]));
+  data.residentGrowth.forEach((p) => rows.push(['Resident Growth', p.value, p.label]));
 
-  const csv = rows.map((r) => r.map((c) => '"' + c.replace(/"/g, '""') + '"').join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'analytics-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await exportSpreadsheet({
+    headers,
+    rows,
+    dataKind: 'Analytics',
+    sheetName: 'Analytics',
+  });
 }
 
 const Analytics: React.FC = () => {
   const [days, setDays] = useState(30);
+  const [exporting, setExporting] = useState(false);
   const { data, loading, error, refresh } = useAnalytics(days);
 
   const summary = data?.summary;
@@ -210,11 +207,20 @@ const Analytics: React.FC = () => {
             </button>
             {data && (
               <button
-                onClick={() => exportAnalyticsCsv(data)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-2"
+                onClick={async () => {
+                  if (exporting) return;
+                  setExporting(true);
+                  try {
+                    await exportAnalyticsCsv(data);
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                disabled={exporting}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-2 disabled:opacity-40"
               >
-                <Download className="w-4 h-4" />
-                <span className="text-sm font-medium">Export</span>
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span className="text-sm font-medium">{exporting ? 'Saving…' : 'Export'}</span>
               </button>
             )}
           </div>

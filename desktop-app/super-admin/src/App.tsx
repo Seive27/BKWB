@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import SessionTimeout from './components/ui/SessionTimeout';
+import { ToastProvider } from './components/ui/ToastProvider';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthOverlay from './components/layout/AuthOverlay';
@@ -140,7 +141,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider allowedRole="super_admin" portalName="Super Admin Portal">
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

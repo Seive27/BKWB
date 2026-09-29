@@ -30,6 +30,8 @@ import {
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
+import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
+import { downloadFile } from '../utils/downloadFile';
 
 function formatPeso(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '₱0.00';
@@ -1159,12 +1161,16 @@ const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onCl
     });
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `Official-Receipt-${payment.referenceNumber}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    await downloadFile(
+      blob,
+      buildExportFilename(
+        'Billing_Receipt',
+        singleSharedScope(payment.bills.map((b) => b.account?.sitio)) || payment.referenceNumber,
+        'jpg'
+      )
+    );
   };
 
   const runConfirmedAction = async () => {

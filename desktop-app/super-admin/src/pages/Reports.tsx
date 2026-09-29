@@ -233,7 +233,7 @@ const Reports: React.FC = () => {
                 className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
                 {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                <span>{exportingCsv ? 'Exporting…' : 'Export CSV'}</span>
+                <span>{exportingCsv ? 'Saving…' : 'Export'}</span>
               </button>
               <button
                 onClick={handleExportPdf}
@@ -241,7 +241,7 @@ const Reports: React.FC = () => {
                 className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-40"
               >
                 {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                <span>{exportingPdf ? 'Exporting…' : 'Export PDF'}</span>
+                <span>{exportingPdf ? 'Saving…' : 'Export PDF'}</span>
               </button>
             </div>
           </div>

@@ -27,6 +27,37 @@ export interface RecordMultiBillPaymentInput {
   notes?: string | null;
 }
 
+export interface RecordMultiBillPaymentResult {
+  success: boolean;
+  billsPaid: number;
+  billsPartial: number;
+  totalAmount: number;
+}
+
+/** Snapshot stored on payments.receipt_snapshot for resident Official Receipt view. */
+export interface OfficialReceiptSnapshot {
+  totalPaid: number;
+  residentName: string;
+  accountNumber: string;
+  referenceNumber: string;
+  paymentDate: string;
+  paymentMethod: string;
+  bills: Array<{
+    id: string;
+    billing_period: string;
+    bill_number: string;
+    amount: number;
+  }>;
+  amountReceived?: number | null;
+  changeDue?: number | null;
+}
+
+export interface SendOfficialReceiptInput {
+  residentId: string;
+  billIds: string[];
+  receipt: OfficialReceiptSnapshot;
+}
+
 export function getPaymentErrorMessage(error: {
   message: string;
   code?: string;
@@ -44,6 +75,9 @@ export function getPaymentErrorMessage(error: {
   }
   if (code === '42501' || msg.includes('row-level security') || msg.includes('permission denied')) {
     return 'You do not have permission to manage payments.';
+  }
+  if (msg.includes('payments_status_check') || msg.includes('violates check constraint')) {
+    return 'Payment could not be recorded because of an invalid payment status. Please refresh and try again.';
   }
   if (msg.includes('network') || msg.includes('fetch')) {
     return 'Network unavailable. Please check your connection and try again.';
@@ -67,6 +101,10 @@ function mapPaymentRow(row: PaymentRow): Payment {
     date: row.payment_date,
     method: row.payment_method,
   };
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 const PAYMENT_SELECT =
@@ -135,22 +173,25 @@ export async function getPaymentsByAccount(accountId: string): Promise<Payment[]
 
 /**
  * Record a payment for a single bill or account.
+ * Full payment marks the bill paid; partial reduces amount_due (balance).
  */
 export async function recordPayment(input: RecordPaymentInput): Promise<Payment> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   const recordedBy = session?.user?.id ?? null;
+  const amount = roundMoney(input.amount);
+  const now = input.paymentDate || new Date().toISOString();
 
   const row = {
     bill_id: input.billId ?? null,
     account_id: input.accountId ?? null,
     resident_id: input.residentId ?? null,
-    amount: input.amount,
+    amount,
     payment_method: input.paymentMethod,
     reference_number: input.referenceNumber?.trim() || null,
     notes: input.notes?.trim() || null,
-    payment_date: input.paymentDate || new Date().toISOString(),
+    payment_date: now,
     recorded_by: recordedBy,
     status: 'completed' as const,
   };
@@ -165,19 +206,35 @@ export async function recordPayment(input: RecordPaymentInput): Promise<Payment>
     throw new Error(getPaymentErrorMessage(error));
   }
 
-  // If associated with a bill, mark the bill as paid
   if (input.billId) {
-    const { error: billError } = await supabase
+    const { data: bill, error: billFetchError } = await supabase
       .from('bills')
-      .update({
-        status: 'paid',
-        paid_at: row.payment_date,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', input.billId);
+      .select('id, amount_due, status')
+      .eq('id', input.billId)
+      .single();
 
-    if (billError) {
-      console.warn('[recordPayment] Could not update bill status:', billError.message);
+    if (billFetchError) {
+      console.warn('[recordPayment] Could not load bill for balance update:', billFetchError.message);
+    } else if (bill && bill.status !== 'paid' && bill.status !== 'void') {
+      const newBalance = roundMoney(Number(bill.amount_due ?? 0) - amount);
+      const billUpdate =
+        newBalance < 0.01
+          ? {
+              amount_due: 0,
+              status: 'paid' as const,
+              paid_at: now,
+              updated_at: now,
+            }
+          : {
+              amount_due: Math.max(0, newBalance),
+              updated_at: now,
+            };
+
+      const { error: billError } = await supabase.from('bills').update(billUpdate).eq('id', input.billId);
+
+      if (billError) {
+        console.warn('[recordPayment] Could not update bill status/balance:', billError.message);
+      }
     }
   }
 
@@ -185,105 +242,237 @@ export async function recordPayment(input: RecordPaymentInput): Promise<Payment>
 }
 
 /**
- * Record payment for multiple selected bills atomically.
+ * Record payment for multiple selected bills.
+ * Allocates totalAmount oldest-first; fully covered bills become paid,
+ * partially covered bills keep the remaining amount_due as balance.
  */
 export async function recordMultiBillPayment(
   input: RecordMultiBillPaymentInput
-): Promise<{ success: boolean; billsPaid: number; totalAmount: number }> {
-  // First try the RPC function if available
-  const { error: rpcError } = await supabase.rpc('record_payment_transaction', {
+): Promise<RecordMultiBillPaymentResult> {
+  const { error: rpcError, data: rpcData } = await supabase.rpc('record_payment_transaction', {
     p_bill_ids: input.billIds,
     p_account_id: input.accountId,
     p_resident_id: input.residentId,
-    p_amount: input.totalAmount,
+    p_amount: roundMoney(input.totalAmount),
     p_payment_method: input.paymentMethod,
     p_reference_number: input.referenceNumber?.trim() || null,
     p_notes: input.notes?.trim() || null,
   });
 
   if (!rpcError) {
+    const payload = (rpcData ?? {}) as {
+      bills_paid?: number;
+      bills_partial?: number;
+      total_amount?: number;
+    };
     return {
       success: true,
-      billsPaid: input.billIds.length,
-      totalAmount: input.totalAmount,
+      billsPaid: Number(payload.bills_paid ?? input.billIds.length),
+      billsPartial: Number(payload.bills_partial ?? 0),
+      totalAmount: Number(payload.total_amount ?? input.totalAmount),
     };
   }
 
-  // Fallback to client-side batch insert + update
+  // Fallback to client-side allocation when RPC is unavailable.
   const {
     data: { session },
   } = await supabase.auth.getSession();
   const recordedBy = session?.user?.id ?? null;
   const now = new Date().toISOString();
+  let remaining = roundMoney(input.totalAmount);
+  let billsPaid = 0;
+  let billsPartial = 0;
+  let appliedTotal = 0;
 
-  // If specific bills are selected
   if (input.billIds.length > 0) {
     const { data: billsData, error: billsFetchErr } = await supabase
       .from('bills')
-      .select('id, amount_due')
-      .in('id', input.billIds);
+      .select('id, amount_due, status, billing_period, due_date, created_at')
+      .in('id', input.billIds)
+      .is('deleted_at', null);
 
     if (billsFetchErr) {
       throw new Error(getPaymentErrorMessage(billsFetchErr));
     }
 
-    const billsMap = new Map((billsData ?? []).map((b) => [b.id, b.amount_due]));
+    const ordered = [...(billsData ?? [])].sort((a, b) => {
+      const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      if (aDue !== bDue) return aDue - bDue;
+      const periodCmp = String(a.billing_period ?? '').localeCompare(String(b.billing_period ?? ''));
+      if (periodCmp !== 0) return periodCmp;
+      return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''));
+    });
 
-    const paymentRows = input.billIds.map((bId) => ({
-      bill_id: bId,
-      account_id: input.accountId,
-      resident_id: input.residentId,
-      amount: billsMap.get(bId) ?? input.totalAmount / input.billIds.length,
-      payment_method: input.paymentMethod,
-      payment_date: now,
-      reference_number: input.referenceNumber?.trim() || null,
-      notes: input.notes?.trim() || null,
-      recorded_by: recordedBy,
-      status: 'completed' as const,
-    }));
+    for (const bill of ordered) {
+      if (remaining < 0.01) break;
+      if (bill.status === 'paid' || bill.status === 'void') continue;
 
-    const { error: insertErr } = await supabase.from('payments').insert(paymentRows);
-    if (insertErr) {
-      throw new Error(getPaymentErrorMessage(insertErr));
+      const due = roundMoney(Number(bill.amount_due ?? 0));
+      if (due < 0.01) continue;
+
+      const apply = roundMoney(Math.min(due, remaining));
+      if (apply < 0.01) continue;
+
+      const { error: insertErr } = await supabase.from('payments').insert([
+        {
+          bill_id: bill.id,
+          account_id: input.accountId,
+          resident_id: input.residentId,
+          amount: apply,
+          payment_method: input.paymentMethod,
+          payment_date: now,
+          reference_number: input.referenceNumber?.trim() || null,
+          notes: input.notes?.trim() || null,
+          recorded_by: recordedBy,
+          status: 'completed' as const,
+        },
+      ]);
+      if (insertErr) {
+        throw new Error(getPaymentErrorMessage(insertErr));
+      }
+
+      const newBalance = roundMoney(due - apply);
+      const billUpdate =
+        newBalance < 0.01
+          ? {
+              amount_due: 0,
+              status: 'paid' as const,
+              paid_at: now,
+              updated_at: now,
+            }
+          : {
+              amount_due: Math.max(0, newBalance),
+              updated_at: now,
+            };
+
+      const { error: updateErr } = await supabase.from('bills').update(billUpdate).eq('id', bill.id);
+      if (updateErr) {
+        throw new Error(getPaymentErrorMessage(updateErr));
+      }
+
+      if (newBalance < 0.01) billsPaid += 1;
+      else billsPartial += 1;
+
+      remaining = roundMoney(remaining - apply);
+      appliedTotal = roundMoney(appliedTotal + apply);
     }
 
-    const { error: updateErr } = await supabase
-      .from('bills')
-      .update({
-        status: 'paid',
-        paid_at: now,
-        updated_at: now,
-      })
-      .in('id', input.billIds);
-
-    if (updateErr) {
-      throw new Error(getPaymentErrorMessage(updateErr));
+    if (billsPaid + billsPartial === 0) {
+      throw new Error('No payable bills found for the selected billing periods.');
     }
   } else {
-    const singleRow = {
-      account_id: input.accountId,
-      resident_id: input.residentId,
-      amount: input.totalAmount,
-      payment_method: input.paymentMethod,
-      payment_date: now,
-      reference_number: input.referenceNumber?.trim() || null,
-      notes: input.notes?.trim() || null,
-      recorded_by: recordedBy,
-      status: 'completed' as const,
-    };
-
-    const { error: insertErr } = await supabase.from('payments').insert([singleRow]);
+    const { error: insertErr } = await supabase.from('payments').insert([
+      {
+        account_id: input.accountId,
+        resident_id: input.residentId,
+        amount: remaining,
+        payment_method: input.paymentMethod,
+        payment_date: now,
+        reference_number: input.referenceNumber?.trim() || null,
+        notes: input.notes?.trim() || null,
+        recorded_by: recordedBy,
+        status: 'completed' as const,
+      },
+    ]);
     if (insertErr) {
       throw new Error(getPaymentErrorMessage(insertErr));
     }
+    appliedTotal = remaining;
   }
 
   return {
     success: true,
-    billsPaid: input.billIds.length,
-    totalAmount: input.totalAmount,
+    billsPaid,
+    billsPartial,
+    totalAmount: appliedTotal,
+  };
+}
+
+/**
+ * Notify the resident and attach the official receipt snapshot to each
+ * payment for the selected billing period(s). Residents then see
+ * "View Official Receipt" on the bill Payment Receipt section.
+ */
+export async function sendOfficialReceiptToResident(
+  input: SendOfficialReceiptInput
+): Promise<{ notificationsCreated: number; paymentsUpdated: number }> {
+  if (!input.residentId) {
+    throw new Error('Resident is required to send a receipt.');
+  }
+  if (!input.billIds.length) {
+    throw new Error('Select at least one bill before sending a receipt.');
+  }
+
+  const now = new Date().toISOString();
+  const periods = input.receipt.bills
+    .map((b) => b.billing_period)
+    .filter(Boolean)
+    .join(', ');
+
+  const { error: notifError } = await supabase.from('notifications').insert([
+    {
+      user_id: input.residentId,
+      type: 'payment',
+      title: 'Official Receipt Available',
+      message: `Your official payment receipt${periods ? ` for ${periods}` : ''} (OR ${input.receipt.referenceNumber}) is ready. Open Bills and tap View Official Receipt.`,
+      reference_type: 'bill',
+      reference_id: input.billIds[0],
+    },
+  ]);
+
+  if (notifError) {
+    throw new Error(getPaymentErrorMessage(notifError));
+  }
+
+  const { data: updatedPayments, error: updateError } = await supabase
+    .from('payments')
+    .update({
+      receipt_sent_at: now,
+      receipt_snapshot: input.receipt,
+      updated_at: now,
+    })
+    .in('bill_id', input.billIds)
+    .eq('resident_id', input.residentId)
+    .is('deleted_at', null)
+    .select('id');
+
+  if (updateError) {
+    throw new Error(getPaymentErrorMessage(updateError));
+  }
+
+  return {
+    notificationsCreated: 1,
+    paymentsUpdated: updatedPayments?.length ?? 0,
   };
 }
 
 /** Legacy stub compatibility */
 export async function verifyPayment(_id: string): Promise<void> {}
+
+// ── Realtime ──
+
+/**
+ * Subscribe to insert/update/delete events on the payments table.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToPayments(
+  callback: (event: 'INSERT' | 'UPDATE' | 'DELETE', row?: Payment | null) => void
+): () => void {
+  const channel = supabase
+    .channel(`payments-changes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'payments' },
+      (payload) => {
+        const event = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+        const row = payload.new ? mapPaymentRow(payload.new as unknown as PaymentRow) : null;
+        callback(event, row);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

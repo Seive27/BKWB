@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   User,
   MapPin,
@@ -17,12 +17,21 @@ import {
   RefreshCw,
   Clock,
   Layers,
+  ChevronDown,
+  Loader2,
+  Send,
 } from 'lucide-react';
-import StyledSelect from '../components/ui/StyledSelect';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
-import { getBills } from '../services/billService';
-import { recordMultiBillPayment } from '../services/paymentService';
+import { getBills, subscribeToBills } from '../services/billService';
+import {
+  recordMultiBillPayment,
+  sendOfficialReceiptToResident,
+  subscribeToPayments,
+  type OfficialReceiptSnapshot,
+} from '../services/paymentService';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
+import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
+import { downloadFile } from '../utils/downloadFile';
 
 function formatPeso(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '₱0.00';
@@ -59,6 +68,7 @@ function getStatusBadge(status: BillStatus) {
 
 interface CompletedPaymentData {
   totalPaid: number;
+  residentId: string;
   residentName: string;
   accountNumber: string;
   referenceNumber: string;
@@ -88,6 +98,7 @@ const Payments: React.FC = () => {
 
   // Payment processing state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [amountReceived, setAmountReceived] = useState<string>('');
   const [referenceNumber, setReferenceNumber] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -125,6 +136,16 @@ const Payments: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const unsubBills = subscribeToBills(() => {
+      getBills().then((b) => setBills(b)).catch(() => {});
+    });
+    const unsubPayments = subscribeToPayments(() => {
+      getBills().then((b) => setBills(b)).catch(() => {});
+    });
+    return () => {
+      unsubBills();
+      unsubPayments();
+    };
   }, [loadData]);
 
   // Distinct billing periods
@@ -200,9 +221,20 @@ const Payments: React.FC = () => {
     return selectedBills.reduce((sum, b) => sum + Number(b.amount_due || 0), 0);
   }, [selectedBills]);
 
-  // Auto-fill amount received when cash is selected and amount is empty
+  // Keep payment amount in sync with selection (staff can lower it for partial pay)
+  useEffect(() => {
+    if (selectedBillIds.length === 0) {
+      setPaymentAmount('');
+      return;
+    }
+    setPaymentAmount(totalSelectedAmount.toFixed(2));
+  }, [selectedBillIds, totalSelectedAmount]);
+
+  const parsedPaymentAmount = parseFloat(paymentAmount) || 0;
   const parsedAmountReceived = parseFloat(amountReceived) || 0;
-  const changeDue = Math.max(0, parsedAmountReceived - totalSelectedAmount);
+  const remainingAfterPayment = Math.max(0, totalSelectedAmount - parsedPaymentAmount);
+  const isPartialPayment = parsedPaymentAmount > 0 && remainingAfterPayment >= 0.01;
+  const changeDue = Math.max(0, parsedAmountReceived - parsedPaymentAmount);
 
   // Latest payment date for selected resident
   const lastPaymentDate = useMemo(() => {
@@ -250,10 +282,18 @@ const Payments: React.FC = () => {
       setProcessingError('Please select at least one bill to process payment.');
       return;
     }
+    if (isNaN(parsedPaymentAmount) || parsedPaymentAmount <= 0) {
+      setProcessingError('Enter a payment amount greater than zero.');
+      return;
+    }
+    if (parsedPaymentAmount - totalSelectedAmount > 0.009) {
+      setProcessingError(`Payment amount cannot exceed the selected total (${formatPeso(totalSelectedAmount)}).`);
+      return;
+    }
     if (paymentMethod === 'cash') {
       const received = parseFloat(amountReceived);
-      if (isNaN(received) || received < totalSelectedAmount) {
-        setProcessingError(`Amount received must be at least ${formatPeso(totalSelectedAmount)}.`);
+      if (isNaN(received) || received < parsedPaymentAmount) {
+        setProcessingError(`Amount received must be at least ${formatPeso(parsedPaymentAmount)}.`);
         return;
       }
     }
@@ -273,11 +313,12 @@ const Payments: React.FC = () => {
     setIsProcessing(true);
     setProcessingError(null);
     try {
+      const amountToApply = Math.round(parsedPaymentAmount * 100) / 100;
       const res = await recordMultiBillPayment({
         billIds: selectedBillIds,
         accountId: selectedResident.accountId,
         residentId: selectedResident.id,
-        totalAmount: totalSelectedAmount,
+        totalAmount: amountToApply,
         paymentMethod,
         referenceNumber: referenceNumber.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -286,20 +327,22 @@ const Payments: React.FC = () => {
       if (res.success) {
         const receiptOR = `OR-${Date.now().toString().slice(-6)}`;
         setCompletedPayment({
-          totalPaid: totalSelectedAmount,
+          totalPaid: res.totalAmount,
+          residentId: selectedResident.id,
           residentName: selectedResident.fullName,
           accountNumber: selectedResident.accountNumber ?? '—',
           referenceNumber: referenceNumber.trim() || receiptOR,
           paymentDate: new Date().toISOString(),
           paymentMethod,
           bills: selectedBills,
-          amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) || totalSelectedAmount : undefined,
+          amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) || amountToApply : undefined,
           changeDue: paymentMethod === 'cash' ? changeDue : undefined,
         });
 
         setShowConfirmModal(false);
         setShowSuccessModal(true);
         setSelectedBillIds([]);
+        setPaymentAmount('');
         setAmountReceived('');
         setReferenceNumber('');
         setNotes('');
@@ -314,6 +357,7 @@ const Payments: React.FC = () => {
 
   const handleClearSelection = () => {
     setSelectedBillIds([]);
+    setPaymentAmount('');
     setAmountReceived('');
     setReferenceNumber('');
     setNotes('');
@@ -387,12 +431,11 @@ const Payments: React.FC = () => {
               </div>
 
               {/* Sitio Filter */}
-              <div>
-                <StyledSelect
+              <div className="relative">
+                <select
                   value={sitioFilter}
                   onChange={(e) => setSitioFilter(e.target.value)}
-                  className="w-full py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  wrapperClassName="w-full"
+                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   title="Filter by Sitio"
                 >
                   <option value="">All Sitios</option>
@@ -401,23 +444,24 @@ const Payments: React.FC = () => {
                       {s}
                     </option>
                   ))}
-                </StyledSelect>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               </div>
 
               {/* Status Filter */}
-              <div>
-                <StyledSelect
+              <div className="relative">
+                <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="w-full py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  wrapperClassName="w-full"
+                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   title="Filter by payment status"
                 >
                   <option value="unpaid">Pending / Unpaid Bills</option>
                   <option value="overdue">Overdue Bills</option>
                   <option value="paid">Paid Bills</option>
                   <option value="all">All Bills</option>
-                </StyledSelect>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               </div>
             </div>
 
@@ -532,11 +576,11 @@ const Payments: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <StyledSelect
+                    <div className="relative">
+                      <select
                         value={periodFilter}
                         onChange={(e) => setPeriodFilter(e.target.value)}
-                        className="py-1.5 border border-gray-300 rounded-lg text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="appearance-none pl-2.5 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         title="Filter period"
                       >
                         <option value="">All Periods</option>
@@ -545,7 +589,8 @@ const Payments: React.FC = () => {
                             {formatPeriod(p)}
                           </option>
                         ))}
-                      </StyledSelect>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                     </div>
                   </div>
 
@@ -730,6 +775,39 @@ const Payments: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Amount Paying (supports partial payments) */}
+                  <div className="mb-5 space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 uppercase mb-1.5">
+                        Amount Paying
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">
+                          ₱
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={totalSelectedAmount.toFixed(2)}
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold text-gray-900"
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        Enter less than the selected total to record a partial payment. Remaining balance stays on the billing period.
+                      </p>
+                    </div>
+
+                    {isPartialPayment && (
+                      <div className="flex items-center justify-between py-2.5 px-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <span className="text-sm text-amber-800 font-medium">Remaining Balance</span>
+                        <span className="text-lg font-bold text-amber-900">{formatPeso(remainingAfterPayment)}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Cash Inputs: Amount Received & Change Due */}
                   {paymentMethod === 'cash' ? (
                     <div className="mb-5 space-y-4">
@@ -745,7 +823,7 @@ const Payments: React.FC = () => {
                             type="number"
                             min="0"
                             step="0.01"
-                            placeholder={totalSelectedAmount.toFixed(2)}
+                            placeholder={parsedPaymentAmount > 0 ? parsedPaymentAmount.toFixed(2) : '0.00'}
                             value={amountReceived}
                             onChange={(e) => setAmountReceived(e.target.value)}
                             className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold text-gray-900"
@@ -783,7 +861,7 @@ const Payments: React.FC = () => {
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Paid in full"
+                      placeholder={isPartialPayment ? 'e.g. Partial payment — balance next visit' : 'e.g. Paid in full'}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
@@ -793,11 +871,15 @@ const Payments: React.FC = () => {
                   {/* Actions */}
                   <button
                     onClick={handleProcessClick}
-                    disabled={selectedBillIds.length === 0 || totalSelectedAmount <= 0 || isProcessing}
+                    disabled={selectedBillIds.length === 0 || parsedPaymentAmount <= 0 || isProcessing}
                     className="w-full py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center space-x-2 font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <CheckCircle className="w-5 h-5" />
-                    <span>Process Payment ({formatPeso(totalSelectedAmount)})</span>
+                    <span>
+                      {isPartialPayment
+                        ? `Process Partial Payment (${formatPeso(parsedPaymentAmount)})`
+                        : `Process Payment (${formatPeso(parsedPaymentAmount || totalSelectedAmount)})`}
+                    </span>
                   </button>
 
                   <div className="flex items-center space-x-2 mt-3">
@@ -832,7 +914,9 @@ const Payments: React.FC = () => {
         <ConfirmPaymentModal
           resident={selectedResident}
           selectedBills={selectedBills}
-          totalAmount={totalSelectedAmount}
+          selectedTotal={totalSelectedAmount}
+          paymentAmount={parsedPaymentAmount}
+          remainingBalance={remainingAfterPayment}
           paymentMethod={paymentMethod}
           amountReceived={parsedAmountReceived}
           changeDue={changeDue}
@@ -858,7 +942,9 @@ const Payments: React.FC = () => {
 interface ConfirmPaymentModalProps {
   resident: ResidentRecord;
   selectedBills: Bill[];
-  totalAmount: number;
+  selectedTotal: number;
+  paymentAmount: number;
+  remainingBalance: number;
   paymentMethod: PaymentMethod;
   amountReceived: number;
   changeDue: number;
@@ -871,7 +957,9 @@ interface ConfirmPaymentModalProps {
 const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
   resident,
   selectedBills,
-  totalAmount,
+  selectedTotal,
+  paymentAmount,
+  remainingBalance,
   paymentMethod,
   amountReceived,
   changeDue,
@@ -880,6 +968,8 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const isPartial = remainingBalance >= 0.01;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
@@ -890,7 +980,9 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
               <CheckCircle className="w-6 h-6 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Confirm Payment</h2>
+              <h2 className="text-xl font-bold text-gray-900">
+                {isPartial ? 'Confirm Partial Payment' : 'Confirm Payment'}
+              </h2>
               <p className="text-xs text-gray-500">Official transaction confirmation</p>
             </div>
           </div>
@@ -930,13 +1022,23 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
           </div>
 
           {/* Payment Method & Total */}
-          <div className="pt-3 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-base font-semibold text-gray-700">Total Amount Due</span>
-              <span className="text-2xl font-extrabold text-primary-600">{formatPeso(totalAmount)}</span>
+          <div className="pt-3 border-t border-gray-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-600">Selected Total</span>
+              <span className="text-base font-semibold text-gray-900">{formatPeso(selectedTotal)}</span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-base font-semibold text-gray-700">Amount Paying</span>
+              <span className="text-2xl font-extrabold text-primary-600">{formatPeso(paymentAmount)}</span>
+            </div>
+            {isPartial && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-amber-700">Remaining Balance</span>
+                <span className="text-base font-bold text-amber-800">{formatPeso(remainingBalance)}</span>
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-3 p-3.5 bg-gray-50 rounded-xl border border-gray-200 text-sm">
+            <div className="grid grid-cols-2 gap-3 p-3.5 bg-gray-50 rounded-xl border border-gray-200 text-sm mt-3">
               <div>
                 <p className="text-xs text-gray-500 uppercase mb-0.5">Method</p>
                 <p className="font-semibold text-gray-900 uppercase">{paymentMethod}</p>
@@ -959,10 +1061,12 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-blue-900">
-              Confirming this transaction will mark the selected bill(s) as paid and record the payment in the official ledger.
+          <div className={`flex items-start space-x-3 p-3 rounded-lg border ${isPartial ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+            <Info className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isPartial ? 'text-amber-600' : 'text-blue-600'}`} />
+            <p className={`text-xs ${isPartial ? 'text-amber-900' : 'text-blue-900'}`}>
+              {isPartial
+                ? 'This partial payment will be recorded as completed. Fully covered bills become paid; any unpaid amount stays as the balance for that billing period.'
+                : 'Confirming this transaction will mark the selected bill(s) as paid and record the payment in the official ledger.'}
             </p>
           </div>
         </div>
@@ -999,129 +1103,276 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
   );
 };
 
-// Payment Success Modal
+// Payment Success Modal — Official Electronic Receipt
 interface PaymentSuccessModalProps {
   payment: CompletedPaymentData;
   onClose: () => void;
 }
 
+type ReceiptAction = 'print' | 'download' | 'send' | null;
+
 const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onClose }) => {
-  const handlePrint = () => {
-    window.print();
+  const receiptCardRef = useRef<HTMLDivElement>(null);
+  const [confirmAction, setConfirmAction] = useState<ReceiptAction>(null);
+  const [busyAction, setBusyAction] = useState<Exclude<ReceiptAction, null> | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [receiptSent, setReceiptSent] = useState(false);
+
+  const toSnapshot = (): OfficialReceiptSnapshot => {
+    let remaining = Math.round(payment.totalPaid * 100) / 100;
+    const billLines = payment.bills.map((b) => {
+      const due = Math.round((Number(b.amount_due) || 0) * 100) / 100;
+      const amount = Math.min(due, remaining);
+      remaining = Math.round((remaining - amount) * 100) / 100;
+      return {
+        id: b.id,
+        billing_period: b.billing_period,
+        bill_number: b.bill_number,
+        amount,
+      };
+    });
+
+    return {
+      totalPaid: payment.totalPaid,
+      residentName: payment.residentName,
+      accountNumber: payment.accountNumber,
+      referenceNumber: payment.referenceNumber,
+      paymentDate: payment.paymentDate,
+      paymentMethod: payment.paymentMethod,
+      bills: billLines,
+      amountReceived: payment.amountReceived ?? null,
+      changeDue: payment.changeDue ?? null,
+    };
   };
 
-  const handleDownload = () => {
-    const textContent = `
-================================================
-           KALUNASAN WATERWORKS SYSTEM
-           Official Electronic Receipt
-================================================
-OR / Ref Number: ${payment.referenceNumber}
-Date & Time:    ${new Date(payment.paymentDate).toLocaleString()}
-Resident Name:  ${payment.residentName}
-Account Number: ${payment.accountNumber}
-Payment Method: ${payment.paymentMethod.toUpperCase()}
+  const downloadReceiptJpg = async () => {
+    const node = receiptCardRef.current;
+    if (!node) throw new Error('Receipt preview is not ready yet.');
 
-BILLS PAID:
-${payment.bills.map((b) => `- ${b.billing_period} (${b.bill_number}): ${formatPeso(b.amount_due)}`).join('\n')}
+    const { default: html2canvas } = await import('html2canvas');
+    const canvas = await html2canvas(node, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      ignoreElements: (el) =>
+        el instanceof HTMLElement && el.hasAttribute('data-receipt-exclude'),
+    });
 
-------------------------------------------------
-TOTAL PAID:     ${formatPeso(payment.totalPaid)}
-${payment.amountReceived ? `Amount Received: ${formatPeso(payment.amountReceived)}\nChange Due:      ${formatPeso(payment.changeDue)}` : ''}
-================================================
-Thank you for your payment!
-`;
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Receipt-${payment.referenceNumber}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    await downloadFile(
+      blob,
+      buildExportFilename(
+        'Billing_Receipt',
+        singleSharedScope(payment.bills.map((b) => b.account?.sitio)) || payment.referenceNumber,
+        'jpg'
+      )
+    );
   };
+
+  const runConfirmedAction = async () => {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmAction(null);
+    setBusyAction(action);
+    setActionError(null);
+    setActionMessage(null);
+
+    try {
+      if (action === 'print') {
+        await new Promise((r) => setTimeout(r, 350));
+        window.print();
+        setActionMessage('Print dialog opened.');
+      } else if (action === 'download') {
+        await downloadReceiptJpg();
+        setActionMessage('Official receipt image downloaded.');
+      } else if (action === 'send') {
+        await sendOfficialReceiptToResident({
+          residentId: payment.residentId,
+          billIds: payment.bills.map((b) => b.id),
+          receipt: toSnapshot(),
+        });
+        setReceiptSent(true);
+        setActionMessage(
+          'Official receipt sent to the resident. They can open it from Bills → Payment Receipt.'
+        );
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed. Please try again.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const confirmCopy: Record<Exclude<ReceiptAction, null>, { title: string; body: string; label: string }> = {
+    print: {
+      title: 'Print Official Receipt?',
+      body: 'This will open your printer dialog for the official electronic receipt.',
+      label: 'Print',
+    },
+    download: {
+      title: 'Download Official Receipt?',
+      body: 'A JPG image of this official receipt will be saved to your device.',
+      label: 'Download',
+    },
+    send: {
+      title: 'Send Official Receipt?',
+      body: `Send this official receipt to ${payment.residentName} and store it on their bill Payment Receipt for the selected billing period(s).`,
+      label: 'Send Receipt',
+    },
+  };
+
+  const isBusy = busyAction !== null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="relative p-6 text-center border-b border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <CheckCircle className="w-10 h-10 text-emerald-600" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900">Payment Successful</h2>
-          <p className="text-xs text-gray-500">Transaction recorded in system</p>
-        </div>
-
-        {/* Scrollable Body */}
-        <div className="p-6 space-y-5 overflow-y-auto">
-          <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center">
-            <p className="text-xs text-emerald-700 font-semibold uppercase mb-1">Total Paid</p>
-            <p className="text-3xl font-extrabold text-emerald-700">{formatPeso(payment.totalPaid)}</p>
-          </div>
-
-          <div className="space-y-2.5 text-sm">
-            <div className="flex justify-between py-1 border-b border-gray-100">
-              <span className="text-gray-500 text-xs uppercase">Resident</span>
-              <span className="font-semibold text-gray-900">{payment.residentName}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-100">
-              <span className="text-gray-500 text-xs uppercase">Account No.</span>
-              <span className="font-semibold text-gray-900">{payment.accountNumber}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-100">
-              <span className="text-gray-500 text-xs uppercase">Official Receipt / Ref</span>
-              <span className="font-semibold text-primary-600">{payment.referenceNumber}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-100">
-              <span className="text-gray-500 text-xs uppercase">Date & Time</span>
-              <span className="font-semibold text-gray-900">{new Date(payment.paymentDate).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-100">
-              <span className="text-gray-500 text-xs uppercase">Payment Method</span>
-              <span className="font-semibold text-gray-900 uppercase">{payment.paymentMethod}</span>
-            </div>
-            {payment.amountReceived != null && (
-              <div className="flex justify-between py-1 border-b border-gray-100">
-                <span className="text-gray-500 text-xs uppercase">Change Due</span>
-                <span className="font-semibold text-gray-900">{formatPeso(payment.changeDue)}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="text-center pt-2">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Barangay Kalunasan Waterworks</p>
-            <p className="text-[11px] text-gray-400">Official Electronic Receipt</p>
-          </div>
-
-          <div className="space-y-2 pt-2">
+        <div ref={receiptCardRef} className="bg-white flex flex-col min-h-0">
+          {/* Header */}
+          <div className="relative p-6 text-center border-b border-gray-100 flex-shrink-0">
             <button
-              onClick={handlePrint}
-              className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm shadow-sm"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Receipt</span>
-            </button>
-            <button
-              onClick={handleDownload}
-              className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download Receipt</span>
-            </button>
-            <button
+              data-receipt-exclude
               onClick={onClose}
-              className="w-full py-2 text-xs text-gray-500 hover:text-gray-900 transition-colors font-medium"
+              disabled={isBusy}
+              className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
             >
-              Close
+              <X className="w-5 h-5 text-gray-500" />
             </button>
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle className="w-10 h-10 text-emerald-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Payment Successful</h2>
+            <p className="text-xs text-gray-500">Transaction recorded in system</p>
+          </div>
+
+          {/* Scrollable Body */}
+          <div className="p-6 space-y-5 overflow-y-auto">
+            <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center">
+              <p className="text-xs text-emerald-700 font-semibold uppercase mb-1">Total Paid</p>
+              <p className="text-3xl font-extrabold text-emerald-700">{formatPeso(payment.totalPaid)}</p>
+            </div>
+
+            <div className="space-y-2.5 text-sm">
+              <div className="flex justify-between py-1 border-b border-gray-100">
+                <span className="text-gray-500 text-xs uppercase">Resident</span>
+                <span className="font-semibold text-gray-900">{payment.residentName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100">
+                <span className="text-gray-500 text-xs uppercase">Account No.</span>
+                <span className="font-semibold text-gray-900">{payment.accountNumber}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100">
+                <span className="text-gray-500 text-xs uppercase">Official Receipt / Ref</span>
+                <span className="font-semibold text-primary-600">{payment.referenceNumber}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100">
+                <span className="text-gray-500 text-xs uppercase">Date & Time</span>
+                <span className="font-semibold text-gray-900">
+                  {new Date(payment.paymentDate).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100">
+                <span className="text-gray-500 text-xs uppercase">Payment Method</span>
+                <span className="font-semibold text-gray-900 uppercase">{payment.paymentMethod}</span>
+              </div>
+              {payment.amountReceived != null && (
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500 text-xs uppercase">Change Due</span>
+                  <span className="font-semibold text-gray-900">{formatPeso(payment.changeDue)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="text-center pt-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                Barangay Kalunasan Waterworks
+              </p>
+              <p className="text-[11px] text-gray-400">Official Electronic Receipt</p>
+            </div>
+
+            <div data-receipt-exclude className="space-y-2 pt-1">
+              {actionMessage && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  {actionMessage}
+                </div>
+              )}
+              {actionError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {actionError}
+                </div>
+              )}
+
+              <button
+                onClick={() => setConfirmAction('send')}
+                disabled={isBusy || receiptSent}
+                className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm shadow-sm disabled:opacity-50"
+              >
+                {busyAction === 'send' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span>
+                  {busyAction === 'send' ? 'Sending…' : receiptSent ? 'Receipt Sent' : 'Send Receipt'}
+                </span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setConfirmAction('download')}
+                  disabled={isBusy}
+                  className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm disabled:opacity-50"
+                >
+                  {busyAction === 'download' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{busyAction === 'download' ? 'Preparing…' : 'Download'}</span>
+                </button>
+                <button
+                  onClick={() => setConfirmAction('print')}
+                  disabled={isBusy}
+                  className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm disabled:opacity-50"
+                >
+                  {busyAction === 'print' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Printer className="w-4 h-4" />
+                  )}
+                  <span>{busyAction === 'print' ? 'Preparing…' : 'Print'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      {confirmAction && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-4 z-10">
+          <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl p-5 space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">{confirmCopy[confirmAction].title}</h3>
+            <p className="text-sm text-gray-600">{confirmCopy[confirmAction].body}</p>
+            <div className="flex items-center justify-end space-x-2 pt-1">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runConfirmedAction}
+                className="px-4 py-2 text-sm font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700"
+              >
+                {confirmCopy[confirmAction].label}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

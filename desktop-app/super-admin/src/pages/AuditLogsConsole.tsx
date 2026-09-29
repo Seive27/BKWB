@@ -123,7 +123,7 @@ const AuditLogsConsole: React.FC<AuditLogsConsoleProps> = ({ onNavigateBack }) =
               <span className="text-sm font-medium">Clear Console</span>
             </button>
             <button
-              onClick={() => exportAuditLogsToCsv(visibleLogs, 'audit-console-' + new Date().toISOString().slice(0, 10) + '.csv')}
+              onClick={() => void exportAuditLogsToCsv(visibleLogs)}
               disabled={visibleLogs.length === 0}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >

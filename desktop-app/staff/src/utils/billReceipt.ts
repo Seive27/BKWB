@@ -1,4 +1,6 @@
 import type { BillReceiptData } from '../services/billService';
+import { downloadFile, type DownloadResult } from './downloadFile';
+import { buildExportFilename, singleSharedScope } from './exportSpreadsheet';
 
 /** Receipts packed per A4 bond paper (content-sized, with cut margins). */
 export const RECEIPTS_PER_PAGE = 3;
@@ -136,8 +138,9 @@ export function billReceiptPrintStyles(options?: { multi?: boolean }): string {
     padding-top: 8px;
     font-weight: 700;
   }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .total-label { text-align: right; }
+  /* Keep reading / amount columns left-aligned with the rest of the receipt. */
+  .num { text-align: left; font-variant-numeric: tabular-nums; }
+  .total-label { text-align: left; }
 
   .cut-hint {
     text-align: center;
@@ -167,10 +170,10 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
         <td class="uppercase">${escapeHtml(line.accountName)}</td>
         <td>${escapeHtml(formatPeriodMMYYYY(line.billPeriod))}</td>
         <td>${escapeHtml(line.status)}</td>
-        <td class="num">${escapeHtml(formatReading(line.previousReading))}</td>
-        <td class="num">${escapeHtml(formatReading(line.currentReading))}</td>
-        <td class="num">${escapeHtml(formatReading(line.consumption))}</td>
-        <td class="num">${escapeHtml(formatAmount(line.amount))}</td>
+        <td>${escapeHtml(formatReading(line.previousReading))}</td>
+        <td>${escapeHtml(formatReading(line.currentReading))}</td>
+        <td>${escapeHtml(formatReading(line.consumption))}</td>
+        <td>${escapeHtml(formatAmount(line.amount))}</td>
       </tr>`
     )
     .join('');
@@ -203,17 +206,17 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
             <th>Account Name</th>
             <th>Bill Period</th>
             <th>Status</th>
-            <th class="num">Prev Reading</th>
-            <th class="num">Curr Reading</th>
-            <th class="num">Consumption</th>
-            <th class="num">Amount</th>
+            <th>Prev. Reading</th>
+            <th>Curr. Reading</th>
+            <th>Consumption</th>
+            <th>Amount</th>
           </tr>
         </thead>
         <tbody>
           ${lines}
           <tr class="total-row">
             <td colspan="6" class="total-label">Total Amount Due:</td>
-            <td class="num">${escapeHtml(formatAmount(receipt.totalAmountDue))}</td>
+            <td>${escapeHtml(formatAmount(receipt.totalAmountDue))}</td>
           </tr>
         </tbody>
       </table>
@@ -324,8 +327,8 @@ export function openPrintWindow(html: string, _title = 'Print'): Window | null {
  */
 export async function downloadReceiptsPdf(
   receipts: BillReceiptData[],
-  filenamePrefix = 'bkwb-bill-receipts'
-): Promise<void> {
+  _filenamePrefix = 'bkwb-bill-receipts'
+): Promise<DownloadResult> {
   const html = buildMultiReceiptDocumentHtml(receipts, 'BKWB Bill Receipts');
   const iframe = document.createElement('iframe');
   iframe.style.cssText =
@@ -372,8 +375,11 @@ export async function downloadReceiptsPdf(
       );
     }
 
-    const stamp = new Date().toISOString().slice(0, 10);
-    pdf.save(`${filenamePrefix}-${stamp}.pdf`);
+    const scope =
+      singleSharedScope(receipts.map((r) => r.bill.account?.sitio)) ||
+      singleSharedScope(receipts.map((r) => r.bill.billing_period));
+    const filename = buildExportFilename('Billing_Receipts', scope, 'pdf');
+    return downloadFile(pdf.output('blob'), filename);
   } finally {
     document.body.removeChild(iframe);
   }

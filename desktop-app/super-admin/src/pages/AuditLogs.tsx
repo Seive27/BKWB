@@ -8,6 +8,7 @@ import {
   Search,
   ShieldCheck,
   Inbox,
+  Loader2,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
 import type { AuditLogEntry, AuditLogQueryOptions } from '../types';
@@ -120,8 +121,16 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ onNavigateToConsole }) => {
 
   const hasFilters = module || action || debouncedSearch || fromDate || toDate;
 
-  const handleExport = () => {
-    exportAuditLogsToCsv(logs, 'audit-logs-' + new Date().toISOString().slice(0, 10) + '.csv');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (logs.length === 0 || exporting) return;
+    setExporting(true);
+    try {
+      await exportAuditLogsToCsv(logs);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -138,11 +147,11 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ onNavigateToConsole }) => {
           <div className="flex items-center space-x-3">
             <button
               onClick={handleExport}
-              disabled={logs.length === 0}
+              disabled={logs.length === 0 || exporting}
               className="flex items-center space-x-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
-              <Download className="w-4 h-4" />
-              <span className="text-sm font-medium">Export CSV</span>
+              {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span className="text-sm font-medium">{exporting ? 'Saving…' : 'Export'}</span>
             </button>
             <button
               onClick={onNavigateToConsole}

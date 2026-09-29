@@ -19,6 +19,7 @@ import {
   UserPlus,
   MoreVertical,
   Eye,
+  Loader2,
 } from 'lucide-react';
 import {
   getResidents,
@@ -35,6 +36,7 @@ import {
 import { SITIO_OPTIONS } from '../constants';
 import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
 import { useAuth } from '../hooks/useAuth';
+import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
 
@@ -827,6 +829,7 @@ const Residents: React.FC = () => {
   const [bulkIssuedCredentials, setBulkIssuedCredentials] = useState<
     { fullName: string; accountNumber: string; temporaryPassword: string }[] | null
   >(null);
+  const [exporting, setExporting] = useState(false);
   /** Pending Issue Login targets awaiting staff confirmation. */
   const [issueLoginConfirm, setIssueLoginConfirm] = useState<ResidentRecord[] | null>(null);
   /** Issue-Login failures show in a modal — the page-top banner is invisible
@@ -957,35 +960,38 @@ const Residents: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
-    if (filteredResidents.length === 0) return;
-    const header = ['Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio', 'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created'];
-    const rows = filteredResidents.map((r) => [
-      r.fullName,
-      r.email,
-      r.phone ?? '',
-      r.accountNumber ?? '',
-      r.meterNumber ?? '',
-      r.serviceAddress ?? '',
-      r.sitio ?? '',
-      r.previousReadingDate ?? '',
-      r.previousReading !== null ? String(r.previousReading) : '',
-      r.currentReading !== null ? String(r.currentReading) : '',
-      getStatusText(getDisplayStatus(r)),
-      new Date(r.createdAt).toLocaleDateString(),
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'residents.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    if (filteredResidents.length === 0 || exporting) return;
+    setExporting(true);
+    try {
+      const headers = [
+        'Name', 'Email', 'Phone', 'Account No.', 'Meter ID', 'Address', 'Sitio',
+        'Previous Period', 'Previous Reading', 'Current Reading', 'Status', 'Created',
+      ];
+      const rows = filteredResidents.map((r) => [
+        r.fullName,
+        r.email,
+        r.phone ?? '',
+        r.accountNumber ?? '',
+        r.meterNumber ?? '',
+        r.serviceAddress ?? '',
+        r.sitio ?? '',
+        r.previousReadingDate ?? '',
+        r.previousReading !== null ? String(r.previousReading) : '',
+        r.currentReading !== null ? String(r.currentReading) : '',
+        getStatusText(getDisplayStatus(r)),
+        new Date(r.createdAt).toLocaleDateString(),
+      ]);
+      await exportSpreadsheet({
+        headers,
+        rows,
+        dataKind: 'Residents',
+        scope: sitioFilter || singleSharedScope(filteredResidents.map((r) => r.sitio)),
+        sheetName: 'Residents',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleIssueLogin = async (resident: ResidentRecord) => {
@@ -1291,11 +1297,15 @@ const Residents: React.FC = () => {
                       </button>
                       <button
                         onClick={handleExport}
-                        disabled={filteredResidents.length === 0}
+                        disabled={filteredResidents.length === 0 || exporting}
                         className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
-                        title="Export CSV"
+                        title={exporting ? 'Saving…' : 'Export'}
                       >
-                        <Download className="w-5 h-5 text-gray-600" />
+                        {exporting ? (
+                          <Loader2 className="w-5 h-5 text-gray-600 animate-spin" />
+                        ) : (
+                          <Download className="w-5 h-5 text-gray-600" />
+                        )}
                       </button>
                     </>
                   )}
@@ -1724,30 +1734,32 @@ const IssuedCredentialsModal: React.FC<{
   );
 };
 
-/** Bulk Issue Login success — export all temporary credentials as CSV. */
+/** Bulk Issue Login success — export all temporary credentials. */
 const BulkIssuedCredentialsModal: React.FC<{
   credentials: { fullName: string; accountNumber: string; temporaryPassword: string }[];
   onClose: () => void;
 }> = ({ credentials, onClose }) => {
-  const handleExportCsv = () => {
-    const header = ['Name', 'Account Number (Email)', 'Temporary Password'];
-    const rows = credentials.map((c) => [
-      c.fullName,
-      c.accountNumber,
-      c.temporaryPassword,
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `issued-logins-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const headers = ['Name', 'Account Number (Email)', 'Temporary Password'];
+      const rows = credentials.map((c) => [
+        c.fullName,
+        c.accountNumber,
+        c.temporaryPassword,
+      ]);
+      await exportSpreadsheet({
+        headers,
+        rows,
+        dataKind: 'Issued_Logins',
+        sheetName: 'Issued Logins',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -1761,7 +1773,7 @@ const BulkIssuedCredentialsModal: React.FC<{
             <div>
               <h2 className="text-xl font-bold text-gray-900">All Accounts are Issued with Login</h2>
               <p className="text-sm text-gray-600 mt-1">
-                {credentials.length} accounts were created successfully. Download the CSV to save
+                {credentials.length} accounts were created successfully. Download the file to save
                 the temporary credentials.
               </p>
             </div>
@@ -1781,7 +1793,7 @@ const BulkIssuedCredentialsModal: React.FC<{
             ))}
             {credentials.length > 8 && (
               <p className="text-xs text-gray-400 pt-1">
-                +{credentials.length - 8} more in the CSV download
+                +{credentials.length - 8} more in the download
               </p>
             )}
           </div>
@@ -1799,10 +1811,11 @@ const BulkIssuedCredentialsModal: React.FC<{
           </button>
           <button
             onClick={handleExportCsv}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            disabled={exporting}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-40"
           >
-            <Download className="w-4 h-4" />
-            <span className="text-sm font-medium">Download CSV</span>
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span className="text-sm font-medium">{exporting ? 'Saving…' : 'Download'}</span>
           </button>
         </div>
       </div>

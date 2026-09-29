@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { AuditLogEntry, AuditLogQueryOptions } from '../types';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 export function getAuditLogErrorMessage(error: {
   message: string;
@@ -151,57 +152,42 @@ export function subscribeToAuditLogs(
   };
 }
 
-/** Trigger a browser download of the given rows as a CSV file. */
-export function exportAuditLogsToCsv(
+/** Trigger a browser download of the given rows as a styled spreadsheet. */
+export async function exportAuditLogsToCsv(
   logs: AuditLogEntry[],
-  filename = 'audit-logs.csv'
-): void {
-  const columns: { key: string; label: string }[] = [
-    { key: 'created_at', label: 'Timestamp' },
-    { key: 'user_name', label: 'User' },
-    { key: 'role_name', label: 'Role' },
-    { key: 'module', label: 'Module' },
-    { key: 'action', label: 'Action' },
-    { key: 'target_type', label: 'Target Type' },
-    { key: 'target_id', label: 'Target ID' },
-    { key: 'description', label: 'Description' },
+  _filename?: string
+): Promise<void> {
+  const headers = [
+    'Timestamp',
+    'User',
+    'Role',
+    'Module',
+    'Action',
+    'Target Type',
+    'Target ID',
+    'Description',
   ];
 
   const rows = logs.map((log) => {
     const user = log.user
       ? log.user.first_name + ' ' + log.user.last_name
       : 'System';
-    return {
-      created_at: new Date(log.created_at).toLocaleString(),
-      user_name: user,
-      role_name: log.role_name ?? '',
-      module: log.module,
-      action: log.action,
-      target_type: log.target_type ?? '',
-      target_id: log.target_id ?? '',
-      description: log.description ?? '',
-    };
+    return [
+      new Date(log.created_at).toLocaleString(),
+      user,
+      log.role_name ?? '',
+      log.module,
+      log.action,
+      log.target_type ?? '',
+      log.target_id ?? '',
+      log.description ?? '',
+    ];
   });
 
-  const header = columns.map((c) => c.label).join(',');
-  const lines = rows.map((row) =>
-    columns
-      .map((c) => {
-        const value = row[c.key as keyof typeof row];
-        const text = value == null ? '' : String(value);
-        return '"' + text.replace(/"/g, '""') + '"';
-      })
-      .join(',')
-  );
-  const csv = [header, ...lines].join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await exportSpreadsheet({
+    headers,
+    rows,
+    dataKind: 'Audit_Logs',
+    sheetName: 'Audit Logs',
+  });
 }

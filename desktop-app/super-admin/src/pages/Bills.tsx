@@ -12,6 +12,7 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import BillOverviewModal from '../components/modals/BillOverviewModal';
@@ -20,6 +21,7 @@ import {
   setBillStatus
 } from '../services/billService';
 import type { Bill, BillStatus } from '../types';
+import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
 
@@ -82,6 +84,7 @@ const Bills: React.FC = () => {
   const [showConfigureBills, setShowConfigureBills] = useState(false);
   const [detailBill, setDetailBill] = useState<Bill | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const toastTimer = useRef<number | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -183,41 +186,41 @@ const Bills: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
-    if (filtered.length === 0) return;
-    const header = [
-      'Bill Number', 'Resident', 'Account No.', 'Sitio', 'Billing Period',
-      'Previous Reading', 'Current Reading', 'Consumption', 'Water Rate',
-      'Extra Components', 'Amount Due', 'Due Date', 'Status', 'Paid At',
-    ];
-    const rows = filtered.map((b) => [
-      b.bill_number,
-      b.resident ? `${b.resident.first_name} ${b.resident.last_name}` : '',
-      b.account?.account_number ?? '',
-      b.account?.sitio ?? '',
-      b.billing_period,
-      b.previous_reading ?? '',
-      b.current_reading ?? '',
-      b.consumption ?? '',
-      b.water_rate,
-      (b.extra_components ?? []).map((c) => `${c.category}: ${c.price}`).join('; '),
-      b.amount_due,
-      b.due_date ?? '',
-      getStatusText(b.status),
-      b.paid_at ?? '',
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'bills.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    if (filtered.length === 0 || exporting) return;
+    setExporting(true);
+    try {
+      const headers = [
+        'Bill Number', 'Resident', 'Account No.', 'Sitio', 'Billing Period',
+        'Previous Reading', 'Current Reading', 'Consumption', 'Water Rate',
+        'Extra Components', 'Amount Due', 'Due Date', 'Status', 'Paid At',
+      ];
+      const rows = filtered.map((b) => [
+        b.bill_number,
+        b.resident ? `${b.resident.first_name} ${b.resident.last_name}` : '',
+        b.account?.account_number ?? '',
+        b.account?.sitio ?? '',
+        b.billing_period,
+        b.previous_reading ?? '',
+        b.current_reading ?? '',
+        b.consumption ?? '',
+        b.water_rate,
+        (b.extra_components ?? []).map((c) => `${c.category}: ${c.price}`).join('; '),
+        b.amount_due,
+        b.due_date ?? '',
+        getStatusText(b.status),
+        b.paid_at ?? '',
+      ]);
+      await exportSpreadsheet({
+        headers,
+        rows,
+        dataKind: 'Billing',
+        scope: singleSharedScope(filtered.map((b) => b.account?.sitio)),
+        sheetName: 'Billing',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -370,11 +373,15 @@ const Bills: React.FC = () => {
                   </button>
                   <button
                     onClick={handleExport}
-                    disabled={filtered.length === 0}
+                    disabled={filtered.length === 0 || exporting}
                     className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
                   >
-                    <Download className="w-4 h-4 text-gray-600" />
-                    <span className="text-sm text-gray-700">Export CSV</span>
+                    {exporting ? (
+                      <Loader2 className="w-4 h-4 text-gray-600 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 text-gray-600" />
+                    )}
+                    <span className="text-sm text-gray-700">{exporting ? 'Saving…' : 'Export'}</span>
                   </button>
                 </div>
               </div>

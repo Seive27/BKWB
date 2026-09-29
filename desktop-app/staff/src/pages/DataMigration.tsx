@@ -11,6 +11,8 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { buildExportFilename } from '../utils/exportSpreadsheet';
+import { downloadFile } from '../utils/downloadFile';
 
 // ─── Types ───
 
@@ -82,21 +84,14 @@ function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
-function downloadTemplate(): void {
+async function downloadTemplate(): Promise<void> {
   const sample = [
     TEMPLATE_HEADERS.join(','),
     '9283,ABELGAS,ALMA,MAGDADARO,12793,2021-07-01,1760,,inactive,AWIHAW',
     '7621,ABELGAS,VERONICA,SEPTIMO,25596,2026-05-01,1617,1626,active,ELLENA HOMES',
   ];
   const blob = new Blob([sample.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'bkwb-residents-import-template.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadFile(blob, buildExportFilename('Residents_Import_Template', null, 'csv'));
 }
 
 // ─── Validation ───

@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { BILL_STATUS_LABELS, METER_READING_STATUS_LABELS, TICKET_CATEGORY_LABELS, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS } from '../types';
 import { downloadFile } from '../utils/downloadFile';
+import { buildExportFilename, exportSpreadsheet, sanitizeFilenamePart } from '../utils/exportSpreadsheet';
 
 /**
  * Reporting engine (Phase J). Reports are generated from live BKWB tables
@@ -507,21 +508,19 @@ export async function getReport(
 
 // ─── Exports ───
 
-function csvEscape(v: unknown): string {
-  return `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-}
-
-/** Download the report as CSV. */
+/** Download the report as a styled spreadsheet (.xlsx). */
 export async function exportReportCsv(result: ReportResult, filenamePrefix: string): Promise<void> {
-  const header = result.columns.map((c) => csvEscape(c.label)).join(',');
-  const lines = result.rows.map((row) =>
-    result.columns.map((c) => csvEscape(row[c.key])).join(',')
-  );
-  const meta = [`"${result.title} — ${result.periodLabel}"`, `"Generated ${fmtDate(result.generatedAt)}"`, ''];
-  const csv = [...meta, header, ...lines].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const filename = `${slugify(filenamePrefix)}-${slugify(result.periodLabel || 'report')}.csv`;
-  await downloadFile(blob, filename);
+  const headers = result.columns.map((c) => c.label);
+  const rows = result.rows.map((row) => result.columns.map((c) => row[c.key] as string | number | null | undefined));
+  const dataKind = sanitizeFilenamePart(filenamePrefix) || 'Report';
+  const scope = result.periodLabel ? sanitizeFilenamePart(result.periodLabel) : null;
+  await exportSpreadsheet({
+    headers,
+    rows,
+    dataKind,
+    scope,
+    sheetName: result.title.slice(0, 31) || 'Report',
+  });
 }
 
 function pdfSafe(value: unknown): string {
@@ -530,10 +529,6 @@ function pdfSafe(value: unknown): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\t\n\r\x20-\x7E]/g, '?');
-}
-
-function slugify(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report';
 }
 
 /**
@@ -619,6 +614,10 @@ export async function exportReportPdf(result: ReportResult, filenamePrefix: stri
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 3, { align: 'right' });
   }
 
-  const filename = `${slugify(filenamePrefix)}-${slugify(result.periodLabel || 'report')}.pdf`;
+  const filename = buildExportFilename(
+    sanitizeFilenamePart(filenamePrefix) || 'Report',
+    result.periodLabel,
+    'pdf'
+  );
   await downloadFile(doc.output('blob'), filename);
 }

@@ -355,8 +355,10 @@ function CurrentWaterBillCard({
 
           <Pressable
             onPress={onViewBill}
-            className={`items-center rounded-xl py-3.5 border border-slate-200 bg-slate-50 active:bg-slate-100 ${
-              unpaid ? 'flex-1' : 'w-full bg-brand border-brand'
+            className={`items-center rounded-xl py-3.5 ${
+              unpaid
+                ? 'flex-1 border border-slate-200 bg-slate-50 active:bg-slate-100'
+                : 'w-full border border-brand bg-brand active:bg-brand-dark'
             }`}
             accessibilityRole="button"
             accessibilityLabel={unpaid ? 'View current bill' : 'View bill details'}

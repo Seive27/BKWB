@@ -40,7 +40,27 @@ export interface ResidentPayment {
   recorded_by: string | null;
   status: 'completed' | 'pending' | 'cancelled' | 'refunded';
   created_at: string;
+  receipt_sent_at?: string | null;
+  receipt_snapshot?: OfficialReceiptSnapshot | null;
   bill?: { bill_number: string; billing_period: string } | null;
+}
+
+/** Official receipt payload stored when staff taps Send Receipt. */
+export interface OfficialReceiptSnapshot {
+  totalPaid: number;
+  residentName: string;
+  accountNumber: string;
+  referenceNumber: string;
+  paymentDate: string;
+  paymentMethod: string;
+  bills: Array<{
+    id: string;
+    billing_period: string;
+    bill_number: string;
+    amount: number;
+  }>;
+  amountReceived?: number | null;
+  changeDue?: number | null;
 }
 
 const PAYMENT_SELECT =
@@ -147,11 +167,56 @@ export async function getPaymentForBill(billId: string): Promise<ResidentPayment
   }
 
   const rows = (data ?? []) as unknown as ResidentPayment[];
-  return (
+  const payment =
     rows.find((p) => p.status === 'completed') ??
     rows[0] ??
-    null
-  );
+    null;
+
+  if (!payment) return null;
+
+  return {
+    ...payment,
+    bill: payment.bill ?? null,
+    receipt_snapshot: payment.receipt_snapshot ?? null,
+    receipt_sent_at: payment.receipt_sent_at ?? null,
+  };
+}
+
+/**
+ * Build a displayable official receipt for a bill. Prefers the staff-sent
+ * snapshot; returns null until staff has used Send Receipt.
+ */
+export function getOfficialReceiptForPayment(
+  payment: ResidentPayment | null,
+  fallback?: {
+    residentName: string;
+    accountNumber: string;
+    billId: string;
+    billNumber: string;
+    billingPeriod: string;
+    amountDue: number;
+  }
+): OfficialReceiptSnapshot | null {
+  if (!payment?.receipt_sent_at) return null;
+  if (payment.receipt_snapshot) return payment.receipt_snapshot;
+  if (!fallback) return null;
+
+  return {
+    totalPaid: Number(payment.amount) || fallback.amountDue,
+    residentName: fallback.residentName,
+    accountNumber: fallback.accountNumber,
+    referenceNumber: payment.reference_number || payment.id.slice(0, 8).toUpperCase(),
+    paymentDate: payment.payment_date,
+    paymentMethod: payment.payment_method,
+    bills: [
+      {
+        id: fallback.billId,
+        billing_period: fallback.billingPeriod,
+        bill_number: fallback.billNumber,
+        amount: Number(payment.amount) || fallback.amountDue,
+      },
+    ],
+  };
 }
 
 // ── Display helpers ──────────────────────────────────────────────────────

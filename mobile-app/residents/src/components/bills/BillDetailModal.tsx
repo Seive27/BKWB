@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { OfficialReceiptModal } from '@/components/bills/OfficialReceiptModal';
 import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
 import { DetailModal } from '@/components/ui/DetailModal';
 import { useDialog } from '@/components/ui/AppDialog';
@@ -15,6 +16,7 @@ import {
 import {
   formatPaymentDateTime,
   formatPaymentMethod,
+  getOfficialReceiptForPayment,
   getPaymentForBill,
   type ResidentPayment,
 } from '@/services/paymentService';
@@ -42,11 +44,18 @@ function StatusPill({ status }: { status: ResidentBill['status'] }) {
   );
 }
 
+function residentFullName(bill: ResidentBill): string {
+  const r = bill.resident;
+  if (!r) return '—';
+  return [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ').trim() || '—';
+}
+
 /**
  * Expanded bill view opened by tapping any bill card. Shows only the data
  * that actually exists in Supabase for this bill — nothing invented.
  * Download PDF uses the barangay printed-receipt layout. Paid bills also
- * show the webhook-recorded payment receipt (reference, method, date).
+ * show the payment receipt; after staff sends an official receipt, a
+ * View Official Receipt button opens the staff-style OR card.
  */
 export function BillDetailModal({
   visible,
@@ -60,12 +69,11 @@ export function BillDetailModal({
   const dialog = useDialog();
   const [downloading, setDownloading] = useState(false);
   const [showPay, setShowPay] = useState(false);
+  const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
   const [payment, setPayment] = useState<ResidentPayment | null>(null);
 
   const unpaid = bill?.status === 'pending' || bill?.status === 'overdue';
 
-  // Load the webhook-recorded payment for paid bills so the receipt section
-  // shows real reference/method/date data.
   useEffect(() => {
     let cancelled = false;
     if (visible && bill && !unpaid) {
@@ -78,11 +86,24 @@ export function BillDetailModal({
         });
     } else if (!visible || !bill) {
       setPayment(null);
+      setShowOfficialReceipt(false);
     }
     return () => {
       cancelled = true;
     };
   }, [visible, bill, unpaid]);
+
+  const officialReceipt = useMemo(() => {
+    if (!bill || !payment) return null;
+    return getOfficialReceiptForPayment(payment, {
+      residentName: residentFullName(bill),
+      accountNumber: bill.account?.account_number ?? '—',
+      billId: bill.id,
+      billNumber: bill.bill_number,
+      billingPeriod: bill.billing_period,
+      amountDue: Number(bill.amount_due) || 0,
+    });
+  }, [bill, payment]);
 
   if (!bill) return null;
 
@@ -176,21 +197,19 @@ export function BillDetailModal({
           {bill.paid_at ? <Row label="Paid On" value={formatBillDate(bill.paid_at)} /> : null}
         </View>
 
-        {/* Webhook-recorded payment receipt (paid bills only) */}
+        {/* Payment receipt (paid bills only) */}
         {!unpaid ? (
           <View className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-2">
-            <Text className="py-2 text-sm font-bold text-emerald-800">
-              Payment Receipt
-            </Text>
-            <Row label="Amount Paid" value={formatPeso((payment?.amount ?? Number(bill.amount_due)) || 0)} />
+            <Text className="py-2 text-sm font-bold text-emerald-800">Payment Receipt</Text>
+            <Row
+              label="Amount Paid"
+              value={formatPeso((payment?.amount ?? Number(bill.amount_due)) || 0)}
+            />
             <Row
               label="Payment Method"
               value={payment ? formatPaymentMethod(payment.payment_method) : '—'}
             />
-            <Row
-              label="Payment Reference"
-              value={payment?.reference_number ?? '—'}
-            />
+            <Row label="Payment Reference" value={payment?.reference_number ?? '—'} />
             <Row
               label="Payment Date"
               value={payment ? formatPaymentDateTime(payment.payment_date) : '—'}
@@ -199,15 +218,32 @@ export function BillDetailModal({
               label="Status"
               value={payment?.status === 'completed' ? 'Completed' : (payment?.status ?? '—')}
             />
+
+            {officialReceipt ? (
+              <Pressable
+                onPress={() => setShowOfficialReceipt(true)}
+                className="mb-2 mt-3 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
+                accessibilityRole="button"
+                accessibilityLabel="View official receipt"
+              >
+                <Text className="text-sm font-bold text-white">View Official Receipt</Text>
+              </Pressable>
+            ) : (
+              <Text className="mb-2 mt-2 text-xs leading-5 text-emerald-700/80">
+                Official receipt will appear here after barangay staff sends it from the Payments desk.
+              </Text>
+            )}
           </View>
         ) : null}
       </DetailModal>
 
-      <PaymentFlowModal
-        visible={showPay}
-        onClose={() => setShowPay(false)}
-        bill={bill}
+      <PaymentFlowModal visible={showPay} onClose={() => setShowPay(false)} bill={bill} />
+
+      <OfficialReceiptModal
+        visible={showOfficialReceipt}
+        onClose={() => setShowOfficialReceipt(false)}
+        receipt={officialReceipt}
       />
     </>
   );
-}
+}

@@ -26,6 +26,9 @@ export function resolveNotificationDestination(
   if (refType === 'meter_reading') {
     return { kind: 'bills' };
   }
+  if (refType === 'bill' || refType === 'payment') {
+    return { kind: 'bills' };
+  }
 
   switch (notification.type) {
     case 'ticket_created':
@@ -38,9 +41,8 @@ export function resolveNotificationDestination(
     case 'reading_approved':
     case 'reading_rejected':
     case 'billing':
-      return { kind: 'bills' };
     case 'payment':
-      return { kind: 'payments' };
+      return { kind: 'bills' };
     default:
       return null;
   }

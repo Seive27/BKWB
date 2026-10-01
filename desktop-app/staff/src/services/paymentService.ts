@@ -476,3 +476,38 @@ export function subscribeToPayments(
     supabase.removeChannel(channel);
   };
 }
+export async function getPendingPayments(): Promise<Payment[]> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*, bills(bill_number, billing_period), profiles:resident_id(first_name, last_name, meter_number)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as any[];
+}
+
+export async function verifyPendingPayment(paymentId: string, action: 'approve' | 'reject'): Promise<void> {
+  const status = action === 'approve' ? 'completed' : 'cancelled';
+  
+  // Actually, we can use the existing trigger to handle the bill update when status changes to completed
+  const { error } = await supabase
+    .from('payments')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', paymentId);
+    
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+export async function verifyPendingPaymentRPC(paymentId: string, action: 'approve' | 'reject'): Promise<void> {
+  const { error } = await supabase.rpc('verify_gcash_payment', {
+    p_payment_id: paymentId,
+    p_action: action
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}

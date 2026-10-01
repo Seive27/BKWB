@@ -254,4 +254,41 @@ export function formatPaymentDateTime(value: string | null | undefined): string 
     minute: '2-digit',
   });
   return `${date} · ${time}`;
+}export async function getGCashConfig() {
+  const { data, error } = await supabase
+    .from('system_settings')
+    .select('key, value')
+    .in('key', ['billing.gcash_qr_image_url', 'billing.gcash_payment_active']);
+    
+  if (error) {
+    console.warn('[payments] failed to load gcash config', error);
+    return null;
+  }
+  
+  let qrImageUrl = '';
+  let active = false;
+
+  data.forEach(s => {
+    if (s.key === 'billing.gcash_qr_image_url') qrImageUrl = String(s.value).replace(/^"|"$/g, '');
+    if (s.key === 'billing.gcash_payment_active') active = s.value === 'true' || s.value === true;
+  });
+
+  return { qrImageUrl, active };
 }
+
+export async function submitGCashPaymentConfirmation(billId: string, amount: number, referenceNumber: string) {
+  const { data, error } = await supabase.rpc('submit_gcash_payment_confirmation', {
+    p_bill_id: billId,
+    p_amount: amount,
+    p_reference_number: referenceNumber
+  });
+  
+  if (error) {
+    throw new Error(error.message || 'Failed to submit payment confirmation.');
+  }
+  
+  return data;
+}
+
+
+

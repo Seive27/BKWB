@@ -40,11 +40,19 @@ import {
   METER_READING_STATUS_LABELS,
 } from '../types';
 
-type StatusFilter = 'all' | MeterReadingStatus;
+type StatusFilter = 'all' | MeterReadingStatus | 'pending';
 type SitioFilter = 'all' | string;
 type SortKey = 'newest' | 'oldest' | 'status' | 'alpha-asc' | 'alpha-desc';
 
 const PAGE_SIZE = 10;
+
+const PENDING_READING_STATUSES: MeterReadingStatus[] = ['assigned', 'pending_review'];
+
+function matchesReadingStatus(status: MeterReadingStatus, filter: StatusFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'pending') return PENDING_READING_STATUSES.includes(status);
+  return status === filter;
+}
 
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; dot: string }> = {
   assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -92,13 +100,22 @@ function todayISO(): string {
 const MeterReadings: React.FC<{
   initialSelectedId?: string | null;
   onInitialSelectedIdConsumed?: () => void;
-}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
+  initialStatusFilter?: string | null;
+  onInitialStatusFilterConsumed?: () => void;
+}> = ({
+  initialSelectedId = null,
+  onInitialSelectedIdConsumed,
+  initialStatusFilter = null,
+  onInitialStatusFilterConsumed,
+}) => {
   const { user } = useAuth();
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
 
   // ── Filters / sort / pagination ──
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    (initialStatusFilter as StatusFilter) || 'all'
+  );
   const [sitioFilter, setSitioFilter] = useState<SitioFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('newest');
   const [page, setPage] = useState(1);
@@ -141,6 +158,12 @@ const MeterReadings: React.FC<{
     setShowReviewModal(true);
     onInitialSelectedIdConsumed?.();
   }, [initialSelectedId, onInitialSelectedIdConsumed]);
+
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    setStatusFilter(initialStatusFilter as StatusFilter);
+    onInitialStatusFilterConsumed?.();
+  }, [initialStatusFilter, onInitialStatusFilterConsumed]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
@@ -185,7 +208,7 @@ const MeterReadings: React.FC<{
         (r.account?.account_number ?? '').toLowerCase().includes(q) ||
         (r.meter?.meter_number ?? '').toLowerCase().includes(q) ||
         (r.account?.sitio ?? '').toLowerCase().includes(q);
-      const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+      const matchesStatus = matchesReadingStatus(r.status, statusFilter);
       const readingSitio = (r.account?.sitio ?? '').trim();
       const matchesSitio = sitioFilter === 'all' || readingSitio === sitioFilter;
       return matchesSearch && matchesStatus && matchesSitio;
@@ -511,6 +534,7 @@ const MeterReadings: React.FC<{
                       className={filterFieldStyles}
                     >
                       <option value="all">All Statuses</option>
+                      <option value="pending">Pending</option>
                       {(Object.keys(METER_READING_STATUS_LABELS) as MeterReadingStatus[]).map((st) => (
                         <option key={st} value={st}>
                           {METER_READING_STATUS_LABELS[st]}

@@ -155,14 +155,23 @@ function timelineTitle(event: TicketTimelineEvent): string {
 const Tickets: React.FC<{
   initialSelectedId?: string | null;
   onInitialSelectedIdConsumed?: () => void;
-}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
+  initialStatusFilter?: string | null;
+  onInitialStatusFilterConsumed?: () => void;
+}> = ({
+  initialSelectedId = null,
+  onInitialSelectedIdConsumed,
+  initialStatusFilter = null,
+  onInitialStatusFilterConsumed,
+}) => {
   const { user } = useAuth();
   const { tickets, loading, refreshing, error, refresh } = useTickets();
 
   // ── Filters / sort ──
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    (initialStatusFilter as StatusFilter) || 'all'
+  );
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('newest');
 
@@ -199,6 +208,12 @@ const Tickets: React.FC<{
     setSelectedId(initialSelectedId);
     onInitialSelectedIdConsumed?.();
   }, [initialSelectedId, onInitialSelectedIdConsumed]);
+
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    setStatusFilter(initialStatusFilter as StatusFilter);
+    onInitialStatusFilterConsumed?.();
+  }, [initialStatusFilter, onInitialStatusFilterConsumed]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) {

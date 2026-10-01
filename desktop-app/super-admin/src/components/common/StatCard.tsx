@@ -13,6 +13,7 @@ interface StatCardProps {
     color: string;
   };
   subtitle?: string;
+  onClick?: () => void;
 }
 
 const StatCard: React.FC<StatCardProps> = ({
@@ -24,10 +25,27 @@ const StatCard: React.FC<StatCardProps> = ({
   growth,
   badge,
   subtitle,
+  onClick,
 }) => {
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-gray-300 transition-all duration-150">
-      <div className="flex items-start justify-between">
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      className={`bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:border-gray-300 transition-all duration-150${
+        onClick ? ' cursor-pointer hover:shadow-md hover:border-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40' : ''
+      }`}
+    >      <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 truncate">
             {title}

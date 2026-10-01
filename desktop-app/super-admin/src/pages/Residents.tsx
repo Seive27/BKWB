@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -24,6 +24,7 @@ import {
   getSitioOptions,
   generateTemporaryPassword,
   validatePhone,
+  hasMobileAccount,
   type ResidentRecord,
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
@@ -31,6 +32,17 @@ import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
 import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
+
+/** Display status: No Account Yet until mobile login is issued; otherwise connection status. */
+type DisplayStatus = 'no_account' | 'active' | 'inactive' | 'disconnected' | 'applicant' | null;
+
+function getDisplayStatus(resident: ResidentRecord): DisplayStatus {
+  if (!hasMobileAccount(resident)) return 'no_account';
+  if (resident.connectionStatus === 'inactive') return 'inactive';
+  if (resident.connectionStatus === 'disconnected') return 'disconnected';
+  if (resident.connectionStatus === 'applicant') return 'applicant';
+  return 'active';
+}
 
 interface AddResidentForm {
   firstName: string;
@@ -60,10 +72,12 @@ function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }
 
-function getStatusBadge(status: string | null) {
+function getStatusBadge(status: DisplayStatus) {
   switch (status) {
     case 'active':
       return 'bg-emerald-100 text-emerald-700';
+    case 'no_account':
+      return 'bg-amber-100 text-amber-700';
     case 'inactive':
       return 'bg-gray-100 text-gray-700';
     case 'disconnected':
@@ -75,10 +89,12 @@ function getStatusBadge(status: string | null) {
   }
 }
 
-function getStatusText(status: string | null) {
+function getStatusText(status: DisplayStatus) {
   switch (status) {
     case 'active':
       return 'Active';
+    case 'no_account':
+      return 'No Account Yet';
     case 'disconnected':
       return 'Disconnected';
     case 'applicant':
@@ -502,13 +518,41 @@ const Residents: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [sitioOptions, setSitioOptions] = useState<string[]>([]);
   const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, inactiveAccounts: 0 });
+  const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, noAccountYet: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<string | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectStatusFromCard = useCallback((filter: string) => {
+    setStatusFilter(filter);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(filter);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -520,7 +564,11 @@ const Residents: React.FC = () => {
         getSitioOptions().catch(() => [] as string[]),
       ]);
       setResidents(residentData);
-      setStats(statData);
+      setStats({
+        totalResidents: statData.totalResidents,
+        activeAccounts: statData.activeAccounts,
+        noAccountYet: statData.inactiveAccounts,
+      });
       if (sitioData.length > 0) setSitioOptions(sitioData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load residents.');
@@ -549,7 +597,8 @@ const Residents: React.FC = () => {
           (r.sitio ?? '').toLowerCase().includes(q) ||
           (r.email ?? '').toLowerCase().includes(q);
         const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
-        const matchesStatus = statusFilter === '' || r.connectionStatus === statusFilter;
+        const displayStatus = getDisplayStatus(r);
+        const matchesStatus = statusFilter === '' || displayStatus === statusFilter;
         return matchesSearch && matchesSitio && matchesStatus;
       }),
     [residents, searchQuery, sitioFilter, statusFilter]
@@ -578,7 +627,7 @@ const Residents: React.FC = () => {
         r.previousReadingDate ?? '',
         r.previousReading !== null ? String(r.previousReading) : '',
         r.currentReading !== null ? String(r.currentReading) : '',
-        getStatusText(r.connectionStatus),
+        getStatusText(getDisplayStatus(r)),
         new Date(r.createdAt).toLocaleDateString(),
       ]);
       await exportSpreadsheet({
@@ -609,7 +658,17 @@ const Residents: React.FC = () => {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === ''
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">TOTAL RESIDENTS</p>
@@ -619,9 +678,19 @@ const Residents: React.FC = () => {
                   <Users className="w-6 h-6 text-blue-600" />
                 </div>
               </div>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('active')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'active'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">ACTIVE ACCOUNTS</p>
@@ -631,19 +700,29 @@ const Residents: React.FC = () => {
                   <UserCheck className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('no_account')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'no_account'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">INACTIVE / DISCONNECTED</p>
-                  <h3 className="text-3xl font-bold text-gray-900">{stats.inactiveAccounts.toLocaleString()}</h3>
+                  <p className="text-sm text-gray-600 mb-1">NO ACCOUNT YET</p>
+                  <h3 className="text-3xl font-bold text-gray-900">{stats.noAccountYet.toLocaleString()}</h3>
                 </div>
-                <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
                 </div>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Table Section */}
@@ -681,6 +760,7 @@ const Residents: React.FC = () => {
                   >
                     <option value="">All Statuses</option>
                     <option value="active">Active</option>
+                    <option value="no_account">No Account Yet</option>
                     <option value="inactive">Inactive</option>
                     <option value="applicant">Applicant</option>
                     <option value="disconnected">Disconnected</option>
@@ -786,8 +866,8 @@ const Residents: React.FC = () => {
                           )}
                         </td>
                         <td className="px-6 py-3 whitespace-nowrap">
-                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(resident.connectionStatus)}`}>
-                            {getStatusText(resident.connectionStatus)}
+                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadge(getDisplayStatus(resident))}`}>
+                            {getStatusText(getDisplayStatus(resident))}
                           </span>
                         </td>
                         <td className="px-6 py-3 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>

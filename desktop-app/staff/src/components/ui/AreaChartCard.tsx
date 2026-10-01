@@ -10,6 +10,10 @@ type AreaChartCardProps = {
   subtitle?: string;
   /** Small pill shown on the right of the header row (e.g. "30-Day Window"). */
   badge?: string;
+  /** Optional period selector shown instead of (or beside) the badge. */
+  periods?: { id: string; label: string }[];
+  activePeriod?: string;
+  onPeriodChange?: (id: string) => void;
   /** Optional right-side icon/element next to the header. */
   right?: ReactNode;
   data: AreaPoint[];
@@ -31,6 +35,9 @@ export function AreaChartCard({
   title,
   subtitle,
   badge,
+  periods,
+  activePeriod,
+  onPeriodChange,
   right,
   data,
   color = '#1F7A66',
@@ -68,17 +75,43 @@ export function AreaChartCard({
 
   return (
     <div className={`bg-white rounded-xl border border-slate-200 shadow-2xs p-5 ${className}`}>
-      {(title || badge || right) && (
+      {(title || badge || right || periods) && (
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
             {title && <h2 className="text-sm font-bold text-slate-900">{title}</h2>}
             {subtitle && <p className="mt-0.5 text-[11px] text-slate-500">{subtitle}</p>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {badge && (
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70">
-                {badge}
-              </span>
+            {periods && periods.length > 0 && onPeriodChange ? (
+              <div
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+                role="group"
+                aria-label="Chart period"
+              >
+                {periods.map((period) => {
+                  const active = period.id === activePeriod;
+                  return (
+                    <button
+                      key={period.id}
+                      type="button"
+                      onClick={() => onPeriodChange(period.id)}
+                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-colors ${
+                        active
+                          ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {period.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              badge && (
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70">
+                  {badge}
+                </span>
+              )
             )}
             {right}
           </div>

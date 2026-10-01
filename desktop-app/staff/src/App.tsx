@@ -24,21 +24,25 @@ import { resolveNotificationDestination } from './utils/notificationNavigation';
 function AppContent() {
   const [activePage, setActivePage] = useState('dashboard');
   const [focusSelectedId, setFocusSelectedId] = useState<string | null>(null);
+  const [initialStatusFilter, setInitialStatusFilter] = useState<string | null>(null);
   const { showLogin, isClosing, isAuthenticated, login, logout } = useAuth();
 
-  const handlePageChange = (page: string) => {
+  const handlePageChange = (page: string, options?: { statusFilter?: string }) => {
     setFocusSelectedId(null);
+    setInitialStatusFilter(options?.statusFilter ?? null);
     setActivePage(page);
   };
 
   const handleNotificationNavigate = (notification: AppNotification) => {
     const destination = resolveNotificationDestination(notification);
     if (!destination) return;
+    setInitialStatusFilter(null);
     setFocusSelectedId(destination.selectedId ?? null);
     setActivePage(destination.page);
   };
 
   const clearFocusSelectedId = () => setFocusSelectedId(null);
+  const clearInitialStatusFilter = () => setInitialStatusFilter(null);
 
   const renderContent = () => {
     switch (activePage) {
@@ -51,6 +55,8 @@ function AppContent() {
           <MeterReadings
             initialSelectedId={focusSelectedId}
             onInitialSelectedIdConsumed={clearFocusSelectedId}
+            initialStatusFilter={initialStatusFilter}
+            onInitialStatusFilterConsumed={clearInitialStatusFilter}
           />
         );
       case 'bills':
@@ -69,6 +75,8 @@ function AppContent() {
           <TicketManagement
             initialSelectedId={focusSelectedId}
             onInitialSelectedIdConsumed={clearFocusSelectedId}
+            initialStatusFilter={initialStatusFilter}
+            onInitialStatusFilterConsumed={clearInitialStatusFilter}
           />
         );
       case 'notifications':

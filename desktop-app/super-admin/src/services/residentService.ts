@@ -232,11 +232,18 @@ export async function getSitioOptions(): Promise<string[]> {
 export async function getResidentStats(): Promise<ResidentStats> {
   const residents = await getResidents();
   const totalResidents = residents.length;
-  const activeAccounts = residents.filter((r) => r.connectionStatus === 'active').length;
-  const inactiveAccounts = residents.filter(
-    (r) => r.connectionStatus !== 'active'
-  ).length;
+  const activeAccounts = residents.filter((r) => hasMobileAccount(r)).length;
+  const inactiveAccounts = residents.filter((r) => !hasMobileAccount(r)).length;
   return { totalResidents, activeAccounts, inactiveAccounts };
+}
+
+/**
+ * True when the resident already has mobile-app login credentials
+ * (Issue Login has been run, or they signed up with an email).
+ * Migrated masterlist rows with a NULL/blank email are "No Account Yet".
+ */
+export function hasMobileAccount(resident: Pick<ResidentRecord, 'email'>): boolean {
+  return !!(resident.email && resident.email.trim());
 }
 
 // ── Resident creation (server-side via edge function) ──

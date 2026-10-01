@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AnalyticsData } from '../types';
-import { getAnalyticsData } from '../services/analyticsService';
+import {
+  getAnalyticsData,
+  type TrendGranularity,
+} from '../services/analyticsService';
 import { useAuth } from './useAuth';
 
 interface UseAnalyticsResult {
@@ -11,7 +14,10 @@ interface UseAnalyticsResult {
 }
 
 /** Loads the analytics dashboard data for the given lookback window. */
-export function useAnalytics(days = 30): UseAnalyticsResult {
+export function useAnalytics(
+  days = 30,
+  granularity: TrendGranularity = 'day'
+): UseAnalyticsResult {
   const { isAuthenticated } = useAuth();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,14 +27,14 @@ export function useAnalytics(days = 30): UseAnalyticsResult {
     setLoading(true);
     setError(null);
     try {
-      const result = await getAnalyticsData(days);
+      const result = await getAnalyticsData(days, granularity);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analytics data.');
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, granularity]);
 
   useEffect(() => {
     // Dashboard stays mounted behind the login overlay; wait for a session
@@ -41,7 +47,7 @@ export function useAnalytics(days = 30): UseAnalyticsResult {
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, isAuthenticated]);
+  }, [days, granularity, isAuthenticated]);
 
   const refresh = useCallback(() => load(), [load]);
 

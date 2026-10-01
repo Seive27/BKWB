@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -835,6 +835,34 @@ const Residents: React.FC = () => {
   /** Issue-Login failures show in a modal — the page-top banner is invisible
    *  when the user is scrolled down at the table row. */
   const [issueLoginError, setIssueLoginError] = useState<string | null>(null);
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<string | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectStatusFromCard = useCallback((filter: string) => {
+    setStatusFilter(filter);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(filter);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
+    };
+  }, []);
 
   // Staff hold write permissions on residents (RLS is_staff()); other roles
   // viewing this page get read-only access.
@@ -1172,7 +1200,17 @@ const Residents: React.FC = () => {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === ''
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">TOTAL RESIDENTS</p>
@@ -1182,9 +1220,19 @@ const Residents: React.FC = () => {
                   <Users className="w-6 h-6 text-blue-600" />
                 </div>
               </div>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('active')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'active'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">ACTIVE ACCOUNTS</p>
@@ -1194,9 +1242,19 @@ const Residents: React.FC = () => {
                   <UserCheck className="w-6 h-6 text-emerald-600" />
                 </div>
               </div>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('no_account')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'no_account'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">NO ACCOUNT YET</p>
@@ -1206,7 +1264,7 @@ const Residents: React.FC = () => {
                   <AlertTriangle className="w-6 h-6 text-amber-600" />
                 </div>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Table Section */}

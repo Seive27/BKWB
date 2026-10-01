@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Users, Ticket, ClipboardList, Megaphone } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 import MeterReadingsTable from '../components/ui/MeterReadingsTable';
@@ -6,14 +6,27 @@ import AnnouncementsPanel from '../components/ui/AnnouncementsPanel';
 import { AreaChartCard } from '../components/ui/AreaChartCard';
 import { useMeterReadings } from '../hooks/useMeterReadings';
 import { useAnalytics } from '../hooks/useAnalytics';
+import {
+  CHART_PERIODS,
+  type ChartPeriodId,
+} from '../services/analyticsService';
+
+export type DashboardNavigateOptions = {
+  statusFilter?: string;
+};
 
 interface DashboardProps {
-  onNavigate?: (route: string) => void;
+  onNavigate?: (route: string, options?: DashboardNavigateOptions) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriodId>('monthly');
+  const activePeriod = useMemo(
+    () => CHART_PERIODS.find((p) => p.id === chartPeriod) ?? CHART_PERIODS[2],
+    [chartPeriod]
+  );
   const { readings: recentMeterReadings } = useMeterReadings({ limit: 5 });
-  const { data, error } = useAnalytics(30);
+  const { data, error } = useAnalytics(activePeriod.days, activePeriod.granularity);
 
   const summary = data?.summary;
   const totalTickets = summary
@@ -23,7 +36,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const pendingReadings = summary
     ? summary.readings.assigned + summary.readings.pending_review
     : 0;
-  const approvedReadings = summary?.readings.approved ?? 0;
+  const billedReadings = summary?.readings.billed ?? 0;
   const announcements = summary?.totalAnnouncements ?? 0;
   const residents = summary?.totalResidents ?? 0;
 
@@ -65,6 +78,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             iconBgColor="bg-blue-50"
             iconColor="text-blue-600"
             subtitle="Registered active consumers"
+            onClick={onNavigate ? () => onNavigate('residents') : undefined}
           />
           <StatCard
             title="Open Tickets"
@@ -76,6 +90,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               text: `${totalTickets} total`,
               color: 'bg-amber-50 text-amber-700 border border-amber-200',
             }}
+            onClick={
+              onNavigate
+                ? () => onNavigate('ticket-management', { statusFilter: 'open' })
+                : undefined
+            }
           />
           <StatCard
             title="Pending Readings"
@@ -84,9 +103,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             iconBgColor="bg-slate-50"
             iconColor="text-slate-600"
             badge={{
-              text: `${approvedReadings} approved`,
+              text: `${billedReadings} billed`,
               color: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
             }}
+            onClick={
+              onNavigate
+                ? () => onNavigate('meter-readings', { statusFilter: 'pending' })
+                : undefined
+            }
           />
           <StatCard
             title="Announcements"
@@ -95,16 +119,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             iconBgColor="bg-emerald-50"
             iconColor="text-emerald-600"
             subtitle="Public service bulletins"
+            onClick={onNavigate ? () => onNavigate('announcements') : undefined}
           />
         </div>
 
-        {/* Real Trend Chart (Bklit-style area chart) */}
+        {/* Ticket activity trend chart */}
         <div>
           {data ? (
             <AreaChartCard
               title="Ticket Activity Trends"
-              subtitle="Service requests created over the last 30 days"
-              badge="30-Day Window"
+              subtitle={activePeriod.subtitle}
+              periods={CHART_PERIODS.map((p) => ({ id: p.id, label: p.label }))}
+              activePeriod={chartPeriod}
+              onPeriodChange={(id) => setChartPeriod(id as ChartPeriodId)}
               data={data.ticketTrends}
               color="#1F7A66"
             />

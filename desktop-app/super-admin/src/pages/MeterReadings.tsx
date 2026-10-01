@@ -17,7 +17,15 @@ import {
   METER_READING_STATUS_LABELS,
 } from '../types';
 
-type StatusFilter = 'all' | MeterReadingStatus;
+type StatusFilter = 'all' | MeterReadingStatus | 'pending';
+
+const PENDING_READING_STATUSES: MeterReadingStatus[] = ['assigned', 'pending_review'];
+
+function matchesReadingStatus(status: MeterReadingStatus, filter: StatusFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'pending') return PENDING_READING_STATUSES.includes(status);
+  return status === filter;
+}
 
 const statusStyles: Record<MeterReadingStatus, { bg: string; text: string; dot: string }> = {
   assigned: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
@@ -45,11 +53,20 @@ function formatNumber(value: number | null): string {
 const MeterReadings: React.FC<{
   initialSelectedId?: string | null;
   onInitialSelectedIdConsumed?: () => void;
-}> = ({ initialSelectedId = null, onInitialSelectedIdConsumed }) => {
+  initialStatusFilter?: string | null;
+  onInitialStatusFilterConsumed?: () => void;
+}> = ({
+  initialSelectedId = null,
+  onInitialSelectedIdConsumed,
+  initialStatusFilter = null,
+  onInitialStatusFilterConsumed,
+}) => {
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    (initialStatusFilter as StatusFilter) || 'all'
+  );
 
   useEffect(() => {
     if (!initialSelectedId || readings.length === 0) return;
@@ -67,18 +84,24 @@ const MeterReadings: React.FC<{
     }
   }, [initialSelectedId, readings, onInitialSelectedIdConsumed]);
 
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    setStatusFilter(initialStatusFilter as StatusFilter);
+    onInitialStatusFilterConsumed?.();
+  }, [initialStatusFilter, onInitialStatusFilterConsumed]);
+
   const stats = useMemo(() => {
     let assigned = 0;
     let pending = 0;
-    let approved = 0;
+    let billed = 0;
     let rejected = 0;
     for (const r of readings) {
       if (r.status === 'assigned') assigned += 1;
       else if (r.status === 'pending_review') pending += 1;
-      else if (r.status === 'approved') approved += 1;
+      else if (r.status === 'billed') billed += 1;
       else if (r.status === 'rejected') rejected += 1;
     }
-    return { assigned, pending, approved, rejected };
+    return { assigned, pending, billed, rejected };
   }, [readings]);
 
   const filteredReadings = useMemo(() => {
@@ -89,7 +112,7 @@ const MeterReadings: React.FC<{
         fullName(r.resident).toLowerCase().includes(q) ||
         (r.account?.account_number ?? '').toLowerCase().includes(q) ||
         (r.meter?.meter_number ?? '').toLowerCase().includes(q);
-      const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+      const matchesStatus = matchesReadingStatus(r.status, statusFilter);
       return matchesSearch && matchesStatus;
     });
   }, [readings, searchQuery, statusFilter]);
@@ -149,8 +172,8 @@ const MeterReadings: React.FC<{
                 <CheckCircle className="w-6 h-6 text-emerald-600" />
               </div>
             </div>
-            <p className="text-sm text-gray-600 mb-1">APPROVED</p>
-            <h3 className="text-3xl font-bold text-gray-900">{stats.approved}</h3>
+            <p className="text-sm text-gray-600 mb-1">BILLED</p>
+            <h3 className="text-3xl font-bold text-gray-900">{stats.billed}</h3>
           </div>
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-3">
@@ -184,6 +207,7 @@ const MeterReadings: React.FC<{
                 className={selectStyles}
               >
                 <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
                 {(Object.keys(METER_READING_STATUS_LABELS) as MeterReadingStatus[]).map((st) => (
                   <option key={st} value={st}>
                     {METER_READING_STATUS_LABELS[st]}

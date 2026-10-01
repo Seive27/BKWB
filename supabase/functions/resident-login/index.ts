@@ -14,8 +14,9 @@
 //          ->  a LOGIN HANDLE email is assigned when the user has none:
 //                acc-<cons code>@example.com   (internal identifier,
 //                IANA-reserved domain — never a real mailbox)
-//          ->  temporary password set as AccountNumber@LastName
-//              (migration credentials) and returned ONCE
+//          ->  temporary password set as AccountNumber_LastName
+//              (e.g. 0006_DelaCruz — ACC- prefix stripped if present)
+//              and returned ONCE
 //
 // The resident then signs in on the mobile app using their Account
 // Number + temporary password, and completes their profile.
@@ -59,8 +60,11 @@ export function isLoginHandle(email: string | null | undefined): boolean {
 }
 
 /**
- * Temporary migration password: AccountNumber@LastName
- * Example: ACC-0006@DelaCruz
+ * Temporary migration password: AccountNumber_LastName
+ * Example: 0006_DelaCruz
+ *
+ * Any leading "ACC-" on the stored account number is stripped so the
+ * password matches the cons-code style residents expect (0006_DelaCruz).
  */
 function generateTemporaryPassword(accountNumber: string, lastName: string): string {
   const titleCase = (name: string) =>
@@ -75,7 +79,16 @@ function generateTemporaryPassword(accountNumber: string, lastName: string): str
   if (!last) {
     throw new Error('Resident last name is required to generate a temporary password.');
   }
-  return `${accountNumber.trim()}@${last}`;
+
+  const accountPart = accountNumber
+    .trim()
+    .replace(/^ACC-/i, '');
+
+  if (!accountPart) {
+    throw new Error('Account number is required to generate a temporary password.');
+  }
+
+  return `${accountPart}_${last}`;
 }
 
 function firstStringValue(values: unknown[]): string | undefined {

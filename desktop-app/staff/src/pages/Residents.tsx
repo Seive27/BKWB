@@ -1632,7 +1632,7 @@ const Residents: React.FC = () => {
             </div>
             <div className="px-8 py-4">
               <p className="text-xs text-gray-400">
-                Temporary format — Login: Account Number · Password: AccountNumber@LastName
+                Temporary format — Login: Account Number · Password: AccountNumber_LastName (e.g. 0006_DelaCruz)
               </p>
             </div>
             <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end space-x-3">
@@ -1770,7 +1770,7 @@ const IssuedCredentialsModal: React.FC<{
             </div>
             <p className="mt-2 text-xs text-gray-400">
               {generatedFrom === 'account_lastname'
-                ? 'Format: AccountNumber@LastName (temporary migration credentials).'
+                ? 'Format: AccountNumber_LastName (e.g. 0006_DelaCruz).'
                 : generatedFrom === 'dob'
                   ? 'Generated from the resident\'s date of birth (LastNameFirstNameMMDDYYYY).'
                   : 'Randomly generated because no date of birth is on record.'}
@@ -1856,7 +1856,7 @@ const BulkIssuedCredentialsModal: React.FC<{
             )}
           </div>
           <p className="mt-3 text-xs text-gray-400">
-            Temporary format — Email: Account Number · Password: AccountNumber@LastName
+            Temporary format — Email: Account Number · Password: AccountNumber_LastName (e.g. 0006_DelaCruz)
           </p>
         </div>
 

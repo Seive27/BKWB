@@ -11,7 +11,7 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react';
 import type { SystemSetting } from '../types';
-import { GCashQRUploader } from '../components/GCashQRUploader';
+import { PaymentQRUploader } from '../components/PaymentQRUploader';
 import { SYSTEM_SETTING_CATEGORIES, SYSTEM_SETTING_CATEGORY_LABELS } from '../types';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 import { saveSystemSettings } from '../services/systemSettingsService';
@@ -121,11 +121,11 @@ const SystemSettings: React.FC = () => {
       );
     }
 
-    const isGcashQr = setting.key === 'billing.gcash_qr_image_url';
-    if (isGcashQr) {
+    const isPaymentQr = setting.key === 'billing.gcash_qr_image_url' || setting.key === 'billing.maribank_qr_image_url';
+    if (isPaymentQr) {
       return (
         <div className="flex flex-col gap-4 max-w-md">
-          <GCashQRUploader value={String(value ?? '')} onChange={(url) => setDraft(setting.key, url)} />
+          <PaymentQRUploader value={String(value ?? '')} onChange={(url) => setDraft(setting.key, url)} />
         </div>
       );
     }
@@ -250,5 +250,6 @@ const SystemSettings: React.FC = () => {
 };
 
 export default SystemSettings;
+
 
 

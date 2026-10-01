@@ -476,3 +476,29 @@ export function subscribeToPayments(
     supabase.removeChannel(channel);
   };
 }
+
+export async function getPendingPayments(): Promise<Payment[]> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*, bills(bill_number, billing_period), profiles:resident_id(first_name, last_name)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as any[];
+}
+
+export async function verifyPendingPaymentRPC(paymentId: string, action: 'approve' | 'reject', rejectionReason?: string): Promise<void> {
+  const { error } = await supabase.rpc('verify_online_payment', {
+    p_payment_id: paymentId,
+    p_action: action,
+    p_rejection_reason: rejectionReason || null
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+

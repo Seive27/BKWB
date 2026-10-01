@@ -8,7 +8,7 @@ interface Props {
   onChange: (url: string) => void;
 }
 
-export const GCashQRUploader: React.FC<Props> = ({ value, onChange }) => {
+export const PaymentQRUploader: React.FC<Props> = ({ value, onChange }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -60,7 +60,7 @@ export const GCashQRUploader: React.FC<Props> = ({ value, onChange }) => {
     try {
       setUploading(true);
       const blob = await createCroppedImage();
-      const fileName = "gcash-qr-" + Date.now() + ".jpg";
+      const fileName = "payment-qr-" + Date.now() + ".jpg";
       
       const { error } = await supabase.storage
         .from('system-assets')
@@ -90,7 +90,7 @@ export const GCashQRUploader: React.FC<Props> = ({ value, onChange }) => {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
         <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
           <div className="p-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Crop GCash QR Code</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Crop Payment QR Code</h3>
           </div>
           <div className="relative h-96 w-full bg-black">
             <Cropper
@@ -142,7 +142,7 @@ export const GCashQRUploader: React.FC<Props> = ({ value, onChange }) => {
       {value ? (
         <div className="flex flex-col items-start gap-3">
           <div className="p-3 bg-white border border-gray-200 rounded-xl">
-            <img src={value} alt="GCash QR" className="w-40 h-40 object-contain" />
+            <img src={value} alt="Payment QR" className="w-40 h-40 object-contain" />
           </div>
           <label className="cursor-pointer flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
             <UploadCloud className="w-4 h-4" />
@@ -160,5 +160,6 @@ export const GCashQRUploader: React.FC<Props> = ({ value, onChange }) => {
     </div>
   );
 };
+
 
 

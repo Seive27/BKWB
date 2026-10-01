@@ -22,6 +22,8 @@ import {
   Send,
 } from 'lucide-react';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
+import { getPendingPayments, verifyPendingPaymentRPC } from '../services/paymentService';
+import { useToast } from '../components/ui/ToastProvider';
 import { getBills, subscribeToBills } from '../services/billService';
 import {
   recordMultiBillPayment,
@@ -95,6 +97,9 @@ const Payments: React.FC = () => {
   // Selected resident & bills
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
+  const [pendingOnlinePayments, setPendingOnlinePayments] = useState<any[]>([]);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   // Payment processing state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -114,13 +119,15 @@ const Payments: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [resList, billList, sitioList] = await Promise.all([
+      const [resList, billList, sitioList, pendingPaymentsList] = await Promise.all([
         getResidents(),
         getBills().catch(() => [] as Bill[]),
         getSitioOptions().catch(() => [] as string[]),
+          getPendingPayments().catch(() => []),
       ]);
       setResidents(resList);
       setBills(billList);
+        setPendingOnlinePayments(pendingPaymentsList);
       setSitios(sitioList);
 
       // Auto-select first resident if none selected
@@ -139,8 +146,12 @@ const Payments: React.FC = () => {
     const unsubBills = subscribeToBills(() => {
       getBills().then((b) => setBills(b)).catch(() => {});
     });
-    const unsubPayments = subscribeToPayments(() => {
-      getBills().then((b) => setBills(b)).catch(() => {});
+    const unsubPayments = subscribeToPayments((event, row) => {
+        getBills().then((b) => setBills(b)).catch(() => {});
+        getPendingPayments().then((p) => setPendingOnlinePayments(p)).catch(() => {});
+        if (event === 'INSERT' && row && row.status === 'pending') {
+          showToast('info', 'New online payment submitted!');
+        }
     });
     return () => {
       unsubBills();
@@ -566,6 +577,80 @@ const Payments: React.FC = () => {
                   </div>
                 </div>
 
+                                {/* Pending Online Payments Table */}
+                {pendingOnlinePayments.filter(p => p.resident_id === selectedResident.id).length > 0 && (
+                    <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden mb-6 mt-4">
+                      <div className="bg-amber-50 p-4 border-b border-amber-200 flex justify-between items-center">
+                        <div>
+                          <h3 className="font-semibold text-amber-800 flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5" />
+                            Pending Online Payments ({pendingOnlinePayments.filter(p => p.resident_id === selectedResident.id).length})
+                          </h3>
+                          <p className="text-sm text-amber-700 mt-1">Resident has submitted payment reference numbers. Please verify.</p>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-amber-50/50 border-b border-amber-100">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-semibold text-amber-900">Reference #</th>
+                              <th className="px-4 py-3 text-left font-semibold text-amber-900">Amount</th>
+                              <th className="px-4 py-3 text-left font-semibold text-amber-900">Date</th>
+                              <th className="px-4 py-3 text-right font-semibold text-amber-900">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-amber-100">
+                            {pendingOnlinePayments.filter(p => p.resident_id === selectedResident.id).map((p) => (
+                              <tr key={p.id} className="hover:bg-amber-50/30">
+                                <td className="px-4 py-3 font-mono text-gray-700 font-semibold">{p.reference_number}</td>
+                                <td className="px-4 py-3 font-medium text-amber-700">?{p.amount.toLocaleString()}</td>
+                                <td className="px-4 py-3 text-gray-600">{new Date(p.created_at).toLocaleDateString()}</td>
+                                <td className="px-4 py-3 text-right space-x-2">
+                                  <button
+                                    onClick={async () => {
+                                      if(window.confirm('Approve ' + p.payment_method + ' payment?')) {
+                                        setVerifyingPaymentId(p.id);
+                                        try {
+                                          await verifyPendingPaymentRPC(p.id, 'approve');
+                                          await loadData();
+                                        } catch(e: any) { alert(e.message); }
+                                        setVerifyingPaymentId(null);
+                                      }
+                                    }}
+                                    disabled={verifyingPaymentId === p.id}
+                                    className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 font-medium"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                      onClick={async () => {
+                                        const reason = window.prompt('Enter rejection reason (Required):');
+                                        if (reason !== null) {
+                                          if (reason.trim() === '') {
+                                            alert('Rejection reason is required.');
+                                            return;
+                                          }
+                                          setVerifyingPaymentId(p.id);
+                                          try {
+                                            await verifyPendingPaymentRPC(p.id, 'reject', reason.trim());
+                                            await loadData();
+                                          } catch(e: any) { alert(e.message); }
+                                          setVerifyingPaymentId(null);
+                                        }
+                                      }}
+                                      disabled={verifyingPaymentId === p.id}
+                                      className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-medium"
+                                    >
+                                      Reject
+                                    </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 {/* Unpaid Bills Table */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="p-5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
@@ -841,7 +926,7 @@ const Payments: React.FC = () => {
                     <div className="mb-5 space-y-4">
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 uppercase mb-1.5">
-                          {paymentMethod === 'gcash' ? 'GCash Reference No.' : 'Bank Transaction Reference'} *
+                          {paymentMethod === 'gcash' ? 'GCash Reference No.' : 'MariBank Reference No.'} *
                         </label>
                         <input
                           type="text"
@@ -1378,3 +1463,10 @@ const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onCl
 };
 
 export default Payments;
+
+
+
+
+
+
+

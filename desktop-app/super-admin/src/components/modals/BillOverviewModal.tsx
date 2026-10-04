@@ -374,6 +374,7 @@ const BillOverviewModal: React.FC<{
                       <tr>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Billing Period</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Amount</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Due Date</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
@@ -392,7 +393,12 @@ const BillOverviewModal: React.FC<{
                           <td className="px-3.5 py-2.5 text-gray-600">
                             {b.consumption != null ? `${b.consumption} m³` : '—'}
                           </td>
-                          <td className="px-3.5 py-2.5 font-bold text-gray-900">{formatPeso(b.amount_due)}</td>
+                          <td className="px-3.5 py-2.5 font-bold text-gray-900">
+                            {formatPeso(b.amount ?? b.amount_due)}
+                          </td>
+                          <td className="px-3.5 py-2.5 font-semibold text-gray-700">
+                            {formatPeso(b.amount_due)}
+                          </td>
                           <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.due_date)}</td>
                           <td className="px-3.5 py-2.5">
                             <span className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full ${getBillBadge(b.status)}`}>

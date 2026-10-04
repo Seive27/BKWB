@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
-import type { Bill, BillStatus } from '../types';
+import { getBillingConfig } from './billingConfigService';
+import type { Bill, BillStatus, MeterReading } from '../types';
 
 // ─── Query Options ───
 
@@ -201,14 +202,48 @@ function receiptStatusLabel(status: BillStatus): BillReceiptLine['status'] {
   return 'Unpaid'; // pending + overdue
 }
 
-/**
- * Assemble the billing-receipt payload used by Generate Bill / Print Preview.
- * Includes prior months' bills so the receipt shows previous readings history,
- * while Total Amount Due only sums unpaid (pending / overdue) charges.
- */
-export async function getBillReceiptData(billId: string): Promise<BillReceiptData> {
-  const bill = await getBillById(billId);
+async function getGracePeriodDays(): Promise<number> {
+  const { data, error } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'billing.grace_period_days')
+    .maybeSingle();
 
+  if (error || data == null) return 0;
+  const raw = data.value;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
+  if (typeof raw === 'string') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  }
+  return 0;
+}
+
+function periodFromReadingDate(readingDate: string | null, assignmentDate: string): {
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+} {
+  const dateStr = (readingDate ?? assignmentDate).slice(0, 10);
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error('Reading date is invalid.');
+  }
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0-based
+  const period = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const periodStart = `${period}-01`;
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const periodEnd = `${period}-${String(lastDay).padStart(2, '0')}`;
+  return { period, periodStart, periodEnd };
+}
+
+/**
+ * Assemble the billing-receipt payload used by Generate Bill / Print Preview /
+ * Receipt Review. Includes prior months' bills so the receipt shows previous
+ * readings history, while Total Amount Due only sums unpaid charges.
+ */
+async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
   const [{ data: historyRows, error: historyError }, unpaid] = await Promise.all([
     supabase
       .from('bills')
@@ -338,6 +373,105 @@ export async function getBillReceiptData(billId: string): Promise<BillReceiptDat
     lines,
     totalAmountDue,
   };
+}
+
+/** Assemble receipt data for an existing bill (Issue Bill / print). */
+export async function getBillReceiptData(billId: string): Promise<BillReceiptData> {
+  const bill = await getBillById(billId);
+  return buildBillReceiptData(bill);
+}
+
+/**
+ * Preview the billing receipt for a pending (or approved) meter reading
+ * without creating a bill. Used in Receipt Review before Approve.
+ */
+export async function previewBillReceiptForReading(
+  reading: MeterReading
+): Promise<BillReceiptData> {
+  if (reading.current_reading == null) {
+    throw new Error('No current reading recorded yet. Record the reading before reviewing the receipt.');
+  }
+  if (reading.consumption == null) {
+    throw new Error('Consumption is missing for this reading.');
+  }
+
+  const dates = periodFromReadingDate(reading.reading_date, reading.assignment_date);
+
+  // If a bill already exists for this period, show the real receipt.
+  const { data: existing, error: existingError } = await supabase
+    .from('bills')
+    .select('id')
+    .eq('account_id', reading.account_id)
+    .eq('billing_period', dates.period)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(getBillErrorMessage(existingError));
+  }
+  if (existing?.id) {
+    return getBillReceiptData(existing.id);
+  }
+
+  const [config, graceDays] = await Promise.all([getBillingConfig(), getGracePeriodDays()]);
+  if (!config.waterRate || config.waterRate <= 0) {
+    throw new Error(
+      'Water rate has not been configured yet. Set it under Configure Bills before reviewing receipts.'
+    );
+  }
+
+  const componentTotal = config.components.reduce((sum, c) => sum + (Number(c.price) || 0), 0);
+  const amount = Math.round((reading.consumption * config.waterRate + componentTotal) * 100) / 100;
+
+  let dueDate: string | null = null;
+  if (graceDays > 0) {
+    const end = new Date(`${dates.periodEnd}T00:00:00`);
+    end.setDate(end.getDate() + graceDays);
+    dueDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+  }
+
+  const now = new Date().toISOString();
+  const syntheticBill: Bill = {
+    id: `preview-${reading.id}`,
+    bill_number: 'PREVIEW',
+    account_id: reading.account_id,
+    resident_id: reading.resident_id,
+    reading_id: reading.id,
+    billing_period: dates.period,
+    period_start: dates.periodStart,
+    period_end: dates.periodEnd,
+    previous_reading: reading.previous_reading,
+    current_reading: reading.current_reading,
+    consumption: reading.consumption,
+    water_rate: config.waterRate,
+    extra_components: config.components.map((c) => ({
+      id: c.id,
+      category: c.category,
+      price: c.price,
+    })),
+    amount,
+    amount_due: amount,
+    status: 'pending',
+    due_date: dueDate,
+    paid_at: null,
+    generated_by: null,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+    account: reading.account
+      ? {
+          id: reading.account.id,
+          account_number: reading.account.account_number,
+          service_address: reading.account.service_address,
+          sitio: reading.account.sitio,
+          connection_status: 'active',
+          meter: reading.meter ? { meter_number: reading.meter.meter_number } : null,
+        }
+      : null,
+    resident: reading.resident ?? null,
+  };
+
+  return buildBillReceiptData(syntheticBill);
 }
 
 // ─── Mutations ───

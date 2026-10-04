@@ -13,14 +13,17 @@ import {
   FileText,
   X,
   MapPin,
+  Receipt,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
+import BillReceiptCard from '../components/ui/BillReceiptCard';
 import { useAuth } from '../hooks/useAuth';
 import { useMeterReadings } from '../hooks/useMeterReadings';
 import GenerateBillModal from '../components/modals/GenerateBillModal';
 import {
   generateBillForReading,
   getBillReceiptData,
+  previewBillReceiptForReading,
   type BillReceiptData,
 } from '../services/billService';
 import {
@@ -124,6 +127,9 @@ const MeterReadings: React.FC<{
   // ── Selection ──
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [previewReceipt, setPreviewReceipt] = useState<BillReceiptData | null>(null);
+  const [previewReceiptLoading, setPreviewReceiptLoading] = useState(false);
+  const [previewReceiptError, setPreviewReceiptError] = useState<string | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showGenerateBillModal, setShowGenerateBillModal] = useState(false);
   const [billReceipt, setBillReceipt] = useState<BillReceiptData | null>(null);
@@ -241,6 +247,11 @@ const MeterReadings: React.FC<{
     });
 
     return [...filtered].sort((a, b) => {
+      // Pending Review always surfaces first, then the selected sort.
+      const aPending = a.status === 'pending_review' ? 0 : 1;
+      const bPending = b.status === 'pending_review' ? 0 : 1;
+      if (aPending !== bPending) return aPending - bPending;
+
       switch (sortKey) {
         case 'oldest':
           return new Date(a.assignment_date).getTime() - new Date(b.assignment_date).getTime();
@@ -346,6 +357,28 @@ const MeterReadings: React.FC<{
     }
   };
 
+  const loadPreviewReceipt = async (reading: MeterReading) => {
+    if (reading.status !== 'pending_review' && reading.status !== 'approved') {
+      setPreviewReceipt(null);
+      setPreviewReceiptError(null);
+      setPreviewReceiptLoading(false);
+      return;
+    }
+    setPreviewReceipt(null);
+    setPreviewReceiptError(null);
+    setPreviewReceiptLoading(true);
+    try {
+      const receipt = await previewBillReceiptForReading(reading);
+      setPreviewReceipt(receipt);
+    } catch (err) {
+      setPreviewReceiptError(
+        err instanceof Error ? err.message : 'Failed to load receipt preview.'
+      );
+    } finally {
+      setPreviewReceiptLoading(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (!selectedReading || actionBusy) return;
     if (!actorId) {
@@ -368,7 +401,7 @@ const MeterReadings: React.FC<{
     if (actionBusy) return;
     setActionBusy(true);
     setSelectedId(reading.id);
-    setShowReviewModal(false);
+    closeReviewModal();
     setBillReceipt(null);
     setBillReceiptError(null);
     setGeneratedBillNumber(null);
@@ -441,6 +474,14 @@ const MeterReadings: React.FC<{
     setSelectedId(reading.id);
     setRejectionReason('');
     setShowReviewModal(true);
+    void loadPreviewReceipt(reading);
+  };
+
+  const closeReviewModal = () => {
+    setShowReviewModal(false);
+    setPreviewReceipt(null);
+    setPreviewReceiptError(null);
+    setPreviewReceiptLoading(false);
   };
 
   const getStatusBadge = (status: MeterReadingStatus) => {
@@ -984,15 +1025,15 @@ const MeterReadings: React.FC<{
         </div>
       )}
 
-      {/* ── Review Reading Modal ── */}
+      {/* ── Review Reading Modal (reading details + receipt at bottom) ── */}
       {showReviewModal && selectedReading && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowReviewModal(false);
+            if (e.target === e.currentTarget) closeReviewModal();
           }}
         >
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-up">
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-up">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex items-center justify-between rounded-t-2xl">
               <div className="flex items-center space-x-4">
                 <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
@@ -1009,7 +1050,7 @@ const MeterReadings: React.FC<{
               <div className="flex items-center space-x-3">
                 {getStatusBadge(selectedReading.status)}
                 <button
-                  onClick={() => setShowReviewModal(false)}
+                  onClick={closeReviewModal}
                   className="p-2 hover:bg-gray-100 rounded-xl transition-colors group"
                 >
                   <X className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
@@ -1018,7 +1059,6 @@ const MeterReadings: React.FC<{
             </div>
 
             <div className="px-8 py-6 space-y-6">
-              {/* Reading metrics */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-gray-50 rounded-xl px-4 py-4 text-center">
                   <p className="text-[11px] text-gray-500 font-medium uppercase tracking-wider mb-1">
@@ -1046,7 +1086,6 @@ const MeterReadings: React.FC<{
                 </div>
               </div>
 
-              {/* Meter photo */}
               {selectedReading.photo_url ? (
                 <div className="overflow-hidden rounded-xl border border-gray-200">
                   <img
@@ -1062,7 +1101,6 @@ const MeterReadings: React.FC<{
                 </div>
               )}
 
-              {/* Remarks */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Remarks
@@ -1076,7 +1114,6 @@ const MeterReadings: React.FC<{
                 </div>
               </div>
 
-              {/* Rejection reason (when rejected) */}
               {selectedReading.status === 'rejected' && selectedReading.rejection_reason && (
                 <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-xl border border-red-100">
                   <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
@@ -1087,7 +1124,6 @@ const MeterReadings: React.FC<{
                 </div>
               )}
 
-              {/* Metadata */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="text-[11px] text-gray-500 font-medium">Meter Reader</span>
@@ -1102,15 +1138,45 @@ const MeterReadings: React.FC<{
                   </p>
                 </div>
               </div>
+
+              {(selectedReading.status === 'pending_review' ||
+                selectedReading.status === 'approved') && (
+                <div className="border-t border-gray-200 pt-6 space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 bg-primary-100 rounded-xl flex items-center justify-center">
+                      <Receipt className="w-4 h-4 text-primary-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Receipt Review</h3>
+                      <p className="text-xs text-gray-500">
+                        Preview charges before{' '}
+                        {selectedReading.status === 'pending_review' ? 'approving' : 'issuing the bill'}
+                        .
+                      </p>
+                    </div>
+                  </div>
+                  {previewReceiptLoading && (
+                    <div className="flex items-center justify-center py-10 text-gray-500">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      <span className="text-sm">Loading receipt preview…</span>
+                    </div>
+                  )}
+                  {!previewReceiptLoading && previewReceiptError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {previewReceiptError}
+                    </div>
+                  )}
+                  {!previewReceiptLoading && !previewReceiptError && previewReceipt && (
+                    <BillReceiptCard receipt={previewReceipt} />
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Actions */}
             {selectedReading.status === 'pending_review' && (
               <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end space-x-3 rounded-b-2xl">
                 <button
-                  onClick={() => {
-                    setShowRejectModal(true);
-                  }}
+                  onClick={() => setShowRejectModal(true)}
                   disabled={actionBusy}
                   className="px-6 py-2.5 border border-red-300 text-red-700 rounded-xl hover:bg-red-50 transition-all text-sm font-medium disabled:opacity-50 inline-flex items-center space-x-2"
                 >
@@ -1119,7 +1185,7 @@ const MeterReadings: React.FC<{
                 </button>
                 <button
                   onClick={handleApprove}
-                  disabled={actionBusy}
+                  disabled={actionBusy || previewReceiptLoading}
                   className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
                 >
                   {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -1132,7 +1198,7 @@ const MeterReadings: React.FC<{
             {selectedReading.status === 'approved' && (
               <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex items-center justify-end space-x-3 rounded-b-2xl">
                 <button
-                  onClick={() => setShowReviewModal(false)}
+                  onClick={closeReviewModal}
                   className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
                 >
                   Close

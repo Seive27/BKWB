@@ -68,11 +68,12 @@ export interface MeterReading {
   updated_at: string;
   /** Joined profiles row for the resident. */
   resident?: TicketPerson | null;
-  /** Joined resident_accounts row (account number + address). */
+  /** Joined resident_accounts row (account number + address + sitio). */
   account?: {
     id: string;
     account_number: string;
     service_address: string | null;
+    sitio: string | null;
   } | null;
   /** Joined meters row. */
   meter?: Meter | null;

@@ -75,7 +75,7 @@ function mapRow(row: MeterReadingRow): MeterReading {
 }
 
 const READING_SELECT =
-  '*, resident:profiles!meter_readings_resident_id_fkey(id, first_name, last_name), account:resident_accounts!meter_readings_account_id_fkey(id, account_number, service_address), meter:meters!meter_readings_meter_id_fkey(id, meter_number), meter_reader:profiles!meter_readings_meter_reader_id_fkey(id, first_name, last_name), assigner:profiles!meter_readings_assigned_by_fkey(id, first_name, last_name), reviewer:profiles!meter_readings_reviewed_by_fkey(id, first_name, last_name)';
+  '*, resident:profiles!meter_readings_resident_id_fkey(id, first_name, last_name), account:resident_accounts!meter_readings_account_id_fkey(id, account_number, service_address, sitio), meter:meters!meter_readings_meter_id_fkey(id, meter_number), meter_reader:profiles!meter_readings_meter_reader_id_fkey(id, first_name, last_name), assigner:profiles!meter_readings_assigned_by_fkey(id, first_name, last_name), reviewer:profiles!meter_readings_reviewed_by_fkey(id, first_name, last_name)';
 
 // ── Queries ──
 
@@ -284,7 +284,7 @@ export async function createAssignment(
   return mapRow(data as unknown as MeterReadingRow);
 }
 
-/** Approve a submitted reading. */
+/** Approve a submitted reading (does not generate a bill — use Issue Bill next). */
 export async function approveReading(id: string, reviewerId: string): Promise<MeterReading> {
   const { data, error } = await supabase
     .from('meter_readings')
@@ -294,6 +294,27 @@ export async function approveReading(id: string, reviewerId: string): Promise<Me
       reviewed_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .eq('status', 'pending_review')
+    .select(READING_SELECT)
+    .single();
+
+  if (error) {
+    throw new Error(getMeterReadingErrorMessage(error));
+  }
+
+  return mapRow(data as unknown as MeterReadingRow);
+}
+
+/**
+ * Mark a reading as billed. Used after Issue Bill succeeds, including when a
+ * bill for the period already existed and the RPC did not flip the status.
+ */
+export async function markReadingBilled(id: string): Promise<MeterReading> {
+  const { data, error } = await supabase
+    .from('meter_readings')
+    .update({ status: 'billed' })
+    .eq('id', id)
+    .in('status', ['approved', 'billed'])
     .select(READING_SELECT)
     .single();
 

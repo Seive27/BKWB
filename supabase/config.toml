@@ -20,6 +20,13 @@ verify_jwt = false
 [functions.create-paymongo-checkout]
 verify_jwt = true
 
+[functions.paymongo-webhook]
+# PayMongo calls this endpoint server-to-server and cannot present a Supabase
+# JWT, so platform-level JWT validation must stay off. The function authorizes
+# callers itself by verifying the PayMongo webhook signature
+# (paymongo-signature header, HMAC-SHA256 with PAYMONGO_WEBHOOK_SECRET).
+verify_jwt = false
+
 [functions.resident-account-login]
 # Pure authentication helper: it verifies the Account Number + password
 # combination against GoTrue itself and must be callable by unauthenticated

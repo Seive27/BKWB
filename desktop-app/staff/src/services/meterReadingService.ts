@@ -1,5 +1,6 @@
 ﻿import { SITIO_OPTIONS } from '../constants';
 import { supabase } from '../lib/supabase';
+import { sitioKey } from '../utils';
 import type {
   MeterReaderOption,
   MeterReading,
@@ -234,11 +235,19 @@ export async function getSitioOptions(assignmentDate: string): Promise<SitioAssi
     throw new Error(getMeterReadingErrorMessage(openResult.error));
   }
 
+  // Keys are lowercased so "Lariha" / "LARIHA" collapse to one option.
   const counts = new Map<string, number>();
+  const displayNames = new Map<string, string>();
+  for (const name of SITIO_OPTIONS) {
+    displayNames.set(sitioKey(name), name);
+  }
+
   for (const row of accountsResult.data ?? []) {
     const name = (row.sitio ?? '').trim();
-    if (!name) continue;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const key = sitioKey(name);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!displayNames.has(key)) displayNames.set(key, name);
   }
 
   const assignedBySitio = new Map<string, string>();
@@ -247,31 +256,32 @@ export async function getSitioOptions(assignmentDate: string): Promise<SitioAssi
       account?: { sitio: string | null } | null;
       meter_reader?: { first_name: string; last_name: string } | null;
     };
-    const sitio = (r.account?.sitio ?? '').trim();
-    if (!sitio || assignedBySitio.has(sitio)) continue;
+    const key = sitioKey(r.account?.sitio);
+    if (!key || assignedBySitio.has(key)) continue;
     const reader = r.meter_reader
       ? `${r.meter_reader.first_name} ${r.meter_reader.last_name}`.trim()
       : 'a meter reader';
-    assignedBySitio.set(sitio, reader || 'a meter reader');
+    assignedBySitio.set(key, reader || 'a meter reader');
   }
 
   // Prefer the canonical list so the dropdown stays stable, then append any
   // unexpected sitios that already exist on accounts.
-  const known = new Set<string>(SITIO_OPTIONS);
-  const toOption = (name: string, activeAccountCount: number): SitioAssignOption => ({
+  const knownKeys = new Set(SITIO_OPTIONS.map((name) => sitioKey(name)));
+  const toOption = (name: string, key: string, activeAccountCount: number): SitioAssignOption => ({
     name,
     activeAccountCount,
-    isAssigned: assignedBySitio.has(name),
-    assignedReaderName: assignedBySitio.get(name) ?? null,
+    isAssigned: assignedBySitio.has(key),
+    assignedReaderName: assignedBySitio.get(key) ?? null,
   });
 
-  const options: SitioAssignOption[] = SITIO_OPTIONS.map((name) =>
-    toOption(name, counts.get(name) ?? 0)
-  );
+  const options: SitioAssignOption[] = SITIO_OPTIONS.map((name) => {
+    const key = sitioKey(name);
+    return toOption(name, key, counts.get(key) ?? 0);
+  });
 
-  for (const [name, activeAccountCount] of counts) {
-    if (!known.has(name)) {
-      options.push(toOption(name, activeAccountCount));
+  for (const [key, activeAccountCount] of counts) {
+    if (!knownKeys.has(key)) {
+      options.push(toOption(displayNames.get(key) ?? key, key, activeAccountCount));
     }
   }
 
@@ -426,11 +436,13 @@ export async function createSitioAssignment(
 
   const { start, endExclusive } = assignmentMonthBounds(input.assignment_date);
 
+  // Case-insensitive: DB values may be stored as "LARIHA" while the picker
+  // shows the canonical "Lariha" label.
   const { data: accounts, error: accountsError } = await supabase
     .from('resident_accounts')
     .select('id, resident_id, meter_id, account_number')
     .eq('connection_status', 'active')
-    .eq('sitio', sitio)
+    .ilike('sitio', sitio)
     .order('account_number');
 
   if (accountsError) {

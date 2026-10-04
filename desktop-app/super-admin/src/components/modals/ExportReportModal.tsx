@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, FileText, Table, FileSpreadsheet, Download } from 'lucide-react';
+import StyledSelect from '../ui/StyledSelect';
 
 interface ExportReportModalProps {
   isOpen: boolean;
@@ -145,17 +146,18 @@ const ExportReportModal: React.FC<ExportReportModalProps> = ({ isOpen, onClose }
             <label className="block text-xs font-semibold text-gray-500 uppercase mb-3">
               Date Range
             </label>
-            <select
+            <StyledSelect
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as DateRange)}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              wrapperClassName="w-full"
             >
               <option value="current-month">Current Month (Nov 1 - Nov 30)</option>
               <option value="last-month">Last Month</option>
               <option value="last-3-months">Last 3 Months</option>
               <option value="last-6-months">Last 6 Months</option>
               <option value="custom">Custom Range</option>
-            </select>
+            </StyledSelect>
 
             {/* Date Inputs */}
             <div className="grid grid-cols-2 gap-3 mt-3">

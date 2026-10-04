@@ -4,6 +4,7 @@ import {
   Gauge,
   Receipt,
   CreditCard,
+  History,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
@@ -13,7 +14,7 @@ import { METER_READING_STATUS_LABELS } from '../../types';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBills } from '../../services/billService';
 
-type OverviewTab = 'billing' | 'meter' | 'payments';
+type OverviewTab = 'billing' | 'history' | 'meter' | 'payments';
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
@@ -85,6 +86,7 @@ function initialsOf(name: string): string {
 
 const TABS: { key: OverviewTab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { key: 'billing', label: 'Billing Information', icon: Receipt },
+  { key: 'history', label: 'Billing History', icon: History },
   { key: 'meter', label: 'Meter Information', icon: Gauge },
   { key: 'payments', label: 'Payment History', icon: CreditCard },
 ];
@@ -102,8 +104,10 @@ function InfoField({ label, value, hint }: { label: string; value: React.ReactNo
 const BillOverviewModal: React.FC<{
   bill: Bill;
   onClose: () => void;
-}> = ({ bill, onClose }) => {
-  const [tab, setTab] = useState<OverviewTab>('billing');
+  /** Tab to open with; defaults to Billing Information. */
+  initialTab?: OverviewTab;
+}> = ({ bill, onClose, initialTab = 'billing' }) => {
+  const [tab, setTab] = useState<OverviewTab>(initialTab);
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [accountBills, setAccountBills] = useState<Bill[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -112,6 +116,10 @@ const BillOverviewModal: React.FC<{
   const name = residentName(bill);
   const meterNumber = bill.account?.meter?.meter_number ?? null;
   const statusBadge = getBillBadge(bill.status);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [bill.id, initialTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +168,12 @@ const BillOverviewModal: React.FC<{
       accountBills
         .filter((b) => b.status === 'pending' || b.status === 'overdue')
         .reduce((sum, b) => sum + Number(b.amount_due ?? 0), 0),
+    [accountBills]
+  );
+
+  const historyBills = useMemo(
+    () =>
+      [...accountBills].sort((a, b) => b.billing_period.localeCompare(a.billing_period)),
     [accountBills]
   );
 
@@ -315,6 +329,85 @@ const BillOverviewModal: React.FC<{
             </div>
           )}
 
+          {tab === 'history' && (
+            <div className="space-y-5">
+              {!loadingData && historyBills.length > 0 && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Selected Bill</p>
+                    <p className="text-xl font-bold text-gray-900">{formatPeso(bill.amount_due)}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formatPeriod(bill.billing_period)}
+                      {bill.due_date ? ` · Due ${formatDate(bill.due_date)}` : ''}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Outstanding Balance</p>
+                    {outstandingBalance > 0 ? (
+                      <p className="text-xl font-bold text-rose-600">{formatPeso(outstandingBalance)}</p>
+                    ) : (
+                      <p className="text-xs font-semibold text-emerald-600 mt-1">
+                        {historyBills.some((b) => b.status === 'paid') ? 'Fully Settled' : '₱0.00 Outstanding'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {loadingData ? (
+                <div className="flex items-center justify-center space-x-2 text-gray-400 py-12">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="text-xs font-medium">Loading billing history…</span>
+                </div>
+              ) : historyBills.length === 0 ? (
+                <div className="py-12 text-center border border-dashed border-gray-200 rounded-lg">
+                  <History className="w-7 h-7 text-gray-300 mx-auto mb-1.5" />
+                  <p className="text-xs font-medium text-gray-500">No bills generated yet.</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Bills for this resident appear here once meter readings are approved and issued.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Billing Period</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Due Date</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {historyBills.map((b) => (
+                        <tr
+                          key={b.id}
+                          className={`hover:bg-gray-50 ${b.id === bill.id ? 'bg-primary-50/50' : ''}`}
+                        >
+                          <td className="px-3.5 py-2.5 text-gray-900 font-medium">
+                            {formatPeriod(b.billing_period)}
+                            <span className="block text-[10px] text-gray-400 font-mono">{b.bill_number}</span>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-gray-600">
+                            {b.consumption != null ? `${b.consumption} m³` : '—'}
+                          </td>
+                          <td className="px-3.5 py-2.5 font-bold text-gray-900">{formatPeso(b.amount_due)}</td>
+                          <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.due_date)}</td>
+                          <td className="px-3.5 py-2.5">
+                            <span className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full ${getBillBadge(b.status)}`}>
+                              {statusLabel(b.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {tab === 'meter' && (
             <div className="space-y-5">
               {dataError && (
@@ -430,7 +523,9 @@ const BillOverviewModal: React.FC<{
                       <tr>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Payment Date</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Period</th>
-                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Paid</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Amount</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
                       </tr>
                     </thead>
@@ -444,7 +539,15 @@ const BillOverviewModal: React.FC<{
                               {formatPeriod(b.billing_period)}
                               <span className="block text-[10px] text-gray-400 font-mono">{b.bill_number}</span>
                             </td>
-                            <td className="px-3.5 py-2.5 font-bold text-gray-900">{formatPeso(b.amount_due)}</td>
+                            <td className="px-3.5 py-2.5 text-gray-600">
+                              {b.consumption != null ? `${b.consumption} m³` : '—'}
+                            </td>
+                            <td className="px-3.5 py-2.5 font-bold text-gray-900">
+                              {formatPeso(b.amount ?? b.amount_due)}
+                            </td>
+                            <td className="px-3.5 py-2.5 font-semibold text-gray-700">
+                              {formatPeso(b.amount_due)}
+                            </td>
                             <td className="px-3.5 py-2.5">
                               <span className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />

@@ -11,10 +11,10 @@ import {
   Settings2,
   RefreshCw,
   AlertCircle,
-  ChevronDown,
   FileText,
   Loader2,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import BillOverviewModal from '../components/modals/BillOverviewModal';
 import PrintBillsModal from '../components/modals/PrintBillsModal';
@@ -85,6 +85,15 @@ const Bills: React.FC = () => {
   const [page, setPage] = useState(1);
   const [showConfigureBills, setShowConfigureBills] = useState(false);
   const [detailBill, setDetailBill] = useState<Bill | null>(null);
+  const [detailInitialTab, setDetailInitialTab] = useState<'billing' | 'history'>('billing');
+
+  const openBillOverview = (
+    bill: Bill,
+    tab: 'billing' | 'history' = 'billing'
+  ) => {
+    setDetailInitialTab(tab);
+    setDetailBill(bill);
+  };
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -93,6 +102,26 @@ const Bills: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const toastTimer = useRef<number | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<string | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectStatusFromCard = useCallback((filter: string) => {
+    setStatusFilter(filter);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(filter);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -102,6 +131,9 @@ const Bills: React.FC = () => {
 
   useEffect(() => () => {
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
   }, []);
 
   const load = useCallback(async () => {
@@ -255,7 +287,7 @@ const Bills: React.FC = () => {
       const headers = [
         'Bill Number', 'Resident', 'Account No.', 'Sitio', 'Billing Period',
         'Previous Reading', 'Current Reading', 'Consumption', 'Water Rate',
-        'Extra Components', 'Amount Due', 'Due Date', 'Status', 'Paid At',
+        'Extra Components', 'Bill Amount', 'Amount Due', 'Due Date', 'Status', 'Paid At',
       ];
       const rows = filtered.map((b) => [
         b.bill_number,
@@ -268,6 +300,7 @@ const Bills: React.FC = () => {
         b.consumption ?? '',
         b.water_rate,
         (b.extra_components ?? []).map((c) => `${c.category}: ${c.price}`).join('; '),
+        b.amount ?? b.amount_due,
         b.amount_due,
         b.due_date ?? '',
         getStatusText(b.status),
@@ -323,18 +356,6 @@ const Bills: React.FC = () => {
             </div>
           </div>
 
-          {toast && (
-            <div
-              className={`mb-6 rounded-lg px-4 py-3 text-sm ${
-                toast.type === 'success'
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                  : 'bg-red-50 border border-red-200 text-red-700'
-              }`}
-            >
-              {toast.message}
-            </div>
-          )}
-
           {error && (
             <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
               <span>{error}</span>
@@ -344,7 +365,17 @@ const Bills: React.FC = () => {
 
           {/* Stats Cards (real totals) */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === ''
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                   <Receipt className="w-6 h-6 text-blue-600" />
@@ -353,9 +384,19 @@ const Bills: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase mb-1">Total Bills Generated</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.total.toLocaleString()}</h3>
               <p className="text-xs text-gray-500 mt-1">All recorded bills</p>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('paid')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'paid'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
                   <DollarSign className="w-6 h-6 text-emerald-600" />
@@ -364,9 +405,19 @@ const Bills: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase mb-1">Total Collected Revenue</p>
               <h3 className="text-3xl font-bold text-gray-900">{formatPeso(stats.collected)}</h3>
               <p className="text-xs text-gray-500 mt-1">From bills marked as paid</p>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('pending')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'pending'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
                   <Clock className="w-6 h-6 text-amber-600" />
@@ -375,9 +426,19 @@ const Bills: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase mb-1">Pending Payments</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.pendingCount.toLocaleString()}</h3>
               <p className="text-xs text-gray-500 mt-1">Awaiting payment</p>
-            </div>
+            </button>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('overdue')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'overdue'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -386,7 +447,7 @@ const Bills: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase mb-1">Overdue Bills</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.overdueCount.toLocaleString()}</h3>
               <p className="text-xs text-gray-500 mt-1">Requires follow-up</p>
-            </div>
+            </button>
           </div>
 
           {/* Table Section */}
@@ -405,35 +466,29 @@ const Bills: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
-                  <div className="relative">
-                    <select
-                      value={periodFilter}
-                      onChange={(e) => setPeriodFilter(e.target.value)}
-                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      title="Filter by billing period"
-                    >
-                      <option value="">All Periods</option>
-                      {periods.map((p) => (
-                        <option key={p} value={p}>{formatPeriod(p)}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                  <div className="relative">
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="appearance-none pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      title="Filter by status"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                      <option value="overdue">Overdue</option>
-                      <option value="void">Void</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
+                  <StyledSelect
+                    value={periodFilter}
+                    onChange={(e) => setPeriodFilter(e.target.value)}
+                    className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    title="Filter by billing period"
+                  >
+                    <option value="">All Periods</option>
+                    {periods.map((p) => (
+                      <option key={p} value={p}>{formatPeriod(p)}</option>
+                    ))}
+                  </StyledSelect>
+                  <StyledSelect
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    title="Filter by status"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="paid">Paid</option>
+                    <option value="overdue">Overdue</option>
+                    <option value="void">Void</option>
+                  </StyledSelect>
                   {selectedIds.size > 0 && (
                     <span className="text-sm text-gray-600">
                       {selectedIds.size} selected
@@ -489,6 +544,7 @@ const Bills: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account No.</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Period</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Consumption</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bill Amount</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount Due</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Due Date</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
@@ -498,7 +554,7 @@ const Bills: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center">
+                      <td colSpan={11} className="px-6 py-12 text-center">
                         <div className="flex items-center justify-center space-x-2 text-gray-400">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           <span className="text-sm">Loading bills…</span>
@@ -507,7 +563,7 @@ const Bills: React.FC = () => {
                     </tr>
                   ) : pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center">
+                      <td colSpan={11} className="px-6 py-12 text-center">
                         <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500">
                           {bills.length === 0
@@ -525,7 +581,7 @@ const Bills: React.FC = () => {
                       return (
                         <tr
                           key={bill.id}
-                          onClick={() => setDetailBill(bill)}
+                          onClick={() => openBillOverview(bill)}
                           className={`hover:bg-gray-50 transition-colors cursor-pointer ${
                             checked ? 'bg-primary-50/40' : ''
                           }`}
@@ -546,14 +602,24 @@ const Bills: React.FC = () => {
                             {bill.bill_number}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBillOverview(bill, 'history');
+                              }}
+                              className="flex items-center text-left rounded-lg hover:bg-blue-50/80 -ml-1 px-1 py-0.5 transition-colors"
+                              title="View billing history"
+                            >
                               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                                 <span className="text-xs font-semibold text-blue-600">
                                   {initialsOf(residentName)}
                                 </span>
                               </div>
-                              <span className="text-sm font-medium text-gray-900">{residentName}</span>
-                            </div>
+                              <span className="text-sm font-medium text-primary-700 hover:underline">
+                                {residentName}
+                              </span>
+                            </button>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {bill.account?.account_number ?? '—'}
@@ -563,6 +629,9 @@ const Bills: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {bill.consumption ?? '—'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                            {formatPeso(bill.amount ?? bill.amount_due)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                             {formatPeso(bill.amount_due)}
@@ -581,7 +650,7 @@ const Bills: React.FC = () => {
                           >
                             <div className="flex items-center justify-end space-x-1.5">
                               <button
-                                onClick={() => setDetailBill(bill)}
+                                onClick={() => openBillOverview(bill)}
                                 className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                 title="View details"
                               >
@@ -696,7 +765,13 @@ const Bills: React.FC = () => {
       )}
 
       {showConfigureBills && <ConfigureBillsModal isOpen={showConfigureBills} onClose={() => setShowConfigureBills(false)} />}
-      {detailBill && <BillOverviewModal bill={detailBill} onClose={() => setDetailBill(null)} />}
+      {detailBill && (
+        <BillOverviewModal
+          bill={detailBill}
+          initialTab={detailInitialTab}
+          onClose={() => setDetailBill(null)}
+        />
+      )}
       <PrintBillsModal
         isOpen={showPrintModal}
         billIds={printBillIds}
@@ -705,6 +780,16 @@ const Bills: React.FC = () => {
           setPrintBillIds([]);
         }}
       />
+
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl text-sm font-medium text-white ${
+            toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
     </>
   );
 };

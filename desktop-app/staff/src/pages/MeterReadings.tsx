@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Plus,
@@ -12,9 +12,9 @@ import {
   Calendar,
   FileText,
   X,
-  ChevronDown,
   MapPin,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import { useAuth } from '../hooks/useAuth';
 import { useMeterReadings } from '../hooks/useMeterReadings';
 import GenerateBillModal from '../components/modals/GenerateBillModal';
@@ -33,6 +33,7 @@ import {
   type SitioAssignOption,
 } from '../services/meterReadingService';
 import { SITIO_OPTIONS } from '../constants';
+import { sitioKey, sitiosMatch } from '../utils';
 import {
   MeterReaderOption,
   MeterReading,
@@ -146,9 +147,33 @@ const MeterReadings: React.FC<{
   // ── Toasts ──
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<StatusFilter | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectStatusFromCard = useCallback((filter: StatusFilter) => {
+    setStatusFilter(filter);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(filter);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
+
   useEffect(() => {
     return () => {
       if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
     };
   }, []);
 
@@ -189,11 +214,12 @@ const MeterReadings: React.FC<{
   }, [readings]);
 
   const sitioFilterOptions = useMemo(() => {
-    const known = new Set<string>(SITIO_OPTIONS);
+    const knownKeys = new Set(SITIO_OPTIONS.map((name) => sitioKey(name)));
     const extras = new Set<string>();
     for (const reading of readings) {
       const sitio = (reading.account?.sitio ?? '').trim();
-      if (sitio && !known.has(sitio)) extras.add(sitio);
+      const key = sitioKey(sitio);
+      if (key && !knownKeys.has(key)) extras.add(sitio);
     }
     return [...SITIO_OPTIONS, ...[...extras].sort((a, b) => a.localeCompare(b))];
   }, [readings]);
@@ -209,8 +235,8 @@ const MeterReadings: React.FC<{
         (r.meter?.meter_number ?? '').toLowerCase().includes(q) ||
         (r.account?.sitio ?? '').toLowerCase().includes(q);
       const matchesStatus = matchesReadingStatus(r.status, statusFilter);
-      const readingSitio = (r.account?.sitio ?? '').trim();
-      const matchesSitio = sitioFilter === 'all' || readingSitio === sitioFilter;
+      const matchesSitio =
+        sitioFilter === 'all' || sitiosMatch(r.account?.sitio, sitioFilter);
       return matchesSearch && matchesStatus && matchesSitio;
     });
 
@@ -267,8 +293,8 @@ const MeterReadings: React.FC<{
         // Clear selection if that sitio is already assigned for the selected month.
         setSelectedSitio((current) => {
           if (!current) return current;
-          const match = sitioOptions.find((s) => s.name === current);
-          return match && !match.isAssigned ? current : '';
+          const match = sitioOptions.find((s) => sitiosMatch(s.name, current));
+          return match && !match.isAssigned ? match.name : '';
         });
       })
       .catch((err) => {
@@ -285,7 +311,8 @@ const MeterReadings: React.FC<{
 
   const actorId = user?.id ?? '';
 
-  const selectedSitioOption = sitios.find((s) => s.name === selectedSitio) ?? null;
+  const selectedSitioOption =
+    sitios.find((s) => sitiosMatch(s.name, selectedSitio)) ?? null;
 
   const handleAssign = async () => {
     if (!selectedSitio || !selectedReaderId || actionBusy) return;
@@ -429,9 +456,9 @@ const MeterReadings: React.FC<{
   };
 
   const fieldStyles =
-    'w-full appearance-none px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500';
+    'w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500';
   const filterFieldStyles =
-    'appearance-none pl-4 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all';
+    'py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all';
 
   return (
     <>
@@ -456,7 +483,17 @@ const MeterReadings: React.FC<{
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('assigned')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'assigned'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                   <Clock className="w-6 h-6 text-blue-600" />
@@ -464,8 +501,18 @@ const MeterReadings: React.FC<{
               </div>
               <p className="text-sm text-gray-600 mb-1">ASSIGNED</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.assigned}</h3>
-            </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            </button>
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('pending_review')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'pending_review'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
                   <Gauge className="w-6 h-6 text-amber-600" />
@@ -473,8 +520,18 @@ const MeterReadings: React.FC<{
               </div>
               <p className="text-sm text-gray-600 mb-1">PENDING REVIEW</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.pending}</h3>
-            </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            </button>
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('billed')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'billed'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
                   <CheckCircle className="w-6 h-6 text-emerald-600" />
@@ -482,8 +539,18 @@ const MeterReadings: React.FC<{
               </div>
               <p className="text-sm text-gray-600 mb-1">BILLED</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.billed}</h3>
-            </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
+            </button>
+            <button
+              type="button"
+              onClick={() => selectStatusFromCard('rejected')}
+              className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === 'rejected'
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
                   <AlertCircle className="w-6 h-6 text-red-600" />
@@ -491,7 +558,7 @@ const MeterReadings: React.FC<{
               </div>
               <p className="text-sm text-gray-600 mb-1">REJECTED</p>
               <h3 className="text-3xl font-bold text-gray-900">{stats.rejected}</h3>
-            </div>
+            </button>
           </div>
 
           {/* Table Section */}
@@ -511,53 +578,44 @@ const MeterReadings: React.FC<{
                 </div>
 
                 <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <select
-                      value={sitioFilter}
-                      onChange={(e) => setSitioFilter(e.target.value)}
-                      className={filterFieldStyles}
-                      aria-label="Filter by sitio"
-                    >
-                      <option value="all">All Sitios</option>
-                      {sitioFilterOptions.map((sitio) => (
-                        <option key={sitio} value={sitio}>
-                          {sitio}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                  <div className="relative">
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                      className={filterFieldStyles}
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      {(Object.keys(METER_READING_STATUS_LABELS) as MeterReadingStatus[]).map((st) => (
-                        <option key={st} value={st}>
-                          {METER_READING_STATUS_LABELS[st]}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                  <div className="relative">
-                    <select
-                      value={sortKey}
-                      onChange={(e) => setSortKey(e.target.value as SortKey)}
-                      className={filterFieldStyles}
-                      aria-label="Sort readings"
-                    >
-                      <option value="newest">Newest First</option>
-                      <option value="oldest">Oldest First</option>
-                      <option value="alpha-asc">Alphabetical (A–Z)</option>
-                      <option value="alpha-desc">Alphabetical (Z–A)</option>
-                      <option value="status">Status</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
+                  <StyledSelect
+                    value={sitioFilter}
+                    onChange={(e) => setSitioFilter(e.target.value)}
+                    className={filterFieldStyles}
+                    aria-label="Filter by sitio"
+                  >
+                    <option value="all">All Sitios</option>
+                    {sitioFilterOptions.map((sitio) => (
+                      <option key={sitio} value={sitio}>
+                        {sitio}
+                      </option>
+                    ))}
+                  </StyledSelect>
+                  <StyledSelect
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    className={filterFieldStyles}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    {(Object.keys(METER_READING_STATUS_LABELS) as MeterReadingStatus[]).map((st) => (
+                      <option key={st} value={st}>
+                        {METER_READING_STATUS_LABELS[st]}
+                      </option>
+                    ))}
+                  </StyledSelect>
+                  <StyledSelect
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                    className={filterFieldStyles}
+                    aria-label="Sort readings"
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="alpha-asc">Alphabetical (A–Z)</option>
+                    <option value="alpha-desc">Alphabetical (Z–A)</option>
+                    <option value="status">Status</option>
+                  </StyledSelect>
                 </div>
               </div>
             </div>
@@ -805,32 +863,30 @@ const MeterReadings: React.FC<{
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Sitio <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
-                  <select
-                    value={selectedSitio}
-                    onChange={(e) => setSelectedSitio(e.target.value)}
-                    disabled={pickerLoading}
-                    className={`${fieldStyles} pr-10`}
-                  >
-                    <option value="">
-                      {pickerLoading ? 'Loading sitios…' : 'Select a sitio'}
+                <StyledSelect
+                  value={selectedSitio}
+                  onChange={(e) => setSelectedSitio(e.target.value)}
+                  disabled={pickerLoading}
+                  className={fieldStyles}
+                  wrapperClassName="w-full"
+                >
+                  <option value="">
+                    {pickerLoading ? 'Loading sitios…' : 'Select a sitio'}
+                  </option>
+                  {sitios.map((sitio) => (
+                    <option
+                      key={sitio.name}
+                      value={sitio.name}
+                      disabled={sitio.isAssigned || sitio.activeAccountCount === 0}
+                    >
+                      {sitio.isAssigned
+                        ? `${sitio.name} — already assigned to ${sitio.assignedReaderName ?? 'a meter reader'}`
+                        : `${sitio.name} (${sitio.activeAccountCount} account${
+                            sitio.activeAccountCount === 1 ? '' : 's'
+                          })`}
                     </option>
-                    {sitios.map((sitio) => (
-                      <option
-                        key={sitio.name}
-                        value={sitio.name}
-                        disabled={sitio.isAssigned || sitio.activeAccountCount === 0}
-                      >
-                        {sitio.isAssigned
-                          ? `${sitio.name} — already assigned to ${sitio.assignedReaderName ?? 'a meter reader'}`
-                          : `${sitio.name} (${sitio.activeAccountCount} account${
-                              sitio.activeAccountCount === 1 ? '' : 's'
-                            })`}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                </div>
+                  ))}
+                </StyledSelect>
                 {selectedSitioOption && (
                   <div className="mt-3 bg-gray-50 rounded-xl px-4 py-3 flex items-start space-x-3">
                     <MapPin className="w-4 h-4 text-primary-600 mt-0.5 flex-shrink-0" />
@@ -852,28 +908,26 @@ const MeterReadings: React.FC<{
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Meter Reader <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
-                  <select
-                    value={selectedReaderId}
-                    onChange={(e) => setSelectedReaderId(e.target.value)}
-                    disabled={pickerLoading}
-                    className={`${fieldStyles} pr-10`}
-                  >
-                    <option value="">
-                      {pickerLoading
-                        ? 'Loading readers…'
-                        : meterReaders.length === 0
-                          ? 'No meter readers available'
-                          : 'Select a meter reader'}
+                <StyledSelect
+                  value={selectedReaderId}
+                  onChange={(e) => setSelectedReaderId(e.target.value)}
+                  disabled={pickerLoading}
+                  className={fieldStyles}
+                  wrapperClassName="w-full"
+                >
+                  <option value="">
+                    {pickerLoading
+                      ? 'Loading readers…'
+                      : meterReaders.length === 0
+                        ? 'No meter readers available'
+                        : 'Select a meter reader'}
+                  </option>
+                  {meterReaders.map((reader) => (
+                    <option key={reader.id} value={reader.id}>
+                      {reader.first_name} {reader.last_name}
                     </option>
-                    {meterReaders.map((reader) => (
-                      <option key={reader.id} value={reader.id}>
-                        {reader.first_name} {reader.last_name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                </div>
+                  ))}
+                </StyledSelect>
                 {!pickerLoading && meterReaders.length === 0 && (
                   <p className="mt-2 text-xs text-amber-600">
                     No active meter readers found. Create a user with the Meter Reader role first.

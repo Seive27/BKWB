@@ -1,4 +1,6 @@
-﻿import { supabase } from '../lib/supabase';
+﻿import { SITIO_OPTIONS } from '../constants';
+import { supabase } from '../lib/supabase';
+import { dedupeSitios } from '../utils';
 import type { MeterReaderOption } from '../types';
 
 /** One row of the sitio_assignments table (+ joined reader name). */
@@ -137,7 +139,6 @@ export async function getAssignableReaders(): Promise<MeterReaderOption[]> {
  * areas appear without code changes (canonical list first, extras appended).
  */
 export async function getKnownSitios(): Promise<string[]> {
-  const { SITIO_OPTIONS } = await import('../constants');
   const { data, error } = await supabase
     .from('resident_accounts')
     .select('sitio')
@@ -148,13 +149,10 @@ export async function getKnownSitios(): Promise<string[]> {
     throw new Error(getSitioAssignmentErrorMessage(error));
   }
 
-  const dbSitios = [
-    ...new Set(
-      (data ?? [])
-        .map((d) => ((d as { sitio: string | null }).sitio ?? '').trim())
-        .filter(Boolean)
-    ),
-  ];
-  const known = new Set<string>(SITIO_OPTIONS);
-  return [...SITIO_OPTIONS, ...dbSitios.filter((s) => !known.has(s))];
+  const dbSitios = (data ?? [])
+    .map((d) => ((d as { sitio: string | null }).sitio ?? '').trim())
+    .filter(Boolean);
+  // Always include the canonical list, then any extras from accounts
+  // (merged case-insensitively so "Lariha" / "LARIHA" do not both appear).
+  return dedupeSitios([...SITIO_OPTIONS, ...dbSitios], SITIO_OPTIONS);
 }

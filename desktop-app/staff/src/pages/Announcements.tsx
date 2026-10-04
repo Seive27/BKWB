@@ -36,6 +36,7 @@ import {
   updateAnnouncement,
 } from '../services/announcementService';
 import { FutureDateTimeField } from '../components/ui/FutureDateTimeField';
+import StyledSelect from '../components/ui/StyledSelect';
 
 // ── Constants ──
 
@@ -298,48 +299,42 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Category</label>
-              <div className="relative">
-                <select
-                  value={draft.category}
-                  onChange={(e) => set('category', e.target.value as AnnouncementCategory)}
-                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
-                >
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={draft.category}
+                onChange={(e) => set('category', e.target.value as AnnouncementCategory)}
+                className={`${inputClass(false)} bg-white text-gray-900`}
+                wrapperClassName="w-full"
+              >
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </StyledSelect>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Priority</label>
-              <div className="relative">
-                <select
-                  value={draft.priority}
-                  onChange={(e) => set('priority', e.target.value as AnnouncementPriority)}
-                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
-                >
-                  {PRIORITY_OPTIONS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={draft.priority}
+                onChange={(e) => set('priority', e.target.value as AnnouncementPriority)}
+                className={`${inputClass(false)} bg-white text-gray-900`}
+                wrapperClassName="w-full"
+              >
+                {PRIORITY_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </StyledSelect>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Target Audience</label>
-              <div className="relative">
-                <select
-                  value={draft.target_audience}
-                  onChange={(e) => set('target_audience', e.target.value as AnnouncementAudience)}
-                  className={`${inputClass(false)} appearance-none bg-white text-gray-900 pr-10`}
-                >
-                  {AUDIENCE_OPTIONS.map((a) => (
-                    <option key={a.value} value={a.value}>{a.label}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={draft.target_audience}
+                onChange={(e) => set('target_audience', e.target.value as AnnouncementAudience)}
+                className={`${inputClass(false)} bg-white text-gray-900`}
+                wrapperClassName="w-full"
+              >
+                {AUDIENCE_OPTIONS.map((a) => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
+              </StyledSelect>
             </div>
           </div>
 
@@ -1094,7 +1089,7 @@ const Announcements: React.FC<{
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${
+          className={`fixed bottom-6 right-6 z-[60] flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${
             toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >

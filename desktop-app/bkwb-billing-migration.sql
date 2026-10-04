@@ -614,13 +614,13 @@ BEGIN
     INSERT INTO public.bills (
       account_id, resident_id, reading_id, billing_period,
       period_start, period_end, previous_reading, current_reading,
-      consumption, water_rate, extra_components, amount_due,
+      consumption, water_rate, extra_components, amount, amount_due,
       status, due_date, generated_by
     )
     VALUES (
       v_reading.account_id, v_reading.resident_id, v_reading.id, v_period,
       v_period_start, v_period_end, v_reading.previous_reading, v_reading.current_reading,
-      v_reading.consumption, v_rate, v_components, v_amount,
+      v_reading.consumption, v_rate, v_components, v_amount, v_amount,
       'pending', v_due_date, auth.uid()
     )
     ON CONFLICT (account_id, billing_period) WHERE deleted_at IS NULL DO NOTHING
@@ -636,7 +636,8 @@ BEGIN
       'bill_id', v_new_id,
       'bill_number', v_new_number,
       'billing_period', v_period,
-      'amount_due', v_amount
+      'amount_due', v_amount,
+      'amount', v_amount
     );
   END IF;
 

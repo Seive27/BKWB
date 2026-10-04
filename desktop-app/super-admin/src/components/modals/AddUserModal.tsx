@@ -19,6 +19,7 @@ import { generateTemporaryPassword, validatePhone } from '../../services/residen
 import { getPasswordValidationError } from '../../lib/password';
 import UserCreatedView, { type UserCreatedInfo } from './UserCreatedView';
 import { PasswordStrengthHint } from '../ui/PasswordStrengthHint';
+import StyledSelect from '../ui/StyledSelect';
 
 export type { UserCreatedInfo };
 
@@ -273,29 +274,31 @@ const DateOfBirthField = ({
               <ChevronLeft className="h-5 w-5" />
             </button>
 
-            <select
+            <StyledSelect
               value={viewMonth}
               onChange={(e) => setViewMonth(Number(e.target.value))}
-              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="min-w-0 flex-1"
             >
               {MONTH_NAMES.map((name, index) => (
                 <option key={name} value={index + 1}>
                   {name}
                 </option>
               ))}
-            </select>
+            </StyledSelect>
 
-            <select
+            <StyledSelect
               value={viewYear}
               onChange={(e) => setViewYear(Number(e.target.value))}
-              className="w-[7rem] rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="w-[7rem]"
             >
               {years.map((year) => (
                 <option key={year} value={year}>
                   {year}
                 </option>
               ))}
-            </select>
+            </StyledSelect>
 
             <button
               type="button"
@@ -603,23 +606,21 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
             <label className="block text-xs font-semibold text-gray-700 uppercase mb-2">
               Role Assignment <span className="text-red-500">*</span>
             </label>
-            <div className="relative">
-              <select
-                value={formData.role}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, role: e.target.value, password: '' }))
-                }
-                className={`w-full px-4 py-2.5 border ${
-                  errors.role ? 'border-red-300' : 'border-gray-300'
-                } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm appearance-none bg-white`}
-              >
-                <option value="">Select a role...</option>
-                {roles.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            </div>
+            <StyledSelect
+              value={formData.role}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, role: e.target.value, password: '' }))
+              }
+              className={`w-full px-4 py-2.5 border ${
+                errors.role ? 'border-red-300' : 'border-gray-300'
+              } rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm bg-white`}
+              wrapperClassName="w-full"
+            >
+              <option value="">Select a role...</option>
+              {roles.map((role) => (
+                <option key={role} value={role}>{role}</option>
+              ))}
+            </StyledSelect>
             {errors.role && <p className="text-xs text-red-600 mt-1">{errors.role}</p>}
           </div>
 

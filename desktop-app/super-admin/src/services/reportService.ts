@@ -293,7 +293,7 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
   const { data, error } = await supabase
     .from('bills')
     .select(
-      'bill_number, billing_period, amount_due, consumption, status, due_date, created_at, account:resident_accounts!bills_account_id_fkey(account_number, sitio), resident:profiles!bills_resident_id_fkey(first_name, last_name)'
+      'bill_number, billing_period, amount, amount_due, consumption, status, due_date, created_at, account:resident_accounts!bills_account_id_fkey(account_number, sitio), resident:profiles!bills_resident_id_fkey(first_name, last_name)'
     )
     .is('deleted_at', null)
     .gte('created_at', range.startIso)
@@ -305,6 +305,7 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
   type Row = {
     bill_number: string;
     billing_period: string;
+    amount: number | null;
     amount_due: number;
     consumption: number | null;
     status: keyof typeof BILL_STATUS_LABELS;
@@ -314,6 +315,8 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
     resident?: { first_name: string; last_name: string } | null;
   };
 
+  const billAmountOf = (b: Row) => Number(b.amount ?? b.amount_due ?? 0);
+
   const rows = ((data ?? []) as unknown as Row[]).map((b) => ({
     bill_number: b.bill_number,
     account: b.account?.account_number ?? '—',
@@ -321,12 +324,13 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
     resident: person(b.resident),
     billing_period: b.billing_period,
     consumption: b.consumption ?? '—',
+    bill_amount: peso(billAmountOf(b)),
     amount_due: peso(Number(b.amount_due)),
     status: BILL_STATUS_LABELS[b.status] ?? b.status,
     due_date: b.due_date ? fmtDate(b.due_date) : '—',
   }));
 
-  const totalDue = ((data ?? []) as unknown as Row[]).reduce((s, b) => s + Number(b.amount_due ?? 0), 0);
+  const totalBilled = ((data ?? []) as unknown as Row[]).reduce((s, b) => s + billAmountOf(b), 0);
 
   return {
     category: 'bills',
@@ -340,6 +344,7 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
       { key: 'resident', label: 'Resident' },
       { key: 'billing_period', label: 'Billing Period' },
       { key: 'consumption', label: 'Cu.m' },
+      { key: 'bill_amount', label: 'Bill Amount' },
       { key: 'amount_due', label: 'Amount Due' },
       { key: 'status', label: 'Status' },
       { key: 'due_date', label: 'Due Date' },
@@ -347,7 +352,7 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
     rows,
     summary: [
       { label: 'Bills generated', value: String(rows.length) },
-      { label: 'Total billed amount', value: peso(totalDue) },
+      { label: 'Total billed amount', value: peso(totalBilled) },
     ],
   };
 }

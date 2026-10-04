@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import StyledSelect from './StyledSelect';
 
 const MONTH_NAMES = [
   'January',
@@ -181,43 +182,39 @@ export function FutureDateTimeField({
               <ChevronLeft className="h-5 w-5" />
             </button>
 
-            <div className="relative min-w-0 flex-1">
-              <select
-                value={viewMonth}
-                onChange={(e) => setViewMonth(Number(e.target.value))}
-                className="w-full appearance-none rounded-lg border border-gray-200 bg-white pl-3 pr-9 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {MONTH_NAMES.map((name, index) => {
-                  const month = index + 1;
-                  const disabled = viewYear === min.y && month < min.m;
-                  return (
-                    <option key={name} value={month} disabled={disabled}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            </div>
-
-            <div className="relative w-[7rem]">
-              <select
-                value={viewYear}
-                onChange={(e) => {
-                  const nextY = Number(e.target.value);
-                  setViewYear(nextY);
-                  if (nextY === min.y && viewMonth < min.m) setViewMonth(min.m);
-                }}
-                className="w-full appearance-none rounded-lg border border-gray-200 bg-white pl-3 pr-9 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {years.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
+            <StyledSelect
+              value={viewMonth}
+              onChange={(e) => setViewMonth(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="min-w-0 flex-1"
+            >
+              {MONTH_NAMES.map((name, index) => {
+                const month = index + 1;
+                const disabled = viewYear === min.y && month < min.m;
+                return (
+                  <option key={name} value={month} disabled={disabled}>
+                    {name}
                   </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            </div>
+                );
+              })}
+            </StyledSelect>
+
+            <StyledSelect
+              value={viewYear}
+              onChange={(e) => {
+                const nextY = Number(e.target.value);
+                setViewYear(nextY);
+                if (nextY === min.y && viewMonth < min.m) setViewMonth(min.m);
+              }}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="w-[7rem]"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </StyledSelect>
 
             <button
               type="button"

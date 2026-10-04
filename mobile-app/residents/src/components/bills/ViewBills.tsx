@@ -71,13 +71,19 @@ function PaymentBillCard({
           </View>
 
           <View className="flex-row items-end justify-between">
-            <View>
-              <Text className="text-sm text-slate-400">
-                {unpaid ? 'Amount Due' : 'Amount'}
-              </Text>
-              <Text className="mt-0.5 text-xl font-bold text-brand">
-                {formatPeso(bill.amount_due)}
-              </Text>
+            <View className="flex-1 flex-row gap-6 pr-3">
+              <View>
+                <Text className="text-sm text-slate-400">Bill Amount</Text>
+                <Text className="mt-0.5 text-xl font-bold text-brand">
+                  {formatPeso(bill.amount ?? bill.amount_due)}
+                </Text>
+              </View>
+              <View>
+                <Text className="text-sm text-slate-400">Amount Due</Text>
+                <Text className="mt-0.5 text-xl font-bold text-slate-800">
+                  {formatPeso(bill.amount_due)}
+                </Text>
+              </View>
             </View>
             <View className="flex-row items-center gap-1">
               <Text className="text-sm font-semibold text-brand">View Details</Text>

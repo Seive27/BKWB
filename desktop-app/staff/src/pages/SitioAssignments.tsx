@@ -5,14 +5,15 @@ import {
   AlertCircle,
   UserCheck,
   UserX,
-  ChevronDown,
   Search,
   Check,
   X,
 } from 'lucide-react';
+import StyledSelect from '../components/ui/StyledSelect';
 import { useAuth } from '../hooks/useAuth';
 import { SITIO_OPTIONS } from '../constants';
 import type { MeterReaderOption } from '../types';
+import { sitioKey } from '../utils';
 import {
   assignSitio,
   getAssignableReaders,
@@ -79,18 +80,23 @@ const SitioAssignments: React.FC = () => {
 
   const bySitio = useMemo(() => {
     const map = new Map<string, SitioAssignment>();
-    for (const row of assignments) map.set(row.sitio, row);
+    for (const row of assignments) {
+      const key = sitioKey(row.sitio);
+      if (key && !map.has(key)) map.set(key, row);
+    }
     return map;
   }, [assignments]);
 
   const filteredSitios = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return sitios;
-    return sitios.filter(
-      (s) =>
+    return sitios.filter((s) => {
+      const assignment = bySitio.get(sitioKey(s));
+      return (
         s.toLowerCase().includes(q) ||
-        (bySitio.get(s) ? readerName(bySitio.get(s)!).toLowerCase().includes(q) : false)
-    );
+        (assignment ? readerName(assignment).toLowerCase().includes(q) : false)
+      );
+    });
   }, [sitios, searchQuery, bySitio]);
 
   const assignedCount = assignments.length;
@@ -164,18 +170,6 @@ const SitioAssignments: React.FC = () => {
             </p>
           </div>
 
-          {toast && (
-            <div
-              className={`mb-6 rounded-lg px-4 py-3 text-sm ${
-                toast.type === 'success'
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                  : 'bg-red-50 border border-red-200 text-red-700'
-              }`}
-            >
-              {toast.message}
-            </div>
-          )}
-
           {error && (
             <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
               <span>{error}</span>
@@ -242,7 +236,7 @@ const SitioAssignments: React.FC = () => {
                     </tr>
                   ) : (
                     filteredSitios.map((sitio) => {
-                      const row = bySitio.get(sitio);
+                      const row = bySitio.get(sitioKey(sitio));
                       const isAssigned = !!row;
                       return (
                         <tr key={sitio} className={!isAssigned ? 'bg-gray-50/60' : ''}>
@@ -331,21 +325,19 @@ const SitioAssignments: React.FC = () => {
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
                   Meter Reader *
                 </label>
-                <div className="relative">
-                  <select
-                    value={selectedReaderId}
-                    onChange={(e) => setSelectedReaderId(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white appearance-none pr-10 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="">Select a meter reader</option>
-                    {readers.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {`${r.first_name} ${r.last_name}`.trim()}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                </div>
+                <StyledSelect
+                  value={selectedReaderId}
+                  onChange={(e) => setSelectedReaderId(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  wrapperClassName="w-full"
+                >
+                  <option value="">Select a meter reader</option>
+                  {readers.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {`${r.first_name} ${r.last_name}`.trim()}
+                    </option>
+                  ))}
+                </StyledSelect>
                 {readers.length === 0 && (
                   <p className="mt-2 text-xs text-amber-600">
                     No active meter readers yet. Create one under Add User first.
@@ -392,23 +384,21 @@ const SitioAssignments: React.FC = () => {
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">
                 New Meter Reader *
               </label>
-              <div className="relative">
-                <select
-                  value={reassignReaderId}
-                  onChange={(e) => setReassignReaderId(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white appearance-none pr-10 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">Select a meter reader</option>
-                  {readers
-                    .filter((r) => r.id !== reassignTarget.meter_reader_id)
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {`${r.first_name} ${r.last_name}`.trim()}
-                      </option>
-                    ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={reassignReaderId}
+                onChange={(e) => setReassignReaderId(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                wrapperClassName="w-full"
+              >
+                <option value="">Select a meter reader</option>
+                {readers
+                  .filter((r) => r.id !== reassignTarget.meter_reader_id)
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {`${r.first_name} ${r.last_name}`.trim()}
+                    </option>
+                  ))}
+              </StyledSelect>
             </div>
             <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end space-x-3">
               <button
@@ -458,6 +448,16 @@ const SitioAssignments: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl text-sm font-medium text-white ${
+            toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
+          }`}
+        >
+          {toast.message}
         </div>
       )}
     </>

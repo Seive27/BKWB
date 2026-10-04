@@ -17,7 +17,6 @@ import {
   Save,
   Loader2,
   MessageSquare,
-  ChevronDown,
 } from 'lucide-react';
 import TicketCard from '../components/ui/TicketCard';
 import StyledSelect from '../components/ui/StyledSelect';
@@ -430,23 +429,20 @@ const Tickets: React.FC<{
   const getPrioritySelect = (priority: TicketPriority) => {
     const p = priorityStyles[priority];
     return (
-      <div className="relative inline-flex items-center">
-        <select
-          value={priority}
-          disabled={actionBusy}
-          onChange={(e) => void handlePriorityChange(e.target.value as TicketPriority)}
-          className={`appearance-none cursor-pointer pl-2.5 pr-7 py-1 rounded-full text-xs font-semibold border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${p.bg} ${p.text}`}
-          title="Set ticket priority"
-          aria-label="Ticket priority"
-        >
-          {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
-            <option key={value} value={value}>
-              {TICKET_PRIORITY_LABELS[value]}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" />
-      </div>
+      <StyledSelect
+        value={priority}
+        disabled={actionBusy}
+        onChange={(e) => void handlePriorityChange(e.target.value as TicketPriority)}
+        className={`cursor-pointer pl-2.5 py-1 rounded-full text-xs font-semibold border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${p.bg} ${p.text}`}
+        title="Set ticket priority"
+        aria-label="Ticket priority"
+      >
+        {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
+          <option key={value} value={value}>
+            {TICKET_PRIORITY_LABELS[value]}
+          </option>
+        ))}
+      </StyledSelect>
     );
   };
 

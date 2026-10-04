@@ -36,6 +36,7 @@ import {
   updateAnnouncement,
 } from '../services/announcementService';
 import { FutureDateTimeField } from '../components/ui/FutureDateTimeField';
+import StyledSelect from '../components/ui/StyledSelect';
 
 // ── Constants ──
 
@@ -296,39 +297,42 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Category</label>
-              <select
+              <StyledSelect
                 value={draft.category}
                 onChange={(e) => set('category', e.target.value as AnnouncementCategory)}
                 className={inputClass(false)}
+                wrapperClassName="w-full"
               >
                 {CATEGORY_OPTIONS.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Priority</label>
-              <select
+              <StyledSelect
                 value={draft.priority}
                 onChange={(e) => set('priority', e.target.value as AnnouncementPriority)}
                 className={inputClass(false)}
+                wrapperClassName="w-full"
               >
                 {PRIORITY_OPTIONS.map((p) => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Target Audience</label>
-              <select
+              <StyledSelect
                 value={draft.target_audience}
                 onChange={(e) => set('target_audience', e.target.value as AnnouncementAudience)}
                 className={inputClass(false)}
+                wrapperClassName="w-full"
               >
                 {AUDIENCE_OPTIONS.map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
           </div>
 
@@ -1083,7 +1087,7 @@ const Announcements: React.FC<{
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-[60] flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${
+          className={`fixed bottom-6 right-6 z-[60] flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${
             toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >

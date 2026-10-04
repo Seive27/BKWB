@@ -17,13 +17,13 @@ import {
   RefreshCw,
   Clock,
   Layers,
-  ChevronDown,
   Loader2,
   Send,
 } from 'lucide-react';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { getPendingPayments, verifyPendingPaymentRPC } from '../services/paymentService';
 import { useToast } from '../components/ui/ToastProvider';
+import StyledSelect from '../components/ui/StyledSelect';
 import { getBills, subscribeToBills } from '../services/billService';
 import {
   recordMultiBillPayment,
@@ -32,6 +32,7 @@ import {
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
+import { sitiosMatch } from '../utils';
 import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
 import { downloadFile } from '../utils/downloadFile';
 
@@ -168,7 +169,7 @@ const Payments: React.FC = () => {
   const filteredResidents = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return residents.filter((r) => {
-      if (sitioFilter && r.sitio !== sitioFilter) return false;
+      if (sitioFilter && !sitiosMatch(r.sitio, sitioFilter)) return false;
       if (!q) return true;
       const name = r.fullName.toLowerCase();
       const accountNo = (r.accountNumber ?? '').toLowerCase();
@@ -442,38 +443,34 @@ const Payments: React.FC = () => {
               </div>
 
               {/* Sitio Filter */}
-              <div className="relative">
-                <select
-                  value={sitioFilter}
-                  onChange={(e) => setSitioFilter(e.target.value)}
-                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  title="Filter by Sitio"
-                >
-                  <option value="">All Sitios</option>
-                  {sitios.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={sitioFilter}
+                onChange={(e) => setSitioFilter(e.target.value)}
+                className="w-full pl-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                wrapperClassName="w-full"
+                title="Filter by Sitio"
+              >
+                <option value="">All Sitios</option>
+                {sitios.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </StyledSelect>
 
               {/* Status Filter */}
-              <div className="relative">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="w-full appearance-none pl-3 pr-10 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  title="Filter by payment status"
-                >
-                  <option value="unpaid">Pending / Unpaid Bills</option>
-                  <option value="overdue">Overdue Bills</option>
-                  <option value="paid">Paid Bills</option>
-                  <option value="all">All Bills</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <StyledSelect
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="w-full pl-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                wrapperClassName="w-full"
+                title="Filter by payment status"
+              >
+                <option value="unpaid">Pending / Unpaid Bills</option>
+                <option value="overdue">Overdue Bills</option>
+                <option value="paid">Paid Bills</option>
+                <option value="all">All Bills</option>
+              </StyledSelect>
             </div>
 
             {/* Resident Matches Selector */}
@@ -661,22 +658,19 @@ const Payments: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="relative">
-                      <select
-                        value={periodFilter}
-                        onChange={(e) => setPeriodFilter(e.target.value)}
-                        className="appearance-none pl-2.5 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                        title="Filter period"
-                      >
-                        <option value="">All Periods</option>
-                        {billingPeriods.map((p) => (
-                          <option key={p} value={p}>
-                            {formatPeriod(p)}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                    </div>
+                    <StyledSelect
+                      value={periodFilter}
+                      onChange={(e) => setPeriodFilter(e.target.value)}
+                      className="pl-2.5 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      title="Filter period"
+                    >
+                      <option value="">All Periods</option>
+                      {billingPeriods.map((p) => (
+                        <option key={p} value={p}>
+                          {formatPeriod(p)}
+                        </option>
+                      ))}
+                    </StyledSelect>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -697,6 +691,9 @@ const Payments: React.FC = () => {
                           </th>
                           <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                             Description / Consumption
+                          </th>
+                          <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                            Bill Amount
                           </th>
                           <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                             Amount Due
@@ -747,6 +744,9 @@ const Payments: React.FC = () => {
                                   )}
                                 </td>
                                 <td className="px-5 py-4 text-sm font-bold text-gray-900">
+                                  {formatPeso(b.amount ?? b.amount_due)}
+                                </td>
+                                <td className="px-5 py-4 text-sm font-semibold text-gray-700">
                                   {formatPeso(b.amount_due)}
                                 </td>
                                 <td className="px-5 py-4">{getStatusBadge(b.status)}</td>
@@ -755,7 +755,7 @@ const Payments: React.FC = () => {
                           })
                         ) : (
                           <tr>
-                            <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                            <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                               <Layers className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                               <p className="font-medium text-sm">No bills match the selected filter.</p>
                               <p className="text-xs text-gray-400 mt-1">

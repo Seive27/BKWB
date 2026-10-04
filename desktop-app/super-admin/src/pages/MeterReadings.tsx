@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Gauge,
@@ -67,6 +67,34 @@ const MeterReadings: React.FC<{
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(
     (initialStatusFilter as StatusFilter) || 'all'
   );
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<StatusFilter | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectStatusFromCard = useCallback((filter: StatusFilter) => {
+    setStatusFilter(filter);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(filter);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
+    };
+  }, []);
 
   useEffect(() => {
     if (!initialSelectedId || readings.length === 0) return;
@@ -132,8 +160,8 @@ const MeterReadings: React.FC<{
     );
   };
 
-  const selectStyles =
-    'py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
+  const filterFieldStyles =
+    'py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all';
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
@@ -148,7 +176,17 @@ const MeterReadings: React.FC<{
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          <button
+            type="button"
+            onClick={() => selectStatusFromCard('assigned')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+              cardFlash === 'assigned'
+                ? cardFlashOpaque
+                  ? 'border-primary-400 shadow-md transition-none'
+                  : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+            }`}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                 <Clock className="w-6 h-6 text-blue-600" />
@@ -156,8 +194,18 @@ const MeterReadings: React.FC<{
             </div>
             <p className="text-sm text-gray-600 mb-1">ASSIGNED</p>
             <h3 className="text-3xl font-bold text-gray-900">{stats.assigned}</h3>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          </button>
+          <button
+            type="button"
+            onClick={() => selectStatusFromCard('pending_review')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+              cardFlash === 'pending_review'
+                ? cardFlashOpaque
+                  ? 'border-primary-400 shadow-md transition-none'
+                  : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+            }`}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center">
                 <Gauge className="w-6 h-6 text-amber-600" />
@@ -165,8 +213,18 @@ const MeterReadings: React.FC<{
             </div>
             <p className="text-sm text-gray-600 mb-1">PENDING REVIEW</p>
             <h3 className="text-3xl font-bold text-gray-900">{stats.pending}</h3>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          </button>
+          <button
+            type="button"
+            onClick={() => selectStatusFromCard('billed')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+              cardFlash === 'billed'
+                ? cardFlashOpaque
+                  ? 'border-primary-400 shadow-md transition-none'
+                  : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+            }`}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-emerald-600" />
@@ -174,8 +232,18 @@ const MeterReadings: React.FC<{
             </div>
             <p className="text-sm text-gray-600 mb-1">BILLED</p>
             <h3 className="text-3xl font-bold text-gray-900">{stats.billed}</h3>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          </button>
+          <button
+            type="button"
+            onClick={() => selectStatusFromCard('rejected')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+              cardFlash === 'rejected'
+                ? cardFlashOpaque
+                  ? 'border-primary-400 shadow-md transition-none'
+                  : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+            }`}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
                 <XCircle className="w-6 h-6 text-red-600" />
@@ -183,7 +251,7 @@ const MeterReadings: React.FC<{
             </div>
             <p className="text-sm text-gray-600 mb-1">REJECTED</p>
             <h3 className="text-3xl font-bold text-gray-900">{stats.rejected}</h3>
-          </div>
+          </button>
         </div>
 
         {/* Table Section */}
@@ -204,7 +272,7 @@ const MeterReadings: React.FC<{
               <StyledSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className={selectStyles}
+                className={filterFieldStyles}
               >
                 <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>

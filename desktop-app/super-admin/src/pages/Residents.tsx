@@ -29,6 +29,7 @@ import {
 } from '../services/residentService';
 import { SITIO_OPTIONS } from '../constants';
 import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
+import { sitiosMatch } from '../utils';
 import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
@@ -596,7 +597,7 @@ const Residents: React.FC = () => {
           (r.meterNumber ?? '').toLowerCase().includes(q) ||
           (r.sitio ?? '').toLowerCase().includes(q) ||
           (r.email ?? '').toLowerCase().includes(q);
-        const matchesSitio = sitioFilter === '' || (r.sitio ?? '') === sitioFilter;
+        const matchesSitio = sitioFilter === '' || sitiosMatch(r.sitio, sitioFilter);
         const displayStatus = getDisplayStatus(r);
         const matchesStatus = statusFilter === '' || displayStatus === statusFilter;
         return matchesSearch && matchesSitio && matchesStatus;

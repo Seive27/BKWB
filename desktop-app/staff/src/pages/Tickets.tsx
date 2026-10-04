@@ -17,9 +17,9 @@ import {
   Save,
   Loader2,
   MessageSquare,
-  ChevronDown,
 } from 'lucide-react';
 import TicketCard from '../components/ui/TicketCard';
+import StyledSelect from '../components/ui/StyledSelect';
 import CreateTicketModal from '../components/modals/CreateTicketModal';
 import { useAuth } from '../hooks/useAuth';
 import { useTickets } from '../hooks/useTickets';
@@ -429,28 +429,25 @@ const Tickets: React.FC<{
   const getPrioritySelect = (priority: TicketPriority) => {
     const p = priorityStyles[priority];
     return (
-      <div className="relative inline-flex items-center">
-        <select
-          value={priority}
-          disabled={actionBusy}
-          onChange={(e) => void handlePriorityChange(e.target.value as TicketPriority)}
-          className={`appearance-none cursor-pointer pl-2.5 pr-7 py-1 rounded-full text-xs font-semibold border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${p.bg} ${p.text}`}
-          title="Set ticket priority"
-          aria-label="Ticket priority"
-        >
-          {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
-            <option key={value} value={value}>
-              {TICKET_PRIORITY_LABELS[value]}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" />
-      </div>
+      <StyledSelect
+        value={priority}
+        disabled={actionBusy}
+        onChange={(e) => void handlePriorityChange(e.target.value as TicketPriority)}
+        className={`cursor-pointer pl-2.5 py-1 rounded-full text-xs font-semibold border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${p.bg} ${p.text}`}
+        title="Set ticket priority"
+        aria-label="Ticket priority"
+      >
+        {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
+          <option key={value} value={value}>
+            {TICKET_PRIORITY_LABELS[value]}
+          </option>
+        ))}
+      </StyledSelect>
     );
   };
 
   const selectStyles =
-    'w-full appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
+    'w-full py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-700';
 
   return (
     <div className="flex-1 flex h-screen overflow-hidden bg-gray-50">
@@ -478,64 +475,56 @@ const Tickets: React.FC<{
 
           {/* Filters */}
           <div className="grid grid-cols-2 gap-2">
-            <div className="relative">
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
-                className={selectStyles}
-              >
-                <option value="all">All Categories</option>
-                {(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((cat) => (
-                  <option key={cat} value={cat}>
-                    {TICKET_CATEGORY_LABELS[cat]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            </div>
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className={selectStyles}
-              >
-                <option value="all">All Statuses</option>
-                {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map((st) => (
-                  <option key={st} value={st}>
-                    {TICKET_STATUS_LABELS[st]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            </div>
-            <div className="relative">
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
-                className={selectStyles}
-              >
-                <option value="all">All Priorities</option>
-                {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((pr) => (
-                  <option key={pr} value={pr}>
-                    {TICKET_PRIORITY_LABELS[pr]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            </div>
-            <div className="relative">
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as SortKey)}
-                className={selectStyles}
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="priority">Priority (High → Low)</option>
-                <option value="status">Status (Open → Closed)</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            </div>
+            <StyledSelect
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
+              className={selectStyles}
+              wrapperClassName="w-full"
+            >
+              <option value="all">All Categories</option>
+              {(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((cat) => (
+                <option key={cat} value={cat}>
+                  {TICKET_CATEGORY_LABELS[cat]}
+                </option>
+              ))}
+            </StyledSelect>
+            <StyledSelect
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className={selectStyles}
+              wrapperClassName="w-full"
+            >
+              <option value="all">All Statuses</option>
+              {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map((st) => (
+                <option key={st} value={st}>
+                  {TICKET_STATUS_LABELS[st]}
+                </option>
+              ))}
+            </StyledSelect>
+            <StyledSelect
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
+              className={selectStyles}
+              wrapperClassName="w-full"
+            >
+              <option value="all">All Priorities</option>
+              {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((pr) => (
+                <option key={pr} value={pr}>
+                  {TICKET_PRIORITY_LABELS[pr]}
+                </option>
+              ))}
+            </StyledSelect>
+            <StyledSelect
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className={selectStyles}
+              wrapperClassName="w-full"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="priority">Priority (High → Low)</option>
+              <option value="status">Status (Open → Closed)</option>
+            </StyledSelect>
           </div>
         </div>
 
@@ -955,38 +944,36 @@ const Tickets: React.FC<{
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
               Assign To
             </label>
-            <div className="relative mb-5">
-              <select
-                value={selectedStaffId}
-                onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="w-full appearance-none pl-4 pr-10 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white text-gray-900"
-              >
-                <option value="">Select staff or meter reader</option>
-                <optgroup label="Staff">
-                  {staffOptions.filter((s) => s.role === 'staff').map((s) => {
-                    const name = `${s.first_name} ${s.last_name}`.trim();
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {name || s.email || 'Unnamed staff'}
-                        {name && s.email ? ` — ${s.email}` : ''}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-                <optgroup label="Meter Readers">
-                  {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => {
-                    const name = `${s.first_name} ${s.last_name}`.trim();
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {name || s.email || 'Unnamed meter reader'}
-                        {name && s.email ? ` — ${s.email}` : ''}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            </div>
+            <StyledSelect
+              value={selectedStaffId}
+              onChange={(e) => setSelectedStaffId(e.target.value)}
+              className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
+              wrapperClassName="w-full mb-5"
+            >
+              <option value="">Select staff or meter reader</option>
+              <optgroup label="Staff">
+                {staffOptions.filter((s) => s.role === 'staff').map((s) => {
+                  const name = `${s.first_name} ${s.last_name}`.trim();
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {name || s.email || 'Unnamed staff'}
+                      {name && s.email ? ` — ${s.email}` : ''}
+                    </option>
+                  );
+                })}
+              </optgroup>
+              <optgroup label="Meter Readers">
+                {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => {
+                  const name = `${s.first_name} ${s.last_name}`.trim();
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {name || s.email || 'Unnamed meter reader'}
+                      {name && s.email ? ` — ${s.email}` : ''}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            </StyledSelect>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowAssignModal(false)}

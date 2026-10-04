@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Bell,
@@ -29,9 +29,22 @@ import {
   softDeleteAllNotifications,
 } from '../services/notificationService';
 
+const PAGE_SIZE = 10;
+
+type NotificationFilter = 'all' | 'unread' | 'read';
+
 type NotificationsProps = {
   onNavigateToRelated?: (notification: AppNotification) => void;
 };
+
+function cardFlashClass(isFlashing: boolean, opaque: boolean): string {
+  if (!isFlashing) {
+    return 'border-gray-200 hover:border-primary-300 transition-all duration-150';
+  }
+  return opaque
+    ? 'border-primary-400 shadow-md transition-none'
+    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out';
+}
 
 const typeConfig: Record<
   NotificationType,
@@ -71,12 +84,41 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
   const { showToast } = useToast();
   const isSuperAdmin = user?.role === 'super_admin';
 
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [filter, setFilter] = useState<NotificationFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [mineOnly, setMineOnly] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  /** Brief border flash on stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<NotificationFilter | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
+
+  const selectFilterFromCard = useCallback((next: NotificationFilter) => {
+    setFilter(next);
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(next);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
+    };
+  }, []);
 
   const { notifications, unreadCount, loading, error, refresh } = useNotifications({
     mineOnly: isSuperAdmin ? mineOnly : true,
@@ -84,7 +126,10 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
 
   const filtered = useMemo(() => {
     return notifications.filter((n) => {
-      const matchFilter = filter === 'all' || (filter === 'unread' && !n.is_read);
+      const matchFilter =
+        filter === 'all' ||
+        (filter === 'unread' && !n.is_read) ||
+        (filter === 'read' && n.is_read);
       const q = searchQuery.trim().toLowerCase();
       const matchSearch =
         !q ||
@@ -94,6 +139,20 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
       return matchFilter && matchSearch;
     });
   }, [notifications, filter, searchQuery]);
+
+  // Reset pagination whenever search/filters change.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, searchQuery, mineOnly]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
+  const startEntry = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endEntry = Math.min(safePage * PAGE_SIZE, filtered.length);
 
   const handleOpenNotification = async (notification: AppNotification) => {
     if (!notification.is_read) {
@@ -203,13 +262,23 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
               >
                 Unread ({unreadCount})
               </button>
+              <button
+                onClick={() => setFilter('read')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${filter === 'read' ? 'bg-primary-100 text-primary-600' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                Read
+              </button>
             </div>
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          <button
+            type="button"
+            onClick={() => selectFilterFromCard('all')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${cardFlashClass(cardFlash === 'all', cardFlashOpaque)}`}
+          >
             <div className="flex items-center justify-between mb-2">
               <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
                 <Bell className="w-5 h-5 text-blue-600" />
@@ -217,8 +286,12 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Total Notifications</p>
             <h3 className="text-3xl font-bold text-gray-900">{notifications.length}</h3>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          </button>
+          <button
+            type="button"
+            onClick={() => selectFilterFromCard('unread')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${cardFlashClass(cardFlash === 'unread', cardFlashOpaque)}`}
+          >
             <div className="flex items-center justify-between mb-2">
               <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-amber-600" />
@@ -226,8 +299,12 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Unread</p>
             <h3 className="text-3xl font-bold text-gray-900">{unreadCount}</h3>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-200">
+          </button>
+          <button
+            type="button"
+            onClick={() => selectFilterFromCard('read')}
+            className={`text-left bg-white rounded-xl p-6 border cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${cardFlashClass(cardFlash === 'read', cardFlashOpaque)}`}
+          >
             <div className="flex items-center justify-between mb-2">
               <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
@@ -235,7 +312,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
             </div>
             <p className="text-xs text-gray-500 uppercase mb-1">Read</p>
             <h3 className="text-3xl font-bold text-gray-900">{notifications.length - unreadCount}</h3>
-          </div>
+          </button>
         </div>
 
         {/* Error state */}
@@ -276,11 +353,15 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
                 </div>
                 <p className="text-sm font-medium text-gray-900">No notifications found</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {filter === 'unread' ? 'You have no unread notifications' : 'Try adjusting your search'}
+                  {filter === 'unread'
+                    ? 'You have no unread notifications'
+                    : filter === 'read'
+                      ? 'You have no read notifications'
+                      : 'Try adjusting your search'}
                 </p>
               </div>
             ) : (
-              filtered.map((notification) => {
+              paginated.map((notification) => {
                 const config = typeConfig[notification.type] ?? typeConfig.system;
                 const Icon = config.icon;
                 const isBusy = busyId === notification.id;
@@ -329,6 +410,56 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
               })
             )}
           </div>
+
+          {/* Pagination */}
+          {!loading && filtered.length > 0 && (
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing {startEntry} - {endEntry} of {filtered.length} notifications
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (safePage <= 3) {
+                    pageNum = i + 1;
+                  } else if (safePage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = safePage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        safePage === pageNum
+                          ? 'bg-primary-600 text-white'
+                          : 'text-gray-600 border border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

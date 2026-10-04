@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import StyledSelect from './StyledSelect';
 
 const MONTH_NAMES = [
   'January',
@@ -181,10 +182,11 @@ export function FutureDateTimeField({
               <ChevronLeft className="h-5 w-5" />
             </button>
 
-            <select
+            <StyledSelect
               value={viewMonth}
               onChange={(e) => setViewMonth(Number(e.target.value))}
-              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="min-w-0 flex-1"
             >
               {MONTH_NAMES.map((name, index) => {
                 const month = index + 1;
@@ -195,23 +197,24 @@ export function FutureDateTimeField({
                   </option>
                 );
               })}
-            </select>
+            </StyledSelect>
 
-            <select
+            <StyledSelect
               value={viewYear}
               onChange={(e) => {
                 const nextY = Number(e.target.value);
                 setViewYear(nextY);
                 if (nextY === min.y && viewMonth < min.m) setViewMonth(min.m);
               }}
-              className="w-[7rem] rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              wrapperClassName="w-[7rem]"
             >
               {years.map((year) => (
                 <option key={year} value={year}>
                   {year}
                 </option>
               ))}
-            </select>
+            </StyledSelect>
 
             <button
               type="button"

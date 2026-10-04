@@ -141,12 +141,24 @@ export function BillDetailModal({
         }}
       >
         <View className="rounded-2xl bg-brand/5 px-4 py-4">
-          <Text className="text-center text-xs uppercase tracking-wide text-slate-400">
-            Amount Due
-          </Text>
-          <Text className="mt-1 text-center text-3xl font-bold text-brand">
-            {formatPeso(bill.amount_due)}
-          </Text>
+          <View className="flex-row items-center justify-center gap-8">
+            <View className="items-center">
+              <Text className="text-center text-xs uppercase tracking-wide text-slate-400">
+                Bill Amount
+              </Text>
+              <Text className="mt-1 text-center text-2xl font-bold text-brand">
+                {formatPeso(bill.amount ?? bill.amount_due)}
+              </Text>
+            </View>
+            <View className="items-center">
+              <Text className="text-center text-xs uppercase tracking-wide text-slate-400">
+                Amount Due
+              </Text>
+              <Text className="mt-1 text-center text-2xl font-bold text-slate-800">
+                {formatPeso(bill.amount_due)}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {unpaid ? (

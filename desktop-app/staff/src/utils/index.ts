@@ -48,3 +48,61 @@ export function hasKey<T extends object>(
 ): key is keyof T {
   return key in obj;
 }
+
+/** Normalize a sitio label for case-insensitive comparison. */
+export function sitioKey(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+/** True when two sitio labels refer to the same place (ignoring case/whitespace). */
+export function sitiosMatch(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  const keyA = sitioKey(a);
+  const keyB = sitioKey(b);
+  return keyA.length > 0 && keyA === keyB;
+}
+
+/**
+ * Deduplicate sitio names case-insensitively.
+ * `preferred` only controls display casing and sort order for names that
+ * already appear in `names` — it does not inject missing entries.
+ */
+export function dedupeSitios(
+  names: Iterable<string>,
+  preferred: readonly string[] = []
+): string[] {
+  const preferredDisplay = new Map<string, string>();
+  for (const name of preferred) {
+    const key = sitioKey(name);
+    if (key) preferredDisplay.set(key, name.trim());
+  }
+
+  const displayByKey = new Map<string, string>();
+  for (const name of names) {
+    const trimmed = name.trim();
+    const key = sitioKey(trimmed);
+    if (!key || displayByKey.has(key)) continue;
+    displayByKey.set(key, preferredDisplay.get(key) ?? trimmed);
+  }
+
+  if (preferred.length === 0) {
+    return [...displayByKey.values()];
+  }
+
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const name of preferred) {
+    const key = sitioKey(name);
+    if (!key || seen.has(key) || !displayByKey.has(key)) continue;
+    ordered.push(displayByKey.get(key)!);
+    seen.add(key);
+  }
+  for (const [key, name] of displayByKey) {
+    if (seen.has(key)) continue;
+    ordered.push(name);
+    seen.add(key);
+  }
+  return ordered;
+}

@@ -1,4 +1,6 @@
-﻿import { supabase } from '../lib/supabase';
+﻿import { SITIO_OPTIONS } from '../constants';
+import { supabase } from '../lib/supabase';
+import { dedupeSitios } from '../utils';
 
 // ── Types ──
 
@@ -219,13 +221,10 @@ export async function getSitioOptions(): Promise<string[]> {
   if (error) {
     throw new Error(getResidentServiceErrorMessage(error));
   }
-  return [
-    ...new Set(
-      (data ?? [])
-        .map((d) => (d as { sitio: string | null }).sitio)
-        .filter((s): s is string => !!s)
-    ),
-  ];
+  const dbSitios = (data ?? [])
+    .map((d) => ((d as { sitio: string | null }).sitio ?? '').trim())
+    .filter(Boolean);
+  return dedupeSitios(dbSitios, SITIO_OPTIONS);
 }
 
 /** Aggregate resident + account stats (resident role only). */

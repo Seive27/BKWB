@@ -21,6 +21,7 @@ import {
 import type { Role } from '../types';
 
 const ROLE_FILTERS = ['All Roles', 'Super Admin', 'Staff', 'Meter Reader', 'Resident'] as const;
+const PAGE_SIZE = 10;
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
@@ -34,6 +35,7 @@ const Users: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('All Roles');
   const [showRoleFilter, setShowRoleFilter] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,20 @@ const Users: React.FC = () => {
     const matchesRole = roleFilter === 'All Roles' || user.roleLabel === roleFilter;
     return matchesSearch && matchesRole;
   });
+
+  // Reset pagination whenever search/filters change.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, roleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedUsers = filteredUsers.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
+  const startEntry = filteredUsers.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endEntry = Math.min(safePage * PAGE_SIZE, filteredUsers.length);
 
   const handleAddUser = async (userData: UserFormData) => {
     const requestId = ++addUserRequestRef.current;
@@ -325,7 +341,7 @@ const Users: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((user) => (
+                  paginatedUsers.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
@@ -370,18 +386,65 @@ const Users: React.FC = () => {
             </table>
           </div>
 
-          {/* Footer */}
+          {/* Pagination */}
           <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
             <div className="text-sm text-gray-600">
-              Showing {filteredUsers.length} of {totalUsers.toLocaleString()} users
+              {filteredUsers.length === 0
+                ? 'Showing 0 users'
+                : `Showing ${startEntry} - ${endEntry} of ${filteredUsers.length} users`}
             </div>
-            <button
-              onClick={load}
-              className="flex items-center space-x-2 px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={load}
+                className="flex items-center space-x-2 px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Refresh</span>
+              </button>
+              {!loading && filteredUsers.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (safePage <= 3) {
+                      pageNum = i + 1;
+                    } else if (safePage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = safePage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-1 text-sm rounded transition-colors ${
+                          safePage === pageNum
+                            ? 'bg-primary-600 text-white'
+                            : 'text-gray-600 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                    className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

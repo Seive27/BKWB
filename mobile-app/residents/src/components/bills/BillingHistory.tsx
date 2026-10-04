@@ -43,7 +43,13 @@ function HistoryBillCard({ bill, onPress }: { bill: ResidentBill; onPress: () =>
 
       <View className="gap-2">
         <View className="flex-row items-center justify-between">
-          <Text className="text-sm text-slate-400">Amount:</Text>
+          <Text className="text-sm text-slate-400">Bill Amount:</Text>
+          <Text className="text-sm font-bold text-slate-800">
+            {formatPeso(bill.amount ?? bill.amount_due)}
+          </Text>
+        </View>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-sm text-slate-400">Amount Due:</Text>
           <Text className="text-sm font-bold text-slate-800">{formatPeso(bill.amount_due)}</Text>
         </View>
         {bill.paid_at ? (

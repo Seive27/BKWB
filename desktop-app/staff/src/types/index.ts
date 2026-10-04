@@ -110,6 +110,9 @@ export interface Bill {
   consumption: number | null;
   water_rate: number;
   extra_components: { id?: string; category: string; price: number }[] | null;
+  /** Original bill total (does not decrease with partial payments). */
+  amount: number | null;
+  /** Remaining balance after payments. */
   amount_due: number;
   status: BillStatus;
   due_date: string | null;

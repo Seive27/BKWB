@@ -489,6 +489,40 @@ export async function getPendingPayments(): Promise<Payment[]> {
   return data as any[];
 }
 
+/** Online methods written by PayMongo webhook / hosted checkout. */
+const ONLINE_PAYMENT_METHODS = ['card', 'paymaya', 'grab_pay', 'online'] as const;
+
+/** True when a payment row was confirmed by PayMongo (or another hosted online checkout). */
+export function isPayMongoPayment(row: {
+  payment_method?: string | null;
+  notes?: string | null;
+} | null | undefined): boolean {
+  if (!row) return false;
+  const method = (row.payment_method ?? '').toLowerCase();
+  if ((ONLINE_PAYMENT_METHODS as readonly string[]).includes(method)) return true;
+  const notes = row.notes ?? '';
+  return notes.includes('paymongo') || notes.includes('"provider":"paymongo"');
+}
+
+/**
+ * Recent completed online / PayMongo payments for the staff Payments feed.
+ * These are auto-confirmed by the webhook (no staff approve step).
+ */
+export async function getRecentOnlinePayments(limit = 20): Promise<Payment[]> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*, bills(bill_number, billing_period), profiles:resident_id(first_name, last_name)')
+    .eq('status', 'completed')
+    .in('payment_method', [...ONLINE_PAYMENT_METHODS])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as any[];
+}
+
 export async function verifyPendingPayment(paymentId: string, action: 'approve' | 'reject'): Promise<void> {
   const status = action === 'approve' ? 'completed' : 'cancelled';
   

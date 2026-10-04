@@ -22,13 +22,16 @@ import {
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
-import { getPendingPayments, verifyPendingPaymentRPC } from '../services/paymentService';
 import { useToast } from '../components/ui/ToastProvider';
 import { getBills, subscribeToBills } from '../services/billService';
 import {
+  getPendingPayments,
+  getRecentOnlinePayments,
+  isPayMongoPayment,
   recordMultiBillPayment,
   sendOfficialReceiptToResident,
   subscribeToPayments,
+  verifyPendingPaymentRPC,
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
@@ -99,6 +102,7 @@ const Payments: React.FC = () => {
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [pendingOnlinePayments, setPendingOnlinePayments] = useState<any[]>([]);
+  const [recentOnlinePayments, setRecentOnlinePayments] = useState<any[]>([]);
   const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
   const { showToast } = useToast();
 
@@ -120,15 +124,17 @@ const Payments: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [resList, billList, sitioList, pendingPaymentsList] = await Promise.all([
+      const [resList, billList, sitioList, pendingPaymentsList, recentOnlineList] = await Promise.all([
         getResidents(),
         getBills().catch(() => [] as Bill[]),
         getSitioOptions().catch(() => [] as string[]),
-          getPendingPayments().catch(() => []),
+        getPendingPayments().catch(() => []),
+        getRecentOnlinePayments().catch(() => []),
       ]);
       setResidents(resList);
       setBills(billList);
-        setPendingOnlinePayments(pendingPaymentsList);
+      setPendingOnlinePayments(pendingPaymentsList);
+      setRecentOnlinePayments(recentOnlineList);
       setSitios(sitioList);
 
       // Auto-select first resident if none selected
@@ -148,17 +154,36 @@ const Payments: React.FC = () => {
       getBills().then((b) => setBills(b)).catch(() => {});
     });
     const unsubPayments = subscribeToPayments((event, row) => {
-        getBills().then((b) => setBills(b)).catch(() => {});
-        getPendingPayments().then((p) => setPendingOnlinePayments(p)).catch(() => {});
-        if (event === 'INSERT' && row && row.status === 'pending') {
-          showToast('info', 'New online payment submitted!');
+      getBills().then((b) => setBills(b)).catch(() => {});
+      getPendingPayments().then((p) => setPendingOnlinePayments(p)).catch(() => {});
+      getRecentOnlinePayments().then((p) => setRecentOnlinePayments(p)).catch(() => {});
+
+      if (event === 'INSERT' && row && row.status === 'pending') {
+        showToast('info', 'New online payment submitted for verification.');
+        return;
+      }
+
+      // PayMongo webhook inserts completed payments — surface amount + jump to that resident.
+      if (
+        (event === 'INSERT' || event === 'UPDATE') &&
+        row &&
+        row.status === 'completed' &&
+        isPayMongoPayment(row)
+      ) {
+        const amountLabel = formatPeso(Number(row.amount) || 0);
+        const methodLabel = (row.payment_method || 'online').replace('_', ' ').toUpperCase();
+        showToast('success', `PayMongo payment received: ${amountLabel} via ${methodLabel}. Bill marked paid.`);
+        if (row.resident_id) {
+          setSelectedResidentId(row.resident_id);
+          setStatusFilter('paid');
         }
+      }
     });
     return () => {
       unsubBills();
       unsubPayments();
     };
-  }, [loadData]);
+  }, [loadData, showToast]);
 
   // Distinct billing periods
   const billingPeriods = useMemo(() => {
@@ -419,6 +444,69 @@ const Payments: React.FC = () => {
             </div>
           )}
 
+          {/* Recent PayMongo / online payments (auto-confirmed by webhook) */}
+          {recentOnlinePayments.length > 0 && (
+            <div className="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden mb-6">
+              <div className="bg-emerald-50 p-4 border-b border-emerald-200">
+                <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5" />
+                  Recent Online Payments ({recentOnlinePayments.length})
+                </h3>
+                <p className="text-sm text-emerald-700 mt-1">
+                  Confirmed via PayMongo. Amount and bill status update automatically — no staff approval needed.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-emerald-50/50 border-b border-emerald-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Resident</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Bill</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Method</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Amount Paid</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-100">
+                    {recentOnlinePayments.map((p) => {
+                      const name = [p.profiles?.first_name, p.profiles?.last_name].filter(Boolean).join(' ') || 'Resident';
+                      return (
+                        <tr
+                          key={p.id}
+                          className="hover:bg-emerald-50/40 cursor-pointer"
+                          onClick={() => {
+                            if (p.resident_id) {
+                              setSelectedResidentId(p.resident_id);
+                              setStatusFilter('paid');
+                            }
+                          }}
+                        >
+                          <td className="px-4 py-3 font-medium text-gray-900">{name}</td>
+                          <td className="px-4 py-3 text-gray-600">{p.bills?.bill_number || '—'}</td>
+                          <td className="px-4 py-3 text-gray-700 uppercase text-xs font-semibold">
+                            {(p.payment_method || 'online').replace('_', ' ')}
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-emerald-700">
+                            {formatPeso(Number(p.amount) || 0)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                              PAID
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {formatDate(p.payment_date || p.created_at)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Search & Filter Bar */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -600,7 +688,7 @@ const Payments: React.FC = () => {
                             {pendingOnlinePayments.filter(p => p.resident_id === selectedResident.id).map((p) => (
                               <tr key={p.id} className="hover:bg-amber-50/30">
                                 <td className="px-4 py-3 font-mono text-gray-700 font-semibold">{p.reference_number}</td>
-                                <td className="px-4 py-3 font-medium text-amber-700">?{p.amount.toLocaleString()}</td>
+                                <td className="px-4 py-3 font-medium text-amber-700">{formatPeso(Number(p.amount) || 0)}</td>
                                 <td className="px-4 py-3 text-gray-600">{new Date(p.created_at).toLocaleDateString()}</td>
                                 <td className="px-4 py-3 text-right space-x-2">
                                   <button
@@ -696,6 +784,9 @@ const Payments: React.FC = () => {
                             Bill Amount
                           </th>
                           <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                            Amount Paid
+                          </th>
+                          <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                             Amount Due
                           </th>
                           <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
@@ -708,6 +799,9 @@ const Payments: React.FC = () => {
                           displayedBills.map((b) => {
                             const isChecked = selectedBillIds.includes(b.id);
                             const isPayable = b.status === 'pending' || b.status === 'overdue';
+                            const billTotal = Number(b.amount ?? b.amount_due) || 0;
+                            const amountDue = Number(b.amount_due) || 0;
+                            const amountPaid = Math.max(0, Math.round((billTotal - amountDue) * 100) / 100);
                             return (
                               <tr
                                 key={b.id}
@@ -744,10 +838,13 @@ const Payments: React.FC = () => {
                                   )}
                                 </td>
                                 <td className="px-5 py-4 text-sm font-bold text-gray-900">
-                                  {formatPeso(b.amount ?? b.amount_due)}
+                                  {formatPeso(billTotal)}
+                                </td>
+                                <td className="px-5 py-4 text-sm font-semibold text-emerald-700">
+                                  {formatPeso(amountPaid)}
                                 </td>
                                 <td className="px-5 py-4 text-sm font-semibold text-gray-700">
-                                  {formatPeso(b.amount_due)}
+                                  {formatPeso(amountDue)}
                                 </td>
                                 <td className="px-5 py-4">{getStatusBadge(b.status)}</td>
                               </tr>
@@ -755,7 +852,7 @@ const Payments: React.FC = () => {
                           })
                         ) : (
                           <tr>
-                            <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                            <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                               <Layers className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                               <p className="font-medium text-sm">No bills match the selected filter.</p>
                               <p className="text-xs text-gray-400 mt-1">

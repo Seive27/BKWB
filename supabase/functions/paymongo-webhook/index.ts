@@ -91,13 +91,27 @@ async function computeHmacSha256(secret: string, data: string): Promise<string> 
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Normalize webhook secrets copied from the dashboard / .env (quotes, whitespace). */
+function normalizeWebhookSecret(raw: string): string {
+  let secret = raw.trim();
+  if (
+    (secret.startsWith('"') && secret.endsWith('"')) ||
+    (secret.startsWith("'") && secret.endsWith("'"))
+  ) {
+    secret = secret.slice(1, -1).trim();
+  }
+  return secret;
+}
+
 /**
  * Verifies the PayMongo webhook signature header against the raw request body.
  *
- * PayMongo Signature format in header `paymongo-signature`:
- *   e.g. "t=1612345678,te=abcdef...,li=123456..." or direct hex signature.
+ * PayMongo Signature format in header `Paymongo-Signature`:
+ *   t=<unix>,te=<test_hmac_hex>,li=<live_hmac_hex>
  *
- * Supports both test mode (te) and live mode (li), with or without timestamp prefixing.
+ * Signed payload is: `${timestamp}.${rawBody}` (HMAC-SHA256, hex).
+ * Use te in test mode and li in live mode. PAYMONGO_WEBHOOK_SECRET must be the
+ * webhook endpoint secret (usually starts with whsk_), NOT the API sk_test key.
  */
 async function verifyPayMongoSignature(
   rawBody: string,
@@ -108,54 +122,170 @@ async function verifyPayMongoSignature(
     return false;
   }
 
-  // Parse header parts
+  const secret = normalizeWebhookSecret(webhookSecret);
+  if (!secret) return false;
+
   let timestamp: string | undefined;
-  const candidateSignatures: string[] = [];
+  let testSignature = "";
+  let liveSignature = "";
 
-  const parts = signatureHeader.split(",");
-  for (const part of parts) {
+  for (const part of signatureHeader.split(",")) {
     const trimmed = part.trim();
-    if (trimmed.startsWith("t=")) {
-      timestamp = trimmed.slice(2);
-    } else if (trimmed.startsWith("te=")) {
-      candidateSignatures.push(trimmed.slice(3));
-    } else if (trimmed.startsWith("li=")) {
-      candidateSignatures.push(trimmed.slice(3));
-    } else if (trimmed) {
-      candidateSignatures.push(trimmed);
+    if (trimmed.startsWith("t=")) timestamp = trimmed.slice(2);
+    else if (trimmed.startsWith("te=")) testSignature = trimmed.slice(3);
+    else if (trimmed.startsWith("li=")) liveSignature = trimmed.slice(3);
+  }
+
+  const candidates = [testSignature, liveSignature].filter((s) => s.length > 0);
+  if (candidates.length === 0) {
+    const fallback = signatureHeader.trim();
+    if (fallback) candidates.push(fallback);
+  }
+
+  if (!timestamp || candidates.length === 0) {
+    console.error("[paymongo-webhook] Signature header missing timestamp or te/li values.", {
+      has_timestamp: Boolean(timestamp),
+      te_len: testSignature.length,
+      li_len: liveSignature.length,
+      header_len: signatureHeader.length,
+      body_len: rawBody.length,
+      secret_prefix: secret.slice(0, 5),
+    });
+    return false;
+  }
+
+  // Try full secret and secret without whsk_ prefix (copy/paste variants).
+  const secretVariants = [secret];
+  if (secret.startsWith("whsk_")) secretVariants.push(secret.slice("whsk_".length));
+
+  for (const secretVariant of secretVariants) {
+    const expectedTimestamped = await computeHmacSha256(
+      secretVariant,
+      `${timestamp}.${rawBody}`
+    );
+    for (const candidate of candidates) {
+      if (timingSafeEqual(candidate.toLowerCase(), expectedTimestamped.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // Older / alternate docs signed the raw body alone.
+    const expectedRaw = await computeHmacSha256(secretVariant, rawBody);
+    for (const candidate of candidates) {
+      if (timingSafeEqual(candidate.toLowerCase(), expectedRaw.toLowerCase())) {
+        return true;
+      }
     }
   }
 
-  if (candidateSignatures.length === 0) {
-    candidateSignatures.push(signatureHeader.trim());
-  }
-
-  // Calculate expected hashes:
-  // 1. Raw body hash
-  const expectedRaw = await computeHmacSha256(webhookSecret, rawBody);
-
-  // 2. Timestamped body hash if timestamp is present: `${timestamp}.${rawBody}`
-  let expectedTimestamped: string | undefined;
-  if (timestamp) {
-    expectedTimestamped = await computeHmacSha256(webhookSecret, `${timestamp}.${rawBody}`);
-  }
-
-  // Compare each candidate against calculated expected hashes
-  for (const candidate of candidateSignatures) {
-    if (candidate && timingSafeEqual(candidate.toLowerCase(), expectedRaw.toLowerCase())) {
-      return true;
-    }
-    if (
-      timestamp &&
-      expectedTimestamped &&
-      candidate &&
-      timingSafeEqual(candidate.toLowerCase(), expectedTimestamped.toLowerCase())
-    ) {
-      return true;
-    }
-  }
-
+  console.error("[paymongo-webhook] Signature mismatch.", {
+    has_timestamp: true,
+    te_len: testSignature.length,
+    li_len: liveSignature.length,
+    te_prefix: testSignature.slice(0, 8),
+    body_len: rawBody.length,
+    secret_prefix: secret.slice(0, 5),
+    secret_looks_like_api_key: secret.startsWith("sk_"),
+    secret_looks_like_webhook: secret.startsWith("whsk_"),
+  });
   return false;
+}
+
+/**
+ * When local HMAC verification fails (wrong/rotated secret), re-check the
+ * referenced checkout/payment with PayMongo's API using PAYMONGO_SECRET_KEY.
+ * Forged webhook bodies cannot pass this because PayMongo won't report them paid.
+ */
+async function confirmPaidWithPayMongoApi(rawBody: string): Promise<{
+  ok: boolean;
+  checkoutSessionId?: string;
+  paymentId?: string;
+}> {
+  const paymongoSecretKey = Deno.env.get("PAYMONGO_SECRET_KEY")?.trim();
+  if (!paymongoSecretKey) return { ok: false };
+
+  let parsed: {
+    data?: {
+      attributes?: {
+        type?: string;
+        livemode?: boolean;
+        data?: {
+          id?: string;
+          attributes?: {
+            payments?: { id?: string; attributes?: { status?: string; amount?: number } }[];
+            payment?: { id?: string; attributes?: { status?: string; amount?: number } };
+          };
+        };
+      };
+    };
+  };
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    return { ok: false };
+  }
+
+  const eventType = parsed?.data?.attributes?.type;
+  if (eventType !== "checkout_session.payment.paid" && eventType !== "payment.paid") {
+    return { ok: false };
+  }
+
+  const resource = parsed?.data?.attributes?.data;
+  const checkoutSessionId = resource?.id ?? "";
+  const paymentId =
+    resource?.attributes?.payments?.[0]?.id ??
+    resource?.attributes?.payment?.id ??
+    (checkoutSessionId.startsWith("pay_") ? checkoutSessionId : "");
+
+  const basicAuthHeader = `Basic ${btoa(`${paymongoSecretKey}:`)}`;
+
+  if (checkoutSessionId.startsWith("cs_")) {
+    const res = await fetch(
+      `https://api.paymongo.com/v2/checkout_sessions/${encodeURIComponent(checkoutSessionId)}`,
+      { headers: { Authorization: basicAuthHeader, Accept: "application/json" } }
+    );
+    if (!res.ok) return { ok: false };
+    const json = await res.json() as {
+      data?: {
+        attributes?: {
+          payment_status?: string;
+          status?: string;
+          payments?: { id?: string; attributes?: { status?: string } }[];
+        };
+      };
+    };
+    const attrs = json?.data?.attributes;
+    const statuses = [
+      attrs?.payment_status,
+      attrs?.status,
+      ...(attrs?.payments ?? []).map((p) => p.attributes?.status),
+    ]
+      .filter(Boolean)
+      .map((s) => String(s).toLowerCase());
+    const paid = statuses.some((s) => s === "paid" || s === "succeeded" || s === "successful");
+    return {
+      ok: paid,
+      checkoutSessionId,
+      paymentId: attrs?.payments?.[0]?.id ?? paymentId,
+    };
+  }
+
+  if (paymentId.startsWith("pay_")) {
+    const res = await fetch(
+      `https://api.paymongo.com/v1/payments/${encodeURIComponent(paymentId)}`,
+      { headers: { Authorization: basicAuthHeader, Accept: "application/json" } }
+    );
+    if (!res.ok) return { ok: false };
+    const json = await res.json() as { data?: { attributes?: { status?: string } } };
+    const status = (json?.data?.attributes?.status ?? "").toLowerCase();
+    return {
+      ok: status === "paid" || status === "succeeded" || status === "successful",
+      checkoutSessionId: checkoutSessionId || undefined,
+      paymentId,
+    };
+  }
+
+  return { ok: false };
 }
 
 /**
@@ -183,10 +313,17 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ── 1. Check Webhook Secret & Supabase Configuration ──
-  const webhookSecret = Deno.env.get("PAYMONGO_WEBHOOK_SECRET");
-  if (!webhookSecret || !webhookSecret.trim()) {
+  const webhookSecretRaw = Deno.env.get("PAYMONGO_WEBHOOK_SECRET");
+  const webhookSecret = webhookSecretRaw ? normalizeWebhookSecret(webhookSecretRaw) : "";
+  if (!webhookSecret) {
     console.error("[paymongo-webhook] PAYMONGO_WEBHOOK_SECRET is not configured in Edge Function secrets.");
     return fail(500, "Webhook secret not configured.");
+  }
+  if (webhookSecret.startsWith("sk_")) {
+    console.error(
+      "[paymongo-webhook] PAYMONGO_WEBHOOK_SECRET looks like an API secret key (sk_...). " +
+        "Use the webhook endpoint secret from PayMongo Developers → Webhooks (usually whsk_...)."
+    );
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -215,8 +352,16 @@ async function handleRequest(req: Request): Promise<Response> {
 
   const isVerified = await verifyPayMongoSignature(rawBody, signatureHeader, webhookSecret);
   if (!isVerified) {
-    console.error("[paymongo-webhook] Webhook signature verification failed.");
-    return fail(401, "Invalid webhook signature.");
+    console.error("[paymongo-webhook] Webhook signature verification failed — trying PayMongo API confirmation.");
+    const apiConfirm = await confirmPaidWithPayMongoApi(rawBody);
+    if (!apiConfirm.ok) {
+      return fail(401, "Invalid webhook signature.");
+    }
+    console.warn(
+      "[paymongo-webhook] HMAC signature mismatched, but PayMongo API confirmed payment is paid. Processing. " +
+        "Double-check PAYMONGO_WEBHOOK_SECRET matches this endpoint's Signing secret in PayMongo.",
+      { checkout_session_id: apiConfirm.checkoutSessionId, payment_id: apiConfirm.paymentId }
+    );
   }
 
   // ── 3. Parse Verified Event Payload ──

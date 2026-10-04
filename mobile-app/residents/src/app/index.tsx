@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import * as Linking from 'expo-linking';
 
 import { type NavTab } from '@/components/ui/Navbar';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +12,17 @@ import Dashboard, { type DashboardDeepLink } from '@/screens/Dashboard';
 import Login from '@/screens/Login';
 import Profile from '@/screens/Profile';
 import type { LunasNavigateScreen } from '@/types/chatbot';
+
+function isPaymentReturnUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = Linking.parse(url);
+    const q = parsed.queryParams ?? {};
+    return q.paymentReturn === 'success' || q.paymentReturn === 'cancel';
+  } catch {
+    return /paymentReturn=success|payment-success/i.test(url);
+  }
+}
 
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -58,6 +70,21 @@ export default function HomeScreen() {
       cancelled = true;
       authListener.subscription.unsubscribe();
     };
+  }, []);
+
+  // After PayMongo "Return to Merchant", reopen on the Bills tab.
+  useEffect(() => {
+    const goToBillsIfPaymentReturn = (url: string | null) => {
+      if (!isPaymentReturnUrl(url)) return;
+      setShowChatBot(false);
+      setActiveTab('bills');
+    };
+
+    Linking.getInitialURL().then(goToBillsIfPaymentReturn).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      goToBillsIfPaymentReturn(url);
+    });
+    return () => sub.remove();
   }, []);
 
   const handleLunasNavigate = (screen: LunasNavigateScreen) => {

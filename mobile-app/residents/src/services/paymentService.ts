@@ -75,10 +75,18 @@ const PAYMENT_SELECT =
  * authoritative bill amount. Creating a session is NOT proof of payment:
  * the bill stays unpaid until the paymongo-webhook confirms it.
  */
-export async function createCheckoutSession(billId: string): Promise<CheckoutSession> {
+export async function createCheckoutSession(
+  billId: string,
+  options?: { appReturnUrl?: string }
+): Promise<CheckoutSession> {
   const { data, error: fnError } = await supabase.functions.invoke(
     'create-paymongo-checkout',
-    { body: { bill_id: billId } }
+    {
+      body: {
+        bill_id: billId,
+        ...(options?.appReturnUrl ? { app_return_url: options.appReturnUrl } : {}),
+      },
+    }
   );
 
   if (fnError) {
@@ -109,6 +117,76 @@ export async function createCheckoutSession(billId: string): Promise<CheckoutSes
     referenceNumber: result.reference_number || '',
     amount: Number(result.amount) || 0,
     currency: result.currency || 'PHP',
+  };
+}
+
+/**
+ * Ask the server to re-check PayMongo for a checkout session and mark the bill
+ * paid if PayMongo confirms payment. Used when the webhook is delayed/missing.
+ * Never invents a paid state locally — only the edge function + RPC can.
+ */
+export async function verifyPayMongoPayment(
+  billId: string,
+  checkoutSessionId?: string | null
+): Promise<{ confirmed: boolean; status?: string; amount?: number; error?: string }> {
+  // Refresh so a long GCash session doesn't call the function with an expired JWT.
+  try {
+    await supabase.auth.refreshSession();
+  } catch {
+    // continue with existing session
+  }
+
+  const body: { bill_id: string; checkout_session_id?: string } = {
+    bill_id: billId,
+  };
+  const sessionId = (checkoutSessionId ?? '').trim();
+  if (sessionId) body.checkout_session_id = sessionId;
+
+  const { data, error: fnError } = await supabase.functions.invoke(
+    'verify-paymongo-payment',
+    { body }
+  );
+
+  type VerifyBody = {
+    success?: boolean;
+    status?: string;
+    amount?: number;
+    error?: string;
+    message?: string;
+  };
+
+  let result = (data ?? {}) as VerifyBody;
+
+  if (fnError) {
+    // FunctionsHttpError: parse the response body for the real message.
+    const ctx = (fnError as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = (await ctx.json()) as VerifyBody;
+        if (body && typeof body === 'object') result = { ...result, ...body };
+      } catch {
+        // ignore parse errors
+      }
+    }
+    const detail = result.error || result.message;
+    return {
+      confirmed: false,
+      status: result.status,
+      error: detail || fnError.message || 'Verification failed.',
+    };
+  }
+
+  const confirmed =
+    result.success === true &&
+    (result.status === 'paid' ||
+      result.status === 'already_paid' ||
+      result.status === 'already_processed');
+
+  return {
+    confirmed,
+    status: result.status,
+    amount: result.amount,
+    error: confirmed ? undefined : result.error || result.message,
   };
 }
 

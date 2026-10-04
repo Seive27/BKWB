@@ -161,7 +161,11 @@ export default function Dashboard({
           onTabPress?.(tab);
         }}
         onBack={() => setQuickActionScreen(null)}
-        onBillPaid={() => loadBills(false)}
+        onBillPaid={() => {
+          loadBills(false);
+          setQuickActionScreen(null);
+          onOpenBills?.();
+        }}
       />
     );
   }

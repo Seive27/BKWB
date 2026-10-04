@@ -224,7 +224,9 @@ function periodFromReadingDate(readingDate: string | null, assignmentDate: strin
   periodStart: string;
   periodEnd: string;
 } {
-  const dateStr = (readingDate ?? assignmentDate).slice(0, 10);
+  // Prefer assignment_date: that is the billing cycle staff assigned
+  // (e.g. December). reading_date is only when the meter was read.
+  const dateStr = (assignmentDate || readingDate || '').slice(0, 10);
   const d = new Date(`${dateStr}T00:00:00`);
   if (Number.isNaN(d.getTime())) {
     throw new Error('Reading date is invalid.');
@@ -397,20 +399,37 @@ export async function previewBillReceiptForReading(
 
   const dates = periodFromReadingDate(reading.reading_date, reading.assignment_date);
 
-  // If a bill already exists for this period, show the real receipt.
-  const { data: existing, error: existingError } = await supabase
+  // Prefer a bill already tied to this reading.
+  const { data: byReading, error: byReadingError } = await supabase
+    .from('bills')
+    .select('id')
+    .eq('reading_id', reading.id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (byReadingError) {
+    throw new Error(getBillErrorMessage(byReadingError));
+  }
+  if (byReading?.id) {
+    return getBillReceiptData(byReading.id);
+  }
+
+  // Otherwise show an open (unpaid) bill for the period — paid/void bills for
+  // the same month must not block previewing a new reading.
+  const { data: existingOpen, error: existingError } = await supabase
     .from('bills')
     .select('id')
     .eq('account_id', reading.account_id)
     .eq('billing_period', dates.period)
+    .in('status', ['pending', 'overdue'])
     .is('deleted_at', null)
     .maybeSingle();
 
   if (existingError) {
     throw new Error(getBillErrorMessage(existingError));
   }
-  if (existing?.id) {
-    return getBillReceiptData(existing.id);
+  if (existingOpen?.id) {
+    return getBillReceiptData(existingOpen.id);
   }
 
   const [config, graceDays] = await Promise.all([getBillingConfig(), getGracePeriodDays()]);

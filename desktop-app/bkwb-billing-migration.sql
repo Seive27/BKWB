@@ -146,10 +146,12 @@ BEGIN
   END LOOP;
 END $$;
 
--- One bill per account per billing period; one bill per reading.
-CREATE UNIQUE INDEX IF NOT EXISTS bills_account_period_unique
+-- One OPEN (unpaid) bill per account per billing period; paid/void bills do
+-- not block a later rebill in the same month. One bill per reading.
+DROP INDEX IF EXISTS public.bills_account_period_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS bills_account_period_open_unique
   ON public.bills (account_id, billing_period)
-  WHERE deleted_at IS NULL;
+  WHERE deleted_at IS NULL AND status IN ('pending', 'overdue');
 
 CREATE UNIQUE INDEX IF NOT EXISTS bills_reading_unique
   ON public.bills (reading_id)
@@ -602,7 +604,9 @@ BEGIN
     INTO v_component_total
   FROM jsonb_array_elements(v_components) AS c;
 
-  v_period_date := COALESCE(v_reading.reading_date::date, v_reading.assignment_date);
+  -- Billing period comes from the assignment cycle (e.g. December),
+  -- not the calendar day the meter happened to be read.
+  v_period_date := COALESCE(v_reading.assignment_date, v_reading.reading_date::date);
   v_period := to_char(v_period_date, 'YYYY-MM');
   v_period_start := date_trunc('month', v_period_date)::date;
   v_period_end := (date_trunc('month', v_period_date) + INTERVAL '1 month - 1 day')::date;
@@ -610,52 +614,71 @@ BEGIN
 
   v_amount := round((v_reading.consumption * v_rate + v_component_total)::numeric, 2);
 
-  WITH ins AS (
-    INSERT INTO public.bills (
-      account_id, resident_id, reading_id, billing_period,
-      period_start, period_end, previous_reading, current_reading,
-      consumption, water_rate, extra_components, amount, amount_due,
-      status, due_date, generated_by
-    )
-    VALUES (
-      v_reading.account_id, v_reading.resident_id, v_reading.id, v_period,
-      v_period_start, v_period_end, v_reading.previous_reading, v_reading.current_reading,
-      v_reading.consumption, v_rate, v_components, v_amount, v_amount,
-      'pending', v_due_date, auth.uid()
-    )
-    ON CONFLICT (account_id, billing_period) WHERE deleted_at IS NULL DO NOTHING
-    RETURNING id, bill_number
-  )
-  SELECT id, bill_number INTO v_new_id, v_new_number FROM ins;
+  -- Idempotent: this reading already has a bill.
+  SELECT id, bill_number INTO v_existing_id, v_existing_number
+  FROM public.bills
+  WHERE reading_id = p_reading_id AND deleted_at IS NULL
+  LIMIT 1;
 
-  IF v_new_id IS NOT NULL THEN
+  IF v_existing_id IS NOT NULL THEN
     UPDATE public.meter_readings SET status = 'billed'
     WHERE id = p_reading_id AND status <> 'billed';
+
     RETURN jsonb_build_object(
-      'generated', TRUE,
-      'bill_id', v_new_id,
-      'bill_number', v_new_number,
-      'billing_period', v_period,
-      'amount_due', v_amount,
-      'amount', v_amount
+      'generated', FALSE,
+      'reason', 'already_billed_reading',
+      'message', 'A bill for this meter reading already exists.',
+      'bill_id', v_existing_id,
+      'bill_number', v_existing_number
     );
   END IF;
 
-  -- A bill for this account+period already exists — still mark the reading billed.
+  -- Block only when an open unpaid bill already exists for this period.
   SELECT id, bill_number INTO v_existing_id, v_existing_number
   FROM public.bills
-  WHERE account_id = v_reading.account_id AND billing_period = v_period AND deleted_at IS NULL
+  WHERE account_id = v_reading.account_id
+    AND billing_period = v_period
+    AND deleted_at IS NULL
+    AND status IN ('pending', 'overdue')
   LIMIT 1;
+
+  IF v_existing_id IS NOT NULL THEN
+    UPDATE public.meter_readings SET status = 'billed'
+    WHERE id = p_reading_id AND status <> 'billed';
+
+    RETURN jsonb_build_object(
+      'generated', FALSE,
+      'reason', 'duplicate',
+      'message', 'An unpaid bill for this billing period already exists.',
+      'bill_id', v_existing_id,
+      'bill_number', v_existing_number
+    );
+  END IF;
+
+  INSERT INTO public.bills (
+    account_id, resident_id, reading_id, billing_period,
+    period_start, period_end, previous_reading, current_reading,
+    consumption, water_rate, extra_components, amount, amount_due,
+    status, due_date, generated_by
+  )
+  VALUES (
+    v_reading.account_id, v_reading.resident_id, v_reading.id, v_period,
+    v_period_start, v_period_end, v_reading.previous_reading, v_reading.current_reading,
+    v_reading.consumption, v_rate, v_components, v_amount, v_amount,
+    'pending', v_due_date, auth.uid()
+  )
+  RETURNING id, bill_number INTO v_new_id, v_new_number;
 
   UPDATE public.meter_readings SET status = 'billed'
   WHERE id = p_reading_id AND status <> 'billed';
 
   RETURN jsonb_build_object(
-    'generated', FALSE,
-    'reason', 'duplicate',
-    'message', 'A bill for this billing period already exists.',
-    'bill_id', v_existing_id,
-    'bill_number', v_existing_number
+    'generated', TRUE,
+    'bill_id', v_new_id,
+    'bill_number', v_new_number,
+    'billing_period', v_period,
+    'amount_due', v_amount,
+    'amount', v_amount
   );
 END;
 $$;

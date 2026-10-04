@@ -1,0 +1,245 @@
+/// <reference path="../deno.d.ts" />
+// ============================================================
+// verify-paymongo-payment — BKWB Edge Function
+// ------------------------------------------------------------
+// Backup confirmation path when the PayMongo webhook is delayed,
+// misconfigured, or not delivered. The resident app calls this
+// after returning from hosted checkout.
+//
+// Resolution order:
+//   1. checkout_session_id from request body
+//   2. bills.paymongo_checkout_session_id
+//   3. PayMongo payments list matched by bill_id / bill_number
+//
+// Business failures return HTTP 200 with { success:false } so the
+// mobile client can show a clear message (supabase-js treats non-2xx
+// as a generic "Edge Function returned a non-2xx status code").
+// ============================================================
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+/** Always HTTP 200 for client-readable failures (except OPTIONS). */
+function fail(message: string, extra: Record<string, unknown> = {}): Response {
+  console.error(`[verify-paymongo-payment] FAIL: ${message}`, extra);
+  return json({ success: false, error: message, ...extra }, 200);
+}
+
+function firstStringValue(values: unknown[]): string | undefined {
+  for (const v of values) {
+    if (typeof v === "string" && v) return v;
+  }
+  return undefined;
+}
+
+function getSecretKey(): string | undefined {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const values = parsed as Record<string, unknown>;
+        const key = values["default"] ?? firstStringValue(Object.values(values));
+        if (typeof key === "string" && key) return key;
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? undefined;
+}
+
+function getPublishableKey(): string | undefined {
+  const raw = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const values = parsed as Record<string, unknown>;
+        const key = values["default"] ?? firstStringValue(Object.values(values));
+        if (typeof key === "string" && key) return key;
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  return Deno.env.get("SUPABASE_ANON_KEY") ?? undefined;
+}
+
+function mapPayMongoPaymentMethod(rawMethod?: string): string {
+  if (!rawMethod) return "online";
+  const m = rawMethod.toLowerCase().trim();
+  if (m === "gcash") return "gcash";
+  if (m === "card" || m === "credit_card" || m === "debit_card") return "card";
+  if (m === "paymaya" || m === "maya") return "paymaya";
+  if (m === "grab_pay") return "grab_pay";
+  if (m === "dob" || m === "dob_ubp" || m === "bank") return "bank";
+  return "online";
+}
+
+const PAID_STATUSES = new Set([
+  "paid",
+  "succeeded",
+  "successful",
+  "complete",
+  "completed",
+]);
+
+interface VerifyPayload {
+  bill_id?: string;
+  checkout_session_id?: string;
+}
+
+type PayMongoPayment = {
+  id?: string;
+  attributes?: {
+    amount?: number;
+    status?: string;
+    description?: string;
+    external_reference_number?: string;
+    source?: { type?: string };
+    payment_method_used?: string;
+    payment_method_type?: string;
+    metadata?: Record<string, string>;
+  };
+};
+
+type CheckoutAttrs = {
+  status?: string;
+  payment_status?: string;
+  reference_number?: string;
+  metadata?: Record<string, string>;
+  payments?: PayMongoPayment[];
+  line_items?: Array<{ amount?: number }>;
+};
+
+async function fetchCheckoutSession(
+  checkoutSessionId: string,
+  basicAuthHeader: string
+): Promise<{ ok: true; attrs: CheckoutAttrs; id: string } | { ok: false; status: number; body: string }> {
+  // PayMongo has used both /v2 and /v1 for checkout sessions — try both.
+  const urls = [
+    `https://api.paymongo.com/v2/checkout_sessions/${encodeURIComponent(checkoutSessionId)}`,
+    `https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(checkoutSessionId)}`,
+  ];
+
+  let lastStatus = 0;
+  let lastBody = "";
+  for (const url of urls) {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: basicAuthHeader, Accept: "application/json" },
+    });
+    const text = await res.text().catch(() => "");
+    lastStatus = res.status;
+    lastBody = text;
+    if (!res.ok) continue;
+    try {
+      const parsed = JSON.parse(text) as {
+        data?: { id?: string; attributes?: CheckoutAttrs };
+      };
+      if (parsed?.data?.attributes) {
+        return {
+          ok: true,
+          id: parsed.data.id ?? checkoutSessionId,
+          attrs: parsed.data.attributes,
+        };
+      }
+    } catch {
+      // try next
+    }
+  }
+  return { ok: false, status: lastStatus, body: lastBody };
+}
+
+async function findPaidPaymentForBill(
+  basicAuthHeader: string,
+  billId: string,
+  billNumber: string,
+  amountDue: number
+): Promise<PayMongoPayment | null> {
+  const res = await fetch("https://api.paymongo.com/v1/payments?limit=50", {
+    headers: { Authorization: basicAuthHeader, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    console.warn("[verify-paymongo-payment] payments list failed", {
+      status: res.status,
+    });
+    return null;
+  }
+
+  const parsed = (await res.json()) as { data?: PayMongoPayment[] };
+  const rows = Array.isArray(parsed?.data) ? parsed.data : [];
+  const amountCentavos = Math.round(Number(amountDue) * 100);
+  const billNumberUpper = (billNumber || "").toUpperCase();
+
+  for (const payment of rows) {
+    const st = (payment.attributes?.status ?? "").toLowerCase();
+    if (!PAID_STATUSES.has(st)) continue;
+
+    const metaBill = (payment.attributes?.metadata?.bill_id ?? "").trim();
+    const desc = `${payment.attributes?.description ?? ""} ${
+      payment.attributes?.external_reference_number ?? ""
+    }`.toUpperCase();
+    const matchesBill =
+      metaBill === billId ||
+      (billNumberUpper.length > 0 && desc.includes(billNumberUpper));
+    if (!matchesBill) continue;
+
+    const amt = payment.attributes?.amount ?? 0;
+    if (amountCentavos > 0 && Math.abs(amt - amountCentavos) > 1) continue;
+
+    return payment;
+  }
+  return null;
+}
+
+async function handleRequest(req: Request): Promise<Response> {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return fail("Method not allowed. Use POST.");
+  }
+
+  const paymongoSecretKey = Deno.env.get("PAYMONGO_SECRET_KEY");
+  if (!paymongoSecretKey?.trim()) {
+    return fail("Payment gateway configuration error. PAYMONGO_SECRET_KEY is missing.");
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const secretKey = getSecretKey();
+  const publishableKey = getPublishableKey();
+  if (!supabaseUrl || !secretKey || !publishableKey) {
+    return fail("Server configuration error.");
+  }
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return fail("Unauthorized: missing Authorization header.");
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (!token) return fail("Unauthorized: missing bearer token.");
+
+  const callerClient = createClient(supabaseUrl, publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
+  const {
+    data: { user: caller },
+    error: callerError,
+  } = await callerClient.auth.getUser(token);
+
+  if (callerError 

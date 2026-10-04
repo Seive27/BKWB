@@ -169,9 +169,10 @@ BEGIN
   )
   RETURNING id INTO v_new_payment_id;
 
-  -- 7. Mark bill as paid
+  -- 7. Mark bill as paid and clear remaining balance
   UPDATE public.bills
-  SET status = 'paid',
+  SET amount_due = 0,
+      status = 'paid',
       paid_at = NOW(),
       updated_at = NOW()
   WHERE id = v_bill.id;

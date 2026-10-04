@@ -283,13 +283,24 @@ export function PaymentJourney({
           usually takes a minute — we'll update this screen automatically as soon
           as it's confirmed.
         </Text>
+        {flow.statusMessage ? (
+          <View className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <Text className="text-center text-sm leading-5 text-slate-700">
+              {flow.statusMessage}
+            </Text>
+          </View>
+        ) : null}
         <View className="mt-4 w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <Text className="text-center text-xs leading-5 text-amber-800">
             If you cancelled the payment or the session expired, no charge was
             made and your bill stays unpaid.
           </Text>
         </View>
-        <PrimaryButton label="Check Payment Status" onPress={() => { void flow.checkAgain(); }} />
+        <PrimaryButton
+          label={flow.checking ? 'Checking…' : 'Check Payment Status'}
+          disabled={flow.checking}
+          onPress={() => { void flow.checkAgain(); }}
+        />
         <SecondaryButton label="Back to Bills" onPress={onClose} />
       </View>
     );
@@ -340,7 +351,7 @@ export function PaymentJourney({
           </Text>
         ) : null}
 
-        <PrimaryButton label="Done" onPress={onClose} />
+        <PrimaryButton label="Back to Bills" onPress={onClose} />
       </View>
     );
   } else if (flow.state === 'error') {

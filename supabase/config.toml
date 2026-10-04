@@ -27,6 +27,14 @@ verify_jwt = true
 # (paymongo-signature header, HMAC-SHA256 with PAYMONGO_WEBHOOK_SECRET).
 verify_jwt = false
 
+[functions.paymongo-return]
+# Public HTTPS landing page after hosted checkout redirect. No secrets exposed.
+verify_jwt = false
+
+[functions.verify-paymongo-payment]
+# Resident/staff JWT required; function also re-checks ownership server-side.
+verify_jwt = true
+
 [functions.resident-account-login]
 # Pure authentication helper: it verifies the Account Number + password
 # combination against GoTrue itself and must be callable by unauthenticated

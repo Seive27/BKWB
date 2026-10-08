@@ -14,6 +14,8 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
 import { submitReading } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
+import NetInfo from '@react-native-community/netinfo';
+import { enqueueReading } from '@/services/offlineSyncService';
 
 type RecordReadingProps = {
   reading: MeterReading;
@@ -74,10 +76,29 @@ export default function RecordReading({
     if (!canSubmit || current === null) return;
     setSubmitting(true);
     try {
-      await submitReading(reading.id, current, notes);
-      Alert.alert('Submitted', 'Your reading has been submitted for review.', [
-        { text: 'OK', onPress: () => onSubmitted?.() },
-      ]);
+      const state = await NetInfo.fetch();
+      if (state.isConnected && state.isInternetReachable !== false) {
+        try {
+          await submitReading(reading.id, current, notes);
+          Alert.alert('Submitted', 'Your reading has been submitted for review.', [
+            { text: 'OK', onPress: () => onSubmitted?.() },
+          ]);
+        } catch (err) {
+          if (err instanceof Error && (err.message.includes('network') || err.message.includes('Network') || err.message.includes('fetch'))) {
+            await enqueueReading({ reading_id: reading.id, current_reading: current, notes });
+            Alert.alert('Offline Mode', 'Your reading was saved locally and will sync when connection is restored.', [
+              { text: 'OK', onPress: () => onSubmitted?.() },
+            ]);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        await enqueueReading({ reading_id: reading.id, current_reading: current, notes });
+        Alert.alert('Offline', 'Your reading was saved locally and will sync when connection is restored.', [
+          { text: 'OK', onPress: () => onSubmitted?.() },
+        ]);
+      }
     } catch (err) {
       Alert.alert(
         'Submission failed',

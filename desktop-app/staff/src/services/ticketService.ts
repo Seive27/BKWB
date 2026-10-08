@@ -425,6 +425,70 @@ export async function updateStatus(
   return mapRow(data as unknown as TicketRow);
 }
 
+export async function reworkTicket(
+  id: string,
+  reason: string,
+  performedBy: string
+): Promise<Ticket> {
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({ 
+      status: 'open',
+      last_status_reason: reason 
+    })
+    .eq('id', id)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw new Error(getTicketErrorMessage(error));
+
+  const { error: timelineError } = await supabase
+    .from('ticket_timeline')
+    .insert({
+      ticket_id: id,
+      event_type: 'status_change',
+      description: `Requested additional info: ${reason}`,
+      performed_by: performedBy,
+    });
+
+  if (timelineError) throw new Error(getTicketErrorMessage(timelineError));
+
+  return mapRow(data as unknown as TicketRow);
+}
+
+export async function rejectTicket(
+  id: string,
+  reason: string,
+  performedBy: string
+): Promise<Ticket> {
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({ 
+      status: 'closed',
+      resolution: reason,
+      last_status_reason: reason,
+      closed_at: new Date().toISOString()
+    })
+    .eq('id', id)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw new Error(getTicketErrorMessage(error));
+
+  const { error: timelineError } = await supabase
+    .from('ticket_timeline')
+    .insert({
+      ticket_id: id,
+      event_type: 'status_change',
+      description: `Ticket not accepted: ${reason}`,
+      performed_by: performedBy,
+    });
+
+  if (timelineError) throw new Error(getTicketErrorMessage(timelineError));
+
+  return mapRow(data as unknown as TicketRow);
+}
+
 /** Update editable staff-only fields (resolution, internal notes, etc.). */
 export async function updateTicket(
   id: string,

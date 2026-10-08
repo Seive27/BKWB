@@ -32,6 +32,8 @@ import {
   getTicketById,
   updateStatus,
   updateTicket,
+  reworkTicket,
+  rejectTicket,
 } from '../services/ticketService';
 import {
   StaffOption,
@@ -262,9 +264,13 @@ const Tickets: React.FC<{
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showReworkModal, setShowReworkModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
   const [staffOptions, setStaffOptions] = useState<AssignOption[]>([]);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [resolutionDraft, setResolutionDraft] = useState('');
+  const [reworkReasonDraft, setReworkReasonDraft] = useState('');
+  const [rejectReasonDraft, setRejectReasonDraft] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
 
@@ -456,6 +462,38 @@ const Tickets: React.FC<{
       showToast('success', 'Ticket marked as Resolved.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to resolve ticket.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRework = async () => {
+    if (!selectedTicket || actionBusy) return;
+    setActionBusy(true);
+    try {
+      await reworkTicket(selectedTicket.id, reworkReasonDraft, actorId);
+      await refresh();
+      setShowReworkModal(false);
+      setReworkReasonDraft('');
+      showToast('success', 'Ticket marked for rework.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to rework ticket.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedTicket || actionBusy) return;
+    setActionBusy(true);
+    try {
+      await rejectTicket(selectedTicket.id, rejectReasonDraft, actorId);
+      await refresh();
+      setShowRejectModal(false);
+      setRejectReasonDraft('');
+      showToast('success', 'Ticket rejected.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to reject ticket.');
     } finally {
       setActionBusy(false);
     }
@@ -769,6 +807,26 @@ const Tickets: React.FC<{
     <span>Reopen</span>
   </button>
 )}
+{(selectedTicket.status !== 'closed' && selectedTicket.status !== 'resolved') && (
+  <>
+    <button
+      onClick={() => setShowReworkModal(true)}
+      disabled={actionBusy}
+      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+    >
+      <MessageSquare className="w-3.5 h-3.5" />
+      <span>Request Info</span>
+    </button>
+    <button
+      onClick={() => setShowRejectModal(true)}
+      disabled={actionBusy}
+      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition-all shadow-sm hover:shadow disabled:opacity-50"
+    >
+      <XCircle className="w-3.5 h-3.5" />
+      <span>Reject</span>
+    </button>
+  </>
+)}
                 <button
                   onClick={() => setShowDeleteModal(true)}
                   disabled={actionBusy}
@@ -1071,6 +1129,94 @@ const Tickets: React.FC<{
               >
                 {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                 <span>Assign</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Rework Modal ---- */}
+      {showReworkModal && selectedTicket && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowReworkModal(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-slide-up">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Request Information</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              {selectedTicket.ticket_number} - {selectedTicket.subject}
+            </p>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+              Reason / Remarks <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={reworkReasonDraft}
+              onChange={(e) => setReworkReasonDraft(e.target.value)}
+              placeholder="Explain what additional action or information is needed..."
+              rows={4}
+              maxLength={1000}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none mb-5"
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowReworkModal(false)}
+                className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRework}
+                disabled={actionBusy || reworkReasonDraft.trim().length === 0}
+                className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
+              >
+                {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>Send Request</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Reject Modal ---- */}
+      {showRejectModal && selectedTicket && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowRejectModal(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-slide-up">
+            <h2 className="text-lg font-bold text-red-600 mb-1">Reject Ticket</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              {selectedTicket.ticket_number} - {selectedTicket.subject}
+            </p>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+              Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={rejectReasonDraft}
+              onChange={(e) => setRejectReasonDraft(e.target.value)}
+              placeholder="Explain why this ticket is not accepted..."
+              rows={4}
+              maxLength={1000}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none mb-5"
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowRejectModal(false)}
+                className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={actionBusy || rejectReasonDraft.trim().length === 0}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
+              >
+                {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>Reject Ticket</span>
               </button>
             </div>
           </div>

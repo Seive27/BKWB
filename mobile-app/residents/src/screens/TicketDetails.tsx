@@ -73,7 +73,7 @@ export default function TicketDetailsScreen({
 }: TicketDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
-  const { ticket, timeline, loading, error, refresh } = useTicketDetails(ticketId);
+  const { ticket, timeline, loading, error, refresh, searchQuery, setSearchQuery, loadMore, hasMore, loadingTimeline } = useTicketDetails(ticketId);
   const dialog = useDialog();
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -282,8 +282,29 @@ export default function TicketDetailsScreen({
                   elevation: 3,
                 }}
               >
-                <Text className="mb-5 text-base font-bold text-slate-800">Request Timeline</Text>
+                <Text className="mb-3 text-base font-bold text-slate-800">Request Timeline</Text>
+                
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search timeline..."
+                  placeholderTextColor="#94A3B8"
+                  className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[14px] text-slate-800"
+                />
+
                 <TicketTimeline events={timeline} />
+                
+                {hasMore && (
+                  <Pressable
+                    onPress={loadMore}
+                    disabled={loadingTimeline}
+                    className="mt-4 items-center rounded-xl border border-slate-200 py-3 active:bg-slate-50 disabled:opacity-50"
+                  >
+                    <Text className="text-sm font-semibold text-slate-600">
+                      {loadingTimeline ? 'Loading...' : 'Load More'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
 
               <View className="items-center py-2">

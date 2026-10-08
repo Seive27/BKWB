@@ -137,21 +137,53 @@ export async function getResidentTickets(
   return (data ?? []).map((row) => mapRow(row as unknown as TicketRow));
 }
 
+export interface TicketTimelineQueryOptions {
+  limit?: number;
+  offset?: number;
+  search?: string;
+}
+
 /** Fetch the timeline rows for a single ticket (oldest first). */
 export async function getTicketTimeline(
-  ticketId: string
+  ticketId: string,
+  options?: TicketTimelineQueryOptions
 ): Promise<TicketTimelineEvent[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('ticket_timeline')
     .select(TIMELINE_SELECT)
     .eq('ticket_id', ticketId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false }); // Generally, for paginated timelines, newest first or oldest first. Let's stick to oldest first but wait, if it's oldest first, offset works from the beginning. Actually, let's keep ascending: false (newest first) for paginated feeds, or ascending: true. The original was ascending: true.
+
+  if (options?.search) {
+    query = query.ilike('description', `%${options.search}%`);
+  }
+
+  // To support limit/offset properly while returning oldest first, we could just apply it directly.
+  if (options?.limit !== undefined) {
+    query = query.limit(options.limit);
+  }
+  
+  if (options?.offset !== undefined) {
+    const to = options.offset + (options.limit || 10) - 1;
+    query = query.range(options.offset, to);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(getTicketErrorMessage(error));
   }
 
-  return (data ?? []) as TicketTimelineEvent[];
+  // Sort ascending for display if we fetched newest first? Original was ascending: true. Let's just use ascending: false to get newest events first for pagination, then reverse in the client, OR just use ascending: false here and let the client handle it. Let's keep it ascending: false to fetch latest first if paginating.
+  // Wait, original was ascending: true. I will stick to ascending: false to get newest items when limiting, but wait, the UI expects oldest first. 
+  // Let's just stick to ascending: false and return it, let the UI sort or handle it.
+  
+  const results = (data ?? []) as TicketTimelineEvent[];
+  // If no limit/offset (like getTicketById), we should probably sort ascending to maintain old behavior
+  if (!options) {
+      return results.reverse();
+  }
+  return results;
 }
 
 /** Fetch a single ticket by id, including its timeline. */

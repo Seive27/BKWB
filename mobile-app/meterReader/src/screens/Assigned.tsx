@@ -17,6 +17,8 @@ import { getMySitioAssignments } from '@/services/sitioAssignmentService';
 import { useAssignments } from '@/hooks/useAssignments';
 import { submitReadingByMeterNumber } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
+import NetInfo from '@react-native-community/netinfo';
+import { enqueueReading } from '@/services/offlineSyncService';
 
 type AssignedProps = {
   activeTab?: NavTab;
@@ -306,21 +308,52 @@ export default function Assigned({
             throw new Error('Please enter a valid current reading.');
           }
 
-          const submitted = await submitReadingByMeterNumber({
-            meterNumber: payload.meterNumber,
-            sitio: payload.sitio,
-            currentReading: current,
-            remarks: payload.notes,
-            photoUri: payload.photoUri,
-            photoBase64: payload.photoBase64,
-          });
-
-          await refresh();
-
-          Alert.alert(
-            'Submitted',
-            `Matched ${payload.meterNumber} to ${residentLabel(submitted)}. The reading is pending review.`,
-          );
+          try {
+            const state = await NetInfo.fetch();
+            if (state.isConnected && state.isInternetReachable !== false) {
+              try {
+                const submitted = await submitReadingByMeterNumber({
+                  meterNumber: payload.meterNumber,
+                  sitio: payload.sitio,
+                  currentReading: current,
+                  remarks: payload.notes,
+                  photoUri: payload.photoUri,
+                  photoBase64: payload.photoBase64,
+                });
+                await refresh();
+                Alert.alert(
+                  'Submitted',
+                  `Matched ${payload.meterNumber} to ${residentLabel(submitted)}. The reading is pending review.`,
+                );
+              } catch (err) {
+                if (err instanceof Error && (err.message.includes('network') || err.message.includes('Network') || err.message.includes('fetch'))) {
+                  await enqueueReading({
+                    meter_number: payload.meterNumber,
+                    sitio: payload.sitio,
+                    current_reading: current,
+                    notes: payload.notes,
+                    photo_uri: payload.photoUri,
+                    photo_base64: payload.photoBase64,
+                  });
+                  Alert.alert('Offline Mode', 'Your reading was saved locally and will sync when connection is restored.');
+                } else {
+                  throw err;
+                }
+              }
+            } else {
+              await enqueueReading({
+                meter_number: payload.meterNumber,
+                sitio: payload.sitio,
+                current_reading: current,
+                notes: payload.notes,
+                photo_uri: payload.photoUri,
+                photo_base64: payload.photoBase64,
+              });
+              Alert.alert('Offline', 'Your reading was saved locally and will sync when connection is restored.');
+            }
+          } catch (error) {
+             throw error;
+          }
         }}
       />
 

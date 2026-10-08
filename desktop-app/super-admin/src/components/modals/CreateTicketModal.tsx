@@ -9,6 +9,7 @@ import {
   TicketPriority,
   TICKET_CATEGORY_LABELS,
   TICKET_PRIORITY_LABELS,
+  TICKET_PRIORITY_ORDER,
   TICKET_SUBJECTS,
 } from '../../types';
 
@@ -20,7 +21,7 @@ interface CreateTicketModalProps {
 }
 
 const CATEGORIES = Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[];
-const PRIORITIES = Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[];
+const PRIORITIES = TICKET_PRIORITY_ORDER;
 
 const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onCreate }) => {
   const [residents, setResidents] = useState<ResidentOption[]>([]);

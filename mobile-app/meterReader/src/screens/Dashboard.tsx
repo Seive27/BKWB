@@ -6,6 +6,7 @@ import { Svg, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StartReadingModal } from '@/components/modals/StartReadingModal';
+import type { ReadingFilter } from '@/components/assigned/FilterTabs';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
@@ -24,6 +25,10 @@ type DashboardProps = {
   onOpenAnnouncements?: () => void;
   /** Open the notifications screen. */
   onOpenNotifications?: () => void;
+  /** Open Assigned, which lists readings still to complete. */
+  onOpenAssigned?: () => void;
+  /** Open History with a status filter already selected. */
+  onOpenHistory?: (filter: ReadingFilter) => void;
 };
 
 const cardShadow = {
@@ -62,6 +67,8 @@ export default function Dashboard({
   onTabPress,
   onOpenAnnouncements,
   onOpenNotifications,
+  onOpenAssigned,
+  onOpenHistory,
 }: DashboardProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
@@ -103,8 +110,7 @@ export default function Dashboard({
   const readingsCompleted = history.filter(
     (r) => r.status === 'approved' || r.status === 'billed',
   ).length;
-  const pendingReview = history.filter((r) => r.status === 'pending_review').length;
-  const pendingReadings = assignments.length + pendingReview;
+  const billedReadings = history.filter((r) => r.status === 'billed').length;
   const routeProgress =
     sitioRoutes.length > 0
       ? Math.round(
@@ -200,12 +206,18 @@ export default function Dashboard({
           <Text className="text-base font-semibold text-sync-text">Refresh</Text>
         </Pressable>
 
-        <View className="mb-3 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
-          <View className="flex-row items-start justify-between">
-            <View>
-              <Text className="mb-1.5 text-[11px] font-semibold tracking-wide text-navy-muted">
-                TOTAL ASSIGNED
-              </Text>
+        <Pressable
+          onPress={onOpenAssigned}
+          className="mb-3 rounded-[18px] bg-white p-[18px] active:opacity-80"
+          style={cardShadow}
+          accessibilityRole="button"
+            accessibilityLabel="Pending readings, assigned and not yet read"
+          >
+            <View className="flex-row items-start justify-between">
+              <View>
+                <Text className="mb-1.5 text-[11px] font-semibold tracking-wide text-navy-muted">
+                  TOTAL ASSIGNED
+                </Text>
               <Text className="text-[40px] font-bold leading-[46px] text-navy">
                 {totalAssigned}
               </Text>
@@ -218,34 +230,46 @@ export default function Dashboard({
           </View>
           <View className="mt-2.5 flex-row items-center gap-2">
             <View className="h-2 w-2 rounded-full bg-brand-500" />
-            <Text className="text-[13px] text-navy-muted">Readings to complete</Text>
+            <Text className="text-[13px] text-navy-muted">Pending readings, not yet read</Text>
           </View>
-        </View>
+        </Pressable>
 
         <View className="mb-6 flex-row gap-3">
-          <View className="flex-1 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
+          <Pressable
+            onPress={() => onOpenHistory?.('billed')}
+            className="flex-1 rounded-[18px] bg-white p-[18px] active:opacity-80"
+            style={cardShadow}
+            accessibilityRole="button"
+            accessibilityLabel="Billed readings"
+          >
             <View className="mb-2 flex-row items-start justify-between">
               <Text className="mr-1.5 flex-1 text-[11px] font-semibold tracking-wide text-navy-muted">
-                APPROVED
+                BILLED
               </Text>
               <CompletedIcon />
             </View>
             <Text className="text-[36px] font-bold text-navy">
-              {readingsCompleted}
+              {billedReadings}
             </Text>
-          </View>
+          </Pressable>
 
-          <View className="flex-1 rounded-[18px] bg-white p-[18px]" style={cardShadow}>
+          <Pressable
+            onPress={onOpenAssigned}
+            className="flex-1 rounded-[18px] bg-white p-[18px] active:opacity-80"
+            style={cardShadow}
+            accessibilityRole="button"
+            accessibilityLabel="Pending readings, assigned and not yet read"
+          >
             <View className="mb-2 flex-row items-start justify-between">
               <Text className="mr-1.5 flex-1 text-[11px] font-semibold tracking-wide text-navy-muted">
-                PENDING
+                PENDING READINGS
               </Text>
               <PendingIcon />
             </View>
             <Text className="text-[36px] font-bold text-pending">
-              {pendingReadings}
+              {totalAssigned}
             </Text>
-          </View>
+          </Pressable>
         </View>
 
         <View className="gap-2.5">

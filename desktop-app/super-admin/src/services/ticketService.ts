@@ -54,21 +54,34 @@ export function getTicketErrorMessage(error: {
 
 // ── Row Mapping ──
 
-interface TicketRow extends Omit<Ticket, 'resident' | 'assigned_staff'> {
+interface AssigneeEmbed {
+  profile?: TicketPerson | null;
+}
+
+interface TicketRow extends Omit<Ticket, 'resident' | 'assigned_staff' | 'assignees'> {
   resident?: TicketPerson | null;
   assigned_staff?: TicketPerson | null;
+  assignees?: AssigneeEmbed[] | null;
 }
 
 function mapRow(row: TicketRow): Ticket {
+  const fromJunction = (row.assignees ?? [])
+    .map((entry) => entry.profile)
+    .filter((person): person is TicketPerson => Boolean(person?.id));
+  const primary = row.assigned_staff ?? null;
+  const others = fromJunction.filter((person) => person.id !== primary?.id);
+  const assignees = primary ? [primary, ...others] : fromJunction;
+
   return {
     ...row,
     resident: row.resident ?? null,
-    assigned_staff: row.assigned_staff ?? null,
+    assigned_staff: assignees[0] ?? row.assigned_staff ?? null,
+    assignees,
   };
 }
 
 const TICKET_SELECT =
-  '*, resident:profiles!tickets_resident_id_fkey(id, first_name, last_name), assigned_staff:profiles!tickets_assigned_staff_id_fkey(id, first_name, last_name)';
+  '*, resident:profiles!tickets_resident_id_fkey(id, first_name, last_name), assigned_staff:profiles!tickets_assigned_staff_id_fkey(id, first_name, last_name), assignees:ticket_assignees(profile:profiles!ticket_assignees_profile_id_fkey(id, first_name, last_name))';
 
 const TIMELINE_SELECT =
   '*, performer:profiles!ticket_timeline_performed_by_fkey(id, first_name, last_name)';
@@ -252,16 +265,25 @@ export async function createTicket(
 }
 
 /**
- * Assign a ticket to a staff member. If the ticket is still "open",
- * the status is advanced to "assigned" as part of the workflow.
- * Records an "assigned" timeline event.
+ * Replace the people assigned to a ticket. The first id is stored as
+ * assigned_staff_id so existing reader access and notifications keep working.
+ * Additional people are stored in ticket_assignees.
+ *
+ * The ticket row is updated before assignee inserts so the primary person is
+ * notified once by the ticket trigger, and everyone else is notified by the
+ * assignee insert trigger.
  */
 export async function assignTicket(
   id: string,
-  staffId: string,
+  staffIds: string[],
   performedBy: string,
-  staffName: string
+  staffNames: string
 ): Promise<Ticket> {
+  const uniqueIds = [...new Set(staffIds.filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    throw new Error('Select at least one person to assign.');
+  }
+
   const { data: current, error: currentError } = await supabase
     .from('tickets')
     .select('status')
@@ -275,23 +297,23 @@ export async function assignTicket(
   const nextStatus: TicketStatus =
     current?.status === 'open' ? 'assigned' : (current?.status ?? 'assigned');
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('tickets')
-    .update({ assigned_staff_id: staffId, status: nextStatus })
-    .eq('id', id)
-    .select(TICKET_SELECT)
-    .single();
+    .update({ assigned_staff_id: uniqueIds[0], status: nextStatus })
+    .eq('id', id);
 
   if (error) {
     throw new Error(getTicketErrorMessage(error));
   }
+
+  await syncTicketAssignees(id, uniqueIds);
 
   const { error: timelineError } = await supabase
     .from('ticket_timeline')
     .insert({
       ticket_id: id,
       event_type: 'assigned',
-      description: `Assigned to ${staffName}`,
+      description: `Assigned to ${staffNames}`,
       performed_by: performedBy,
     });
 
@@ -299,7 +321,53 @@ export async function assignTicket(
     throw new Error(getTicketErrorMessage(timelineError));
   }
 
-  return mapRow(data as unknown as TicketRow);
+  const refreshed = await supabase.from('tickets').select(TICKET_SELECT).eq('id', id).single();
+  if (refreshed.error || !refreshed.data) {
+    throw new Error(
+      getTicketErrorMessage(refreshed.error ?? { message: 'Failed to load the assigned ticket.' })
+    );
+  }
+  return mapRow(refreshed.data as unknown as TicketRow);
+}
+
+/** Make ticket_assignees match the selected people without duplicating rows. */
+async function syncTicketAssignees(ticketId: string, staffIds: string[]): Promise<void> {
+  const { data: existing, error: readError } = await supabase
+    .from('ticket_assignees')
+    .select('profile_id')
+    .eq('ticket_id', ticketId);
+
+  if (readError) {
+    throw new Error(getTicketErrorMessage(readError));
+  }
+
+  const existingIds = new Set((existing ?? []).map((row) => row.profile_id as string));
+  const nextIds = new Set(staffIds);
+  const toRemove = [...existingIds].filter((profileId) => !nextIds.has(profileId));
+  const toAdd = staffIds.filter((profileId) => !existingIds.has(profileId));
+
+  if (toRemove.length > 0) {
+    const { error } = await supabase
+      .from('ticket_assignees')
+      .delete()
+      .eq('ticket_id', ticketId)
+      .in('profile_id', toRemove);
+    if (error) {
+      throw new Error(getTicketErrorMessage(error));
+    }
+  }
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase.from('ticket_assignees').insert(
+      toAdd.map((profileId) => ({
+        ticket_id: ticketId,
+        profile_id: profileId,
+      }))
+    );
+    if (error) {
+      throw new Error(getTicketErrorMessage(error));
+    }
+  }
 }
 
 /**

@@ -33,9 +33,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     ? summary.tickets.open + summary.tickets.assigned + summary.tickets.in_progress + summary.tickets.resolved + summary.tickets.closed
     : 0;
   const openTickets = summary?.tickets.open ?? 0;
-  const pendingReadings = summary
-    ? summary.readings.assigned + summary.readings.pending_review
-    : 0;
+  const pendingReviews = summary?.readings.pending_review ?? 0;
   const billedReadings = summary?.readings.billed ?? 0;
   const announcements = summary?.totalAnnouncements ?? 0;
   const residents = summary?.totalResidents ?? 0;
@@ -97,8 +95,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             }
           />
           <StatCard
-            title="Pending Readings"
-            value={pendingReadings.toLocaleString()}
+            title="Pending Reviews"
+            value={pendingReviews.toLocaleString()}
             icon={ClipboardList}
             iconBgColor="bg-slate-50"
             iconColor="text-slate-600"
@@ -108,7 +106,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             }}
             onClick={
               onNavigate
-                ? () => onNavigate('meter-readings', { statusFilter: 'pending' })
+                ? () => onNavigate('meter-readings', { statusFilter: 'pending_review' })
                 : undefined
             }
           />

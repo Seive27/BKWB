@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import type { ReadingFilter } from '@/components/assigned/FilterTabs';
 import { type NavTab } from '@/components/NavBar/Navbar';
 import { supabase } from '@/lib/supabase';
 import { isPasswordResetPending } from '@/services/authService';
@@ -17,8 +18,19 @@ export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [historyFilter, setHistoryFilter] = useState<ReadingFilter>('all');
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const handleTabPress = (tab: NavTab) => {
+    if (tab === 'history') setHistoryFilter('all');
+    setActiveTab(tab);
+  };
+
+  const openHistory = (filter: ReadingFilter) => {
+    setHistoryFilter(filter);
+    setActiveTab('history');
+  };
 
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
@@ -65,6 +77,7 @@ export default function HomeScreen() {
     }
     if (destination.kind === 'tab') {
       setShowAnnouncements(false);
+      if (destination.tab === 'history') setHistoryFilter('all');
       setActiveTab(destination.tab);
     }
   };
@@ -95,24 +108,32 @@ export default function HomeScreen() {
     return (
       <Dashboard
         activeTab={activeTab}
-        onTabPress={setActiveTab}
+        onTabPress={handleTabPress}
         onOpenAnnouncements={() => setShowAnnouncements(true)}
         onOpenNotifications={() => setShowNotifications(true)}
+        onOpenAssigned={() => handleTabPress('assigned')}
+        onOpenHistory={openHistory}
       />
     );
   }
 
   if (activeTab === 'assigned') {
-    return <Assigned activeTab={activeTab} onTabPress={setActiveTab} />;
+    return <Assigned activeTab={activeTab} onTabPress={handleTabPress} />;
   }
 
   if (activeTab === 'tickets') {
-    return <Tickets activeTab={activeTab} onTabPress={setActiveTab} />;
+    return <Tickets activeTab={activeTab} onTabPress={handleTabPress} />;
   }
 
   if (activeTab === 'history') {
-    return <History activeTab={activeTab} onTabPress={setActiveTab} />;
+    return (
+      <History
+        activeTab={activeTab}
+        onTabPress={handleTabPress}
+        initialFilter={historyFilter}
+      />
+    );
   }
 
-  return <Profile activeTab={activeTab} onTabPress={setActiveTab} />;
+  return <Profile activeTab={activeTab} onTabPress={handleTabPress} />;
 }

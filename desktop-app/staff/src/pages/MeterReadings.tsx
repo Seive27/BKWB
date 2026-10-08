@@ -905,6 +905,8 @@ const MeterReadings: React.FC<{
                   Sitio <span className="text-red-500">*</span>
                 </label>
                 <StyledSelect
+                  searchable
+                  searchPlaceholder="Search sitios…"
                   value={selectedSitio}
                   onChange={(e) => setSelectedSitio(e.target.value)}
                   disabled={pickerLoading}

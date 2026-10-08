@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,6 +16,8 @@ import { useReadingHistory } from '@/hooks/useReadingHistory';
 type HistoryProps = {
   activeTab?: NavTab;
   onTabPress?: (tab: NavTab) => void;
+  /** Status chip to select when this screen opens. */
+  initialFilter?: ReadingFilter;
 };
 
 function SkeletonCard() {
@@ -30,13 +32,18 @@ function SkeletonCard() {
 export default function History({
   activeTab = 'history',
   onTabPress,
+  initialFilter = 'all',
 }: HistoryProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
 
   const { readings, loading, refreshing, error, refresh } = useReadingHistory();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<ReadingFilter>('all');
+  const [filter, setFilter] = useState<ReadingFilter>(initialFilter);
+
+  useEffect(() => {
+    setFilter(initialFilter);
+  }, [initialFilter]);
 
   const filteredReadings = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

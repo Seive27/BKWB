@@ -42,6 +42,7 @@ import {
   TicketTimelineEvent,
   TICKET_CATEGORY_LABELS,
   TICKET_PRIORITY_LABELS,
+  TICKET_PRIORITY_ORDER,
   TICKET_STATUS_LABELS,
 } from '../types';
 
@@ -65,9 +66,9 @@ const STATUS_ORDER: Record<TicketStatus, number> = {
 };
 
 const PRIORITY_ORDER: Record<TicketPriority, number> = {
-  low: 0,
+  high: 0,
   medium: 1,
-  high: 2,
+  low: 2,
 };
 
 const statusStyles: Record<TicketStatus, { bg: string; text: string; dot: string }> = {
@@ -90,6 +91,21 @@ const priorityStyles: Record<TicketPriority, { bg: string; text: string; icon: R
 function fullName(person?: { first_name: string; last_name: string } | null): string {
   if (!person) return '';
   return `${person.first_name} ${person.last_name}`.trim();
+}
+
+function assignedPeople(ticket: {
+  assignees?: { id: string; first_name: string; last_name: string }[] | null;
+  assigned_staff?: { id: string; first_name: string; last_name: string } | null;
+}) {
+  if (ticket.assignees && ticket.assignees.length > 0) return ticket.assignees;
+  return ticket.assigned_staff ? [ticket.assigned_staff] : [];
+}
+
+function assignedSummary(ticket: Parameters<typeof assignedPeople>[0]): string {
+  return assignedPeople(ticket)
+    .map((person) => fullName(person))
+    .filter(Boolean)
+    .join(', ');
 }
 
 function initials(person?: { first_name: string; last_name: string } | null): string {
@@ -151,6 +167,67 @@ function timelineTitle(event: TicketTimelineEvent): string {
   }
 }
 
+const AssigneePicker: React.FC<{
+  options: AssignOption[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+}> = ({ options, selectedIds, onToggle }) => {
+  if (options.length === 0) {
+    return (
+      <p className="px-3 py-4 mb-5 text-sm text-gray-500 border border-gray-200 rounded-xl">
+        No staff or meter readers available.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mb-5">
+      <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">
+        {(['staff', 'meter_reader'] as const).map((role) => {
+          const group = options.filter((option) => option.role === role);
+          if (group.length === 0) return null;
+          return (
+            <div key={role}>
+              <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50">
+                {role === 'staff' ? 'Staff' : 'Meter Readers'}
+              </div>
+              {group.map((option) => {
+                const name = `${option.first_name} ${option.last_name}`.trim();
+                return (
+                  <label
+                    key={option.id}
+                    className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(option.id)}
+                      onChange={() => onToggle(option.id)}
+                      className="h-4 w-4 rounded border-gray-300 accent-primary-600"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-gray-900">
+                        {name || option.email || 'Unnamed'}
+                      </span>
+                      {name && option.email ? (
+                        <span className="block text-xs text-gray-500 truncate">{option.email}</span>
+                      ) : null}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-gray-500 mt-2">
+        {selectedIds.length === 0
+          ? 'Select at least one person.'
+          : `${selectedIds.length} selected`}
+      </p>
+    </div>
+  );
+};
+
 const Tickets: React.FC<{
   initialSelectedId?: string | null;
   onInitialSelectedIdConsumed?: () => void;
@@ -172,7 +249,7 @@ const Tickets: React.FC<{
     (initialStatusFilter as StatusFilter) || 'all'
   );
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('newest');
+  const [sortKey, setSortKey] = useState<SortKey>('priority');
 
   // ──── Selection / details ────
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
@@ -186,7 +263,7 @@ const Tickets: React.FC<{
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [staffOptions, setStaffOptions] = useState<AssignOption[]>([]);
-  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
@@ -290,8 +367,11 @@ const Tickets: React.FC<{
       switch (sortKey) {
         case 'oldest':
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        case 'priority':
-          return PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
+        case 'priority': {
+          const byPriority = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+          if (byPriority !== 0) return byPriority;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
         case 'status':
           return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
         case 'newest':
@@ -314,20 +394,31 @@ const Tickets: React.FC<{
     showToast('success', 'Ticket created successfully.');
   };
 
+  const toggleAssignee = (id: string) => {
+    setSelectedStaffIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+    );
+  };
+
   const handleAssign = async () => {
-    if (!selectedTicket || !selectedStaffId || actionBusy) return;
+    if (!selectedTicket || selectedStaffIds.length === 0 || actionBusy) return;
     setActionBusy(true);
     try {
-      const staff = staffOptions.find((s) => s.id === selectedStaffId);
-      await assignTicket(
-        selectedTicket.id,
-        selectedStaffId,
-        actorId,
-        staff ? `${staff.first_name} ${staff.last_name}`.trim() : 'staff'
-      );
+      const ordered = selectedStaffIds
+        .map((id) => staffOptions.find((option) => option.id === id))
+        .filter((option): option is AssignOption => Boolean(option));
+      const names = ordered
+        .map((option) => `${option.first_name} ${option.last_name}`.trim() || 'staff')
+        .join(', ');
+      await assignTicket(selectedTicket.id, selectedStaffIds, actorId, names || 'staff');
       await refresh();
       setShowAssignModal(false);
-      showToast('success', `Ticket assigned to ${fullName(staff)}.`);
+      showToast(
+        'success',
+        selectedStaffIds.length === 1
+          ? `Ticket assigned to ${names}.`
+          : `Ticket assigned to ${selectedStaffIds.length} people.`
+      );
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to assign ticket.');
     } finally {
@@ -437,7 +528,7 @@ const Tickets: React.FC<{
         title="Set ticket priority"
         aria-label="Ticket priority"
       >
-        {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((value) => (
+        {TICKET_PRIORITY_ORDER.map((value) => (
           <option key={value} value={value}>
             {TICKET_PRIORITY_LABELS[value]}
           </option>
@@ -508,7 +599,7 @@ const Tickets: React.FC<{
               wrapperClassName="w-full"
             >
               <option value="all">All Priorities</option>
-              {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((pr) => (
+              {TICKET_PRIORITY_ORDER.map((pr) => (
                 <option key={pr} value={pr}>
                   {TICKET_PRIORITY_LABELS[pr]}
                 </option>
@@ -601,11 +692,14 @@ const Tickets: React.FC<{
               </h1>
               <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
                 <button
-                  onClick={() => setShowAssignModal(true)}
+                  onClick={() => {
+                    setSelectedStaffIds(assignedPeople(selectedTicket).map((person) => person.id));
+                    setShowAssignModal(true);
+                  }}
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-300 text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-all shadow-sm hover:shadow"
                 >
                   <User className="w-3.5 h-3.5" />
-                  <span>{selectedTicket.assigned_staff_id ? 'Reassign' : 'Assign'}</span>
+                  <span>{assignedPeople(selectedTicket).length > 0 ? 'Reassign' : 'Assign'}</span>
                 </button>
                 {/* Lifecycle actions — only valid transitions are offered, mirroring the
     DB transition enforcement. Submitted -> Acknowledged -> Assigned ->
@@ -720,13 +814,13 @@ const Tickets: React.FC<{
               <span className="text-xs text-gray-300">|</span>
               <span>{getPrioritySelect(selectedTicket.priority)}</span>
               <span>{getStatusBadge(selectedTicket.status)}</span>
-              {selectedTicket.assigned_staff && (
+              {assignedPeople(selectedTicket).length > 0 && (
                 <>
                   <span className="text-xs text-gray-300">|</span>
                   <span className="text-xs text-gray-500">
                     Assigned to{' '}
                     <span className="font-semibold text-gray-700">
-                      {fullName(selectedTicket.assigned_staff)}
+                      {assignedSummary(selectedTicket)}
                     </span>
                   </span>
                 </>
@@ -778,7 +872,7 @@ const Tickets: React.FC<{
                 <div>
                   <span className="text-[11px] text-blue-600 font-medium">Assigned To</span>
                   <p className="text-sm font-medium text-blue-900 mt-0.5">
-                    {fullName(selectedTicket.assigned_staff) || (
+                    {assignedSummary(selectedTicket) || (
                       <span className="text-blue-400 italic">Unassigned</span>
                     )}
                   </p>
@@ -936,44 +1030,33 @@ const Tickets: React.FC<{
         >
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-slide-up">
             <h2 className="text-lg font-bold text-gray-900 mb-1">
-              {selectedTicket.assigned_staff_id ? 'Reassign Ticket' : 'Assign Ticket'}
+              {assignedPeople(selectedTicket).length > 0 ? 'Reassign Ticket' : 'Assign Ticket'}
             </h2>
             <p className="text-sm text-gray-500 mb-5">
               {selectedTicket.ticket_number} Ã‚· {selectedTicket.subject}
             </p>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+            <p className="text-xs text-gray-500 mb-4">
+              Select everyone needed for this task. You can assign two or more people.
+            </p>
+            <p className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
               Assign To
-            </label>
-            <StyledSelect
-              value={selectedStaffId}
-              onChange={(e) => setSelectedStaffId(e.target.value)}
-              className="w-full py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white"
-              wrapperClassName="w-full mb-5"
-            >
-              <option value="">Select staff or meter reader</option>
-              <optgroup label="Staff">
-                {staffOptions.filter((s) => s.role === 'staff').map((s) => {
-                  const name = `${s.first_name} ${s.last_name}`.trim();
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {name || s.email || 'Unnamed staff'}
-                      {name && s.email ? ` — ${s.email}` : ''}
-                    </option>
-                  );
-                })}
-              </optgroup>
-              <optgroup label="Meter Readers">
-                {staffOptions.filter((s) => s.role === 'meter_reader').map((s) => {
-                  const name = `${s.first_name} ${s.last_name}`.trim();
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {name || s.email || 'Unnamed meter reader'}
-                      {name && s.email ? ` — ${s.email}` : ''}
-                    </option>
-                  );
-                })}
-              </optgroup>
-            </StyledSelect>
+            </p>
+            <AssigneePicker
+              options={[
+                ...staffOptions,
+                ...assignedPeople(selectedTicket)
+                  .filter((person) => !staffOptions.some((option) => option.id === person.id))
+                  .map((person) => ({
+                    id: person.id,
+                    first_name: person.first_name,
+                    last_name: person.last_name,
+                    email: '',
+                    role: 'staff' as const,
+                  })),
+              ]}
+              selectedIds={selectedStaffIds}
+              onToggle={toggleAssignee}
+            />
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowAssignModal(false)}
@@ -983,7 +1066,7 @@ const Tickets: React.FC<{
               </button>
               <button
                 onClick={handleAssign}
-                disabled={!selectedStaffId || actionBusy}
+                disabled={selectedStaffIds.length === 0 || actionBusy}
                 className="px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-medium shadow-sm disabled:opacity-50 inline-flex items-center space-x-2"
               >
                 {actionBusy && <Loader2 className="w-4 h-4 animate-spin" />}

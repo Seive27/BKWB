@@ -127,18 +127,38 @@ async function requireUserId(): Promise<string> {
 }
 
 /**
- * Tickets assigned to the signed-in meter reader (RLS limits reads to
- * assigned_staff_id = auth.uid()). Active ones first.
+ * Tickets assigned to the signed-in meter reader, including tickets where
+ * they are one of several assignees. RLS also limits these reads.
  */
 export async function getMyTickets(): Promise<ReaderTicket[]> {
   const userId = await requireUserId();
 
-  const { data, error } = await supabase
-    .from('tickets')
-    .select(SELECT)
-    .eq('assigned_staff_id', userId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+  const { data: links, error: linkError } = await supabase
+    .from('ticket_assignees')
+    .select('ticket_id')
+    .eq('profile_id', userId);
+
+  if (linkError) {
+    const msg = linkError.message.toLowerCase();
+    const missingTable =
+      linkError.code === '42P01' || msg.includes('does not exist') || msg.includes('relation');
+    if (!missingTable) {
+      throw new Error(linkError.message || 'Failed to load your tickets.');
+    }
+  }
+
+  const coAssignedIds =
+    linkError || !links ? [] : links.map((row) => row.ticket_id as string);
+
+  let query = supabase.from('tickets').select(SELECT).is('deleted_at', null);
+
+  if (coAssignedIds.length > 0) {
+    query = query.or(`assigned_staff_id.eq.${userId},id.in.(${coAssignedIds.join(',')})`);
+  } else {
+    query = query.eq('assigned_staff_id', userId);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
 
   if (error) {
     const msg = error.message.toLowerCase();

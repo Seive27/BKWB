@@ -2022,3 +2022,179 @@ ON CONFLICT (key) DO NOTHING;
 --    SET role_id = (SELECT id FROM public.roles WHERE name = 'super_admin')
 --    WHERE id = '<user-uuid>';
 -- ============================================================
+
+-- ============================================================
+-- 41. Multiple people can be assigned to one ticket
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ticket_assignees (
+  ticket_id UUID NOT NULL REFERENCES public.tickets(id) ON DELETE CASCADE,
+  profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (ticket_id, profile_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_assignees_profile_id
+  ON public.ticket_assignees (profile_id);
+
+ALTER TABLE public.ticket_assignees ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.ticket_assignees FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ticket_assignees TO authenticated;
+GRANT ALL ON TABLE public.ticket_assignees TO service_role;
+
+DROP POLICY IF EXISTS "Staff and admins can manage ticket assignees" ON public.ticket_assignees;
+CREATE POLICY "Staff and admins can manage ticket assignees"
+  ON public.ticket_assignees
+  FOR ALL
+  TO authenticated
+  USING (public.is_staff_or_admin())
+  WITH CHECK (public.is_staff_or_admin());
+
+DROP POLICY IF EXISTS "Assignees can read their own ticket assignments" ON public.ticket_assignees;
+CREATE POLICY "Assignees can read their own ticket assignments"
+  ON public.ticket_assignees
+  FOR SELECT
+  TO authenticated
+  USING (profile_id = (SELECT auth.uid()));
+
+-- Copy existing single assignees before the notify trigger exists,
+-- so current assignments are not announced again.
+INSERT INTO public.ticket_assignees (ticket_id, profile_id)
+SELECT id, assigned_staff_id
+FROM public.tickets
+WHERE assigned_staff_id IS NOT NULL
+ON CONFLICT (ticket_id, profile_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.is_ticket_assignee(p_ticket_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.ticket_assignees ta
+    WHERE ta.ticket_id = p_ticket_id
+      AND ta.profile_id = (SELECT auth.uid())
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_ticket_assignee(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_ticket_assignee(UUID) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.notify_ticket_assignee()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_ticket_number TEXT;
+  v_subject TEXT;
+  v_primary UUID;
+  v_deleted TIMESTAMPTZ;
+BEGIN
+  SELECT t.ticket_number, t.subject, t.assigned_staff_id, t.deleted_at
+    INTO v_ticket_number, v_subject, v_primary, v_deleted
+  FROM public.tickets t
+  WHERE t.id = NEW.ticket_id;
+
+  IF v_deleted IS NOT NULL OR NEW.profile_id IS NOT DISTINCT FROM v_primary THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+  VALUES (
+    NEW.profile_id,
+    'ticket_assigned',
+    'Ticket assigned to you: ' || COALESCE(v_ticket_number, 'ticket'),
+    COALESCE(v_subject, ''),
+    'ticket',
+    NEW.ticket_id
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notify_ticket_assignee() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.notify_ticket_assignee() TO authenticated, service_role;
+
+DROP TRIGGER IF EXISTS on_ticket_assignee_notify ON public.ticket_assignees;
+CREATE TRIGGER on_ticket_assignee_notify
+  AFTER INSERT ON public.ticket_assignees
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_ticket_assignee();
+
+DROP POLICY IF EXISTS "Meter readers can read own assigned tickets" ON public.tickets;
+CREATE POLICY "Meter readers can read own assigned tickets"
+  ON public.tickets
+  FOR SELECT
+  TO authenticated
+  USING (
+    deleted_at IS NULL
+    AND (
+      assigned_staff_id = (SELECT auth.uid())
+      OR public.is_ticket_assignee(id)
+    )
+  );
+
+DROP POLICY IF EXISTS "Meter readers can update own assigned tickets" ON public.tickets;
+CREATE POLICY "Meter readers can update own assigned tickets"
+  ON public.tickets
+  FOR UPDATE
+  TO authenticated
+  USING (
+    deleted_at IS NULL
+    AND status = ANY (ARRAY['assigned'::TEXT, 'scheduled'::TEXT, 'in_progress'::TEXT])
+    AND (
+      assigned_staff_id = (SELECT auth.uid())
+      OR public.is_ticket_assignee(id)
+    )
+  )
+  WITH CHECK (
+    deleted_at IS NULL
+    AND status = ANY (ARRAY['assigned'::TEXT, 'scheduled'::TEXT, 'in_progress'::TEXT, 'work_completed'::TEXT])
+    AND (
+      assigned_staff_id = (SELECT auth.uid())
+      OR public.is_ticket_assignee(id)
+    )
+  );
+
+DROP POLICY IF EXISTS "Meter readers can read timeline for own tickets" ON public.ticket_timeline;
+CREATE POLICY "Meter readers can read timeline for own tickets"
+  ON public.ticket_timeline
+  FOR SELECT
+  TO authenticated
+  USING (
+    ticket_id IN (
+      SELECT t.id
+      FROM public.tickets t
+      WHERE t.deleted_at IS NULL
+        AND (
+          t.assigned_staff_id = (SELECT auth.uid())
+          OR public.is_ticket_assignee(t.id)
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "Meter readers can add timeline events to own tickets" ON public.ticket_timeline;
+CREATE POLICY "Meter readers can add timeline events to own tickets"
+  ON public.ticket_timeline
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    event_type = ANY (ARRAY['assigned'::TEXT, 'status_change'::TEXT])
+    AND ticket_id IN (
+      SELECT t.id
+      FROM public.tickets t
+      WHERE t.deleted_at IS NULL
+        AND (
+          t.assigned_staff_id = (SELECT auth.uid())
+          OR public.is_ticket_assignee(t.id)
+        )
+    )
+  );
+
+NOTIFY pgrst, 'reload schema';

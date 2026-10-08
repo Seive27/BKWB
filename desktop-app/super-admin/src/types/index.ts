@@ -342,8 +342,10 @@ export interface Ticket {
   deleted_at: string | null;
   /** Joined profiles row for the resident. */
   resident?: TicketPerson | null;
-  /** Joined profiles row for the assigned staff member. */
+  /** Joined profiles row for the primary assignee (assigned_staff_id). */
   assigned_staff?: TicketPerson | null;
+  /** Everyone assigned to this ticket, including the primary assignee. */
+  assignees?: TicketPerson[];
   /** Chronological history (ticket_timeline rows). */
   timeline?: TicketTimelineEvent[];
 }
@@ -400,10 +402,13 @@ export const TICKET_STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   closed: [],
 };
 
+/** Display order for priority controls and ticket lists. */
+export const TICKET_PRIORITY_ORDER: TicketPriority[] = ['high', 'medium', 'low'];
+
 export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
-  low: 'Low',
-  medium: 'Medium',
   high: 'High',
+  medium: 'Medium',
+  low: 'Low',
 };
 
 export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {

@@ -250,6 +250,69 @@ export async function cancelPasswordReset(): Promise<void> {
   }
 }
 
+/**
+ * Send the first-login confirmation code to the email used to sign in.
+ * Supabase Auth delivers it. Forgot-password uses a different email.
+ */
+export async function sendRegisteredEmailOtp(): Promise<void> {
+  const { error } = await supabase.auth.reauthenticate();
+  if (error) throw new Error(getAuthErrorMessage(error));
+}
+
+/** Confirm the code sent to the registration email. */
+export async function verifyRegisteredEmailOtp(_email: string, token: string): Promise<void> {
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    throw new Error('Please enter the verification code from your email.');
+  }
+  const { data, error } = await supabase.rpc('confirm_registered_email', {
+    p_code: trimmedToken,
+  });
+  if (error) throw new Error(getAuthErrorMessage(error));
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Invalid verification code. Please try again.');
+  }
+}
+
+/** Save the reviewed profile and mark first login complete. */
+export async function completeFirstLogin(input: {
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  phone: string;
+}): Promise<void> {
+  if (!input.firstName.trim() || !input.lastName.trim()) {
+    throw new Error('First name and last name are required.');
+  }
+  const phone = input.phone.replace(/\D/g, '');
+  if (input.phone.trim() && !/^09\d{9}$/.test(phone)) {
+    throw new Error('Contact number must start with 09 and have exactly 11 digits.');
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error('You must be signed in to finish setup.');
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      first_name: input.firstName.trim(),
+      middle_name: input.middleName.trim() || null,
+      last_name: input.lastName.trim(),
+      phone: phone || null,
+    })
+    .eq('id', userId);
+  if (profileError) throw new Error(getAuthErrorMessage(profileError));
+
+  const { data, error } = await supabase.rpc('complete_resident_onboarding');
+  if (error) throw new Error(getAuthErrorMessage(error));
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Could not complete account setup.');
+  }
+}
+
 export async function changePassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({
     password: newPassword,

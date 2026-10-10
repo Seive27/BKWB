@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthOverlay from './components/layout/AuthOverlay';
 import LoginModal from './components/modals/LoginModal';
+import AccountSetupModal from './components/modals/AccountSetupModal';
 
 // Staff Feature Pages
 import Dashboard from './pages/Dashboard';
@@ -33,7 +34,8 @@ function AppContent() {
   const [activePage, setActivePage] = useState('dashboard');
   const [focusSelectedId, setFocusSelectedId] = useState<string | null>(null);
   const [initialStatusFilter, setInitialStatusFilter] = useState<string | null>(null);
-  const { showLogin, isClosing, isAuthenticated, login, logout } = useAuth();
+  const { showLogin, isClosing, isAuthenticated, login, logout, profile, finishOnboarding } = useAuth();
+  const needsSetup = isAuthenticated && !!profile && !profile.onboarded_at;
 
   const handlePageChange = (page: string, options?: { statusFilter?: string }) => {
     setFocusSelectedId(null);
@@ -110,7 +112,7 @@ function AppContent() {
     }
   };
 
-  const lockBackdrop = showLogin && !isClosing;
+  const lockBackdrop = (showLogin && !isClosing) || needsSetup;
 
   return (
     <>
@@ -130,7 +132,7 @@ function AppContent() {
         </div>
       </div>
 
-      <AuthOverlay visible={showLogin} fading={isClosing} />
+      <AuthOverlay visible={showLogin || needsSetup} fading={isClosing && !needsSetup} />
 
       {showLogin && (
         <LoginModal
@@ -141,6 +143,10 @@ function AppContent() {
       )}
 
       {/* Idle session watchdog — signs out after inactivity */}
+      {needsSetup && (
+        <AccountSetupModal onComplete={finishOnboarding} onSignOut={logout} />
+      )}
+
       {isAuthenticated && <SessionTimeout onExpire={logout} />}
     </>
   );

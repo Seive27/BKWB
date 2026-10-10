@@ -25,7 +25,7 @@ import {
 } from '@/services/authService';
 
 type LoginProps = {
-  onLogin?: () => void;
+  onLogin?: (needsOnboarding: boolean) => void;
 };
 
 type ResetStep = 'email' | 'otp' | 'password' | 'done';
@@ -352,8 +352,8 @@ export default function Login({ onLogin }: LoginProps) {
   // the app is never marked logged-in without a real Supabase session.
   const handleLogin = async () => {
     try {
-      await login(username, password);
-      onLogin?.();
+      const user = await login(username, password);
+      onLogin?.(user.needsOnboarding);
     } catch (error) {
       Alert.alert('Login failed', error instanceof Error ? error.message : 'An unexpected error occurred.');
     }

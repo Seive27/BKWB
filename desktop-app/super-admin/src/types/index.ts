@@ -555,6 +555,8 @@ export interface Profile {
   email: string;
   avatar_url?: string | null;
   is_active: boolean;
+  /** Null until first login finishes email OTP, a new password, and profile review. */
+  onboarded_at?: string | null;
   created_at: string;
   updated_at: string;
   role: Role;

@@ -52,6 +52,10 @@ declare module 'npm:@supabase/supabase-js@2' {
           error: { message: string } | null;
         }>;
         deleteUser(id: string): Promise<{ error: { message: string } | null }>;
+        generateLink(params: Record<string, unknown>): Promise<{
+          data: { properties?: { email_otp?: string } } | null;
+          error: { message: string } | null;
+        }>;
       };
     };
     from(table: string): QueryBuilder;

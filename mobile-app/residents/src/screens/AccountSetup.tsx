@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,18 +20,20 @@ import { getPasswordValidationError } from '@/lib/password';
 import {
   completeAccountSetup,
   getCurrentProfile,
+  isLoginHandleEmail,
+  sendRegisteredEmailOtp,
   sendVerificationEmail,
   setPermanentPassword,
   signOut,
   verifyEmailOwnership,
-  type FullProfileWithOnboarding,
+  verifyRegisteredEmailOtp,
 } from '@/services/authService';
 
 type AccountSetupProps = {
   onSetupComplete: () => void;
 };
 
-type SetupStep = 'email' | 'otp' | 'password' | 'profile' | 'done';
+type SetupStep = 'loading' | 'email' | 'otp' | 'password' | 'profile' | 'done';
 
 /** Matches the Supabase "Email OTP length" setting (set to 6 in the
  *  dashboard). The min-length floor keeps Verify safe if the setting is
@@ -89,8 +91,11 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
   const insets = useSafeAreaInsets();
   const dialog = useDialog();
 
-  const [step, setStep] = useState<SetupStep>('email');
+  const [step, setStep] = useState<SetupStep>('loading');
   const [email, setEmail] = useState('');
+  /** True when the account was registered with a real email. Those residents
+   *  verify that inbox. Account-number residents still type their own email. */
+  const [registeredEmail, setRegisteredEmail] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -109,9 +114,46 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
 
 
   const stepIndex = useMemo<Record<SetupStep, number>>(
-    () => ({ email: 1, otp: 2, password: 3, profile: 4, done: 4 }),
-    []
+    () =>
+      registeredEmail
+        ? { loading: 1, email: 1, otp: 1, password: 2, profile: 3, done: 3 }
+        : { loading: 1, email: 1, otp: 2, password: 3, profile: 4, done: 4 },
+    [registeredEmail]
   );
+  const totalSteps = registeredEmail ? 3 : 4;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const profile = await getCurrentProfile();
+      if (cancelled) return;
+      if (profile) {
+        setFirstName(profile.first_name ?? '');
+        setMiddleName(profile.middle_name ?? '');
+        setLastName(profile.last_name ?? '');
+        setPhone(profile.phone ?? '');
+      }
+      const known =
+        profile?.email && !isLoginHandleEmail(profile.email) ? profile.email : '';
+      if (!known) {
+        setStep('email');
+        return;
+      }
+      setEmail(known);
+      setRegisteredEmail(true);
+      setStep('otp');
+      try {
+        await sendRegisteredEmailOtp();
+      } catch (err) {
+        if (!cancelled) {
+          setOtpError(friendlyErrorMessage(err, 'Could not send the verification code.'));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Shared error funnel: connectivity failures open the branded retry
    *  modal; everything else shows inline on the current step. */
@@ -166,7 +208,11 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
     await runWithErrors(
       'Invalid verification code. Please try again.',
       async () => {
-        await verifyEmailOwnership(email, otp);
+        if (registeredEmail) {
+          await verifyRegisteredEmailOtp(email, otp);
+        } else {
+          await verifyEmailOwnership(email, otp);
+        }
         setStep('password');
       },
       setOtpError,
@@ -181,7 +227,11 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
     await runWithErrors(
       'Could not resend the code.',
       async () => {
-        await sendVerificationEmail(email);
+        if (registeredEmail) {
+          await sendRegisteredEmailOtp();
+        } else {
+          await sendVerificationEmail(email);
+        }
         dialog.toast('A new code was sent to your email');
       },
       setOtpError,
@@ -207,14 +257,6 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
       'Could not set your new password.',
       async () => {
         await setPermanentPassword(password);
-        // Prefill the profile step with whatever the barangay already has on file.
-        const profile = await getCurrentProfile();
-        if (profile) {
-          setFirstName(profile.first_name ?? '');
-          setMiddleName(profile.middle_name ?? '');
-          setLastName(profile.last_name ?? '');
-          setPhone(profile.phone ?? '');
-        }
         setStep('profile');
       },
       setError,
@@ -310,11 +352,18 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
 
           {step !== 'done' ? (
             <View className="rounded-2xl border border-slate-200 bg-white p-5" style={stepShadow}>
+              {step === 'loading' && (
+                <View className="items-center py-8">
+                  <ActivityIndicator color="#1E3A5F" />
+                  <Text className="mt-3 text-sm text-slate-500">Preparing your account setup...</Text>
+                </View>
+              )}
+
               {step === 'email' && (
                 <View>
                   <StepHeading
                     step={stepIndex.email}
-                    total={4}
+                    total={totalSteps}
                     title="Verify your email"
                     subtitle="Enter your Gmail address. We'll send a verification code to confirm it's yours."
                   />
@@ -358,9 +407,13 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
                 <View>
                   <StepHeading
                     step={stepIndex.otp}
-                    total={4}
+                    total={totalSteps}
                     title="Enter verification code"
-                    subtitle={`We sent a verification code to ${email.trim() || 'your email'}.`}
+                    subtitle={
+                      registeredEmail
+                        ? `We sent a verification code to ${email.trim()} to confirm this email.`
+                        : `We sent a verification code to ${email.trim() || 'your email'}.`
+                    }
                   />
                   <TextInput
                     value={otp}
@@ -398,9 +451,13 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
                     )}
                   </Pressable>
                   <View className="mt-3 flex-row items-center justify-between">
-                    <Pressable onPress={goBackToEmail} className="py-1 active:opacity-70">
-                      <Text className="text-sm font-medium text-slate-500">Change email</Text>
-                    </Pressable>
+                    {registeredEmail ? (
+                      <View />
+                    ) : (
+                      <Pressable onPress={goBackToEmail} className="py-1 active:opacity-70">
+                        <Text className="text-sm font-medium text-slate-500">Change email</Text>
+                      </Pressable>
+                    )}
                     <Pressable onPress={handleResendCode} disabled={busy} className="py-1 active:opacity-70">
                       <Text className="text-sm font-medium text-brand">Resend code</Text>
                     </Pressable>
@@ -412,7 +469,7 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
                 <View>
                   <StepHeading
                     step={stepIndex.password}
-                    total={4}
+                    total={totalSteps}
                     title="Create your password"
                     subtitle="This replaces the temporary password from the barangay office."
                   />
@@ -480,7 +537,7 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
                 <View>
                   <StepHeading
                     step={stepIndex.profile}
-                    total={4}
+                    total={totalSteps}
                     title="Review your information"
                     subtitle="Confirm your details below. Your account number and billing records stay unchanged."
                   />
@@ -567,9 +624,18 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
               </Text>
               <View className="mt-4 w-full rounded-xl border border-brand-100 bg-brand-50 px-4 py-3">
                 <Text className="text-center text-[13px] leading-5 text-brand-800">
-                  Keep your account number! You can always sign in with{'\n'}
-                  <Text className="font-semibold">{email.trim()}</Text> or your Account Number,
-                  {' '}plus your new password.
+                  {registeredEmail ? (
+                    <>
+                      Next time, sign in with{'\n'}
+                      <Text className="font-semibold">{email.trim()}</Text> and your new password.
+                    </>
+                  ) : (
+                    <>
+                      Keep your account number! You can always sign in with{'\n'}
+                      <Text className="font-semibold">{email.trim()}</Text> or your Account Number,
+                      {' '}plus your new password.
+                    </>
+                  )}
                 </Text>
               </View>
               <Pressable

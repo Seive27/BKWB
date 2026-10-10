@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 
 import { type NavTab } from '@/components/ui/Navbar';
 import { supabase } from '@/lib/supabase';
-import { isPasswordResetPending } from '@/services/authService';
+import { getCurrentProfile, isPasswordResetPending } from '@/services/authService';
 import AccountSetup from '@/screens/AccountSetup';
 import Announcements from '@/screens/Announcements';
 import Bills from '@/screens/Bills';
@@ -27,10 +27,11 @@ function isPaymentReturnUrl(url: string | null | undefined): boolean {
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
-  // Mandatory first-login gate: migrated residents sign in with their
-  // Account Number + temporary password, then must finish Account Setup
-  // (email verification + new password + profile) before the dashboard.
+  // Mandatory first-login gate. Account-number residents enter their own
+  // email. New residents who were registered with an email confirm that
+  // inbox, then set a password and review their profile.
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [onboardingKnown, setOnboardingKnown] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [showChatBot, setShowChatBot] = useState(false);
   const [dashboardDeepLink, setDashboardDeepLink] = useState<DashboardDeepLink>(null);
@@ -71,6 +72,30 @@ export default function HomeScreen() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  // A restored session must still hit Account Setup when onboarded_at is null.
+  // Login sets the flag itself so the dashboard does not flash first.
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setOnboardingKnown(false);
+      setNeedsSetup(false);
+      return;
+    }
+    if (onboardingKnown) return;
+    let cancelled = false;
+    getCurrentProfile()
+      .then((profile) => {
+        if (cancelled) return;
+        setNeedsSetup(!!profile?.needs_onboarding);
+        setOnboardingKnown(true);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingKnown(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, onboardingKnown]);
 
   // After PayMongo "Return to Merchant", reopen on the Bills tab.
   useEffect(() => {
@@ -123,15 +148,20 @@ export default function HomeScreen() {
       <Login
         onLogin={(needsOnboarding) => {
           setNeedsSetup(needsOnboarding);
+          setOnboardingKnown(true);
           setIsLoggedIn(true);
         }}
       />
     );
   }
 
+  if (!onboardingKnown) {
+    return null;
+  }
+
   // A session exists but setup was never completed (e.g. the app was killed
   // mid-setup): re-check the live profile so the gate stays mandatory.
-  if (isLoggedIn && needsSetup) {
+  if (needsSetup) {
     return <AccountSetup onSetupComplete={() => setNeedsSetup(false)} />;
   }
 

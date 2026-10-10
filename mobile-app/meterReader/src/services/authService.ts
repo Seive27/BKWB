@@ -21,6 +21,8 @@ export interface AuthUser {
   id: string;
   email: string | null;
   role: string;
+  /** True until first login finishes OTP, a new password, and profile review. */
+  needsOnboarding: boolean;
 }
 
 async function getUserProfile(userId: string, email?: string) {
@@ -36,7 +38,12 @@ async function getUserProfile(userId: string, email?: string) {
   }
 
   if (data) {
-    return data as { role: { name: string }; is_active: boolean; email: string };
+    return data as {
+      role: { name: string };
+      is_active: boolean;
+      email: string;
+      onboarded_at?: string | null;
+    };
   }
 
   if (email) {
@@ -51,7 +58,12 @@ async function getUserProfile(userId: string, email?: string) {
       return null;
     }
 
-    return emailData as { role: { name: string }; is_active: boolean; email: string } | null;
+    return emailData as {
+      role: { name: string };
+      is_active: boolean;
+      email: string;
+      onboarded_at?: string | null;
+    } | null;
   }
 
   return null;
@@ -93,6 +105,7 @@ export async function login(username: string, password: string): Promise<AuthUse
     id: data.user.id,
     email: data.user.email ?? null,
     role: profile.role.name,
+    needsOnboarding: !profile.onboarded_at,
   };
 }
 
@@ -107,6 +120,7 @@ export interface FullProfile {
   avatar_url: string | null;
   is_active: boolean;
   role_name: string;
+  needs_onboarding: boolean;
 }
 
 export async function getCurrentProfile(): Promise<FullProfile | null> {
@@ -119,7 +133,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, email, first_name, middle_name, last_name, phone, avatar_url, is_active, role:roles(name)'
+      'id, email, first_name, middle_name, last_name, phone, avatar_url, is_active, onboarded_at, role:roles(name)'
     )
     .eq('id', userId)
     .maybeSingle();
@@ -139,6 +153,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
     phone: string | null;
     avatar_url: string | null;
     is_active: boolean;
+    onboarded_at?: string | null;
     role?: { name: string } | null;
   };
   return {
@@ -151,6 +166,7 @@ export async function getCurrentProfile(): Promise<FullProfile | null> {
     avatar_url: row.avatar_url,
     is_active: row.is_active,
     role_name: row.role?.name ?? 'meter_reader',
+    needs_onboarding: !row.onboarded_at,
   };
 }
 
@@ -206,6 +222,73 @@ export async function uploadAvatar(localUri: string): Promise<string> {
   const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
   await updateProfile({ avatar_url: publicUrl });
   return publicUrl;
+}
+
+/**
+ * Send the first-login confirmation code to the email used to sign in.
+ * Supabase Auth delivers it. Forgot-password uses a different email.
+ */
+export async function sendRegisteredEmailOtp(): Promise<void> {
+  const { error } = await supabase.auth.reauthenticate();
+  if (error) {
+    throw new Error(error.message || 'Failed to send the verification code.');
+  }
+}
+
+/** Confirm the code sent to the registration email. */
+export async function verifyRegisteredEmailOtp(_email: string, token: string): Promise<void> {
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    throw new Error('Please enter the verification code from your email.');
+  }
+  const { data, error } = await supabase.rpc('confirm_registered_email', {
+    p_code: trimmedToken,
+  });
+  if (error) {
+    throw new Error(error.message || 'Invalid verification code. Please try again.');
+  }
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Invalid verification code. Please try again.');
+  }
+}
+
+/** Replace the temporary password issued at registration. */
+export async function setPermanentPassword(newPassword: string): Promise<void> {
+  const validationError = getPasswordValidationError(newPassword);
+  if (validationError) throw new Error(validationError);
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message || 'Failed to set your new password.');
+}
+
+/** Save the reviewed profile and mark first login complete. */
+export async function completeAccountSetup(input: {
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  phone: string | null;
+}): Promise<void> {
+  if (!input.first_name.trim() || !input.last_name.trim()) {
+    throw new Error('First name and last name are required.');
+  }
+  if (input.phone) {
+    const digits = input.phone.replace(/\D/g, '');
+    if (!/^09\d{9}$/.test(digits)) {
+      throw new Error('Contact number must start with 09 and have exactly 11 digits.');
+    }
+  }
+  await updateProfile({
+    first_name: input.first_name,
+    middle_name: input.middle_name,
+    last_name: input.last_name,
+    phone: input.phone,
+  });
+  const { data, error } = await supabase.rpc('complete_resident_onboarding');
+  if (error) throw new Error(error.message || 'Failed to complete account setup.');
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Could not complete account setup. Please contact support.');
+  }
 }
 
 /** Send a password-reset OTP email for the given account email. */

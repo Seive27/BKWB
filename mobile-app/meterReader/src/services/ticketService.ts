@@ -235,6 +235,44 @@ export async function markWorkCompleted(
   return mapRow(data as unknown as ReaderTicket);
 }
 
+export interface ReaderTimelineEvent {
+  id: string;
+  ticket_id: string;
+  event_type: 'created' | 'assigned' | 'status_change';
+  description: string | null;
+  created_at: string;
+  performer?: { id: string; first_name: string; last_name: string } | null;
+}
+
+/** Full activity timeline for one ticket, oldest first. */
+export async function getReaderTicketTimeline(
+  ticketId: string
+): Promise<ReaderTimelineEvent[]> {
+  const { data, error } = await supabase
+    .from('ticket_timeline')
+    .select(
+      'id, ticket_id, event_type, description, created_at, performer:profiles!ticket_timeline_performed_by_fkey(id, first_name, last_name)'
+    )
+    .eq('ticket_id', ticketId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || 'Could not load the activity timeline.');
+  }
+
+  return (data ?? []).map((row) => {
+    const performer = Array.isArray(row.performer) ? row.performer[0] : row.performer;
+    return {
+      id: row.id,
+      ticket_id: row.ticket_id,
+      event_type: row.event_type,
+      description: row.description,
+      created_at: row.created_at,
+      performer: performer ?? null,
+    };
+  });
+}
+
 async function recordTimeline(
   ticketId: string,
   eventType: 'assigned' | 'status_change',

@@ -25,7 +25,7 @@
 //   number is always created (auto-generated ACC-#### when absent)
 //        │
 //        ▼
-//   (best-effort) send-email → resident gets email + temporary password
+//   (best-effort) send-email → real email gets the temporary password
 //
 // EMAIL IS OPTIONAL:
 //   Staff may leave the Email Address field blank (e.g. the resident
@@ -407,6 +407,10 @@ async function handleRequest(req: Request): Promise<Response> {
     // masterlist import) so canIssueLogin offers the Issue Login flow.
     // The auth identifier (placeholder) is NOT copied into profiles.
     email,
+    // NULL until the person finishes first login: OTP on the registration
+    // email, a password they choose, then a profile review. Existing rows
+    // were backfilled; this must stay null for every new account.
+    onboarded_at: null,
   };
 
   const { error: profileError } = await adminClient
@@ -484,11 +488,19 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ── 7. Email the credentials (best-effort — never fails the request) ──
-  //        Only residents with a REAL email receive the temporary password;
-  //        others are provisioned through the Issue Login flow instead.
-  if (role === 'resident' && email) {
+  //        Anyone registered with a real mailbox gets the temporary password.
+  //        Residents left without an email use Issue Login + account number.
+  if (email) {
     const fullName = `${firstName} ${lastName}`.trim();
-    console.log('[create-user] invoking send-email...', { to: email });
+    const appName =
+      role === 'meter_reader'
+        ? 'Meter Reader mobile app'
+        : role === 'staff'
+          ? 'Staff portal'
+          : role === 'super_admin'
+            ? 'Super Admin portal'
+            : 'Residents mobile app';
+    console.log('[create-user] invoking send-email...', { to: email, role });
     await adminClient.functions.invoke('send-email', {
       body: {
         to: email,
@@ -498,6 +510,8 @@ async function handleRequest(req: Request): Promise<Response> {
           email,
           password,
           account_number: accountNumber,
+          role,
+          app_name: appName,
         },
       },
     }).then(() => {

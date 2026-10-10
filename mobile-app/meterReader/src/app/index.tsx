@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import type { ReadingFilter } from '@/components/assigned/FilterTabs';
 import { type NavTab } from '@/components/NavBar/Navbar';
 import { supabase } from '@/lib/supabase';
-import { isPasswordResetPending } from '@/services/authService';
+import { getCurrentProfile, isPasswordResetPending } from '@/services/authService';
+import AccountSetup from '@/screens/AccountSetup';
 import Announcements from '@/screens/Announcements';
 import Assigned from '@/screens/Assigned';
 import Dashboard from '@/screens/Dashboard';
@@ -17,6 +18,8 @@ import type { NotificationDestination } from '@/utils/notificationNavigation';
 export default function HomeScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [onboardingKnown, setOnboardingKnown] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [historyFilter, setHistoryFilter] = useState<ReadingFilter>('all');
   const [showAnnouncements, setShowAnnouncements] = useState(false);
@@ -68,6 +71,28 @@ export default function HomeScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setOnboardingKnown(false);
+      setNeedsSetup(false);
+      return;
+    }
+    if (onboardingKnown) return;
+    let cancelled = false;
+    getCurrentProfile()
+      .then((profile) => {
+        if (cancelled) return;
+        setNeedsSetup(!!profile?.needs_onboarding);
+        setOnboardingKnown(true);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingKnown(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, onboardingKnown]);
+
   const handleNotificationNavigate = (destination: NotificationDestination) => {
     if (!destination) return;
     setShowNotifications(false);
@@ -88,7 +113,23 @@ export default function HomeScreen() {
   }
 
   if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+    return (
+      <Login
+        onLogin={(needsOnboarding) => {
+          setNeedsSetup(needsOnboarding);
+          setOnboardingKnown(true);
+          setIsLoggedIn(true);
+        }}
+      />
+    );
+  }
+
+  if (!onboardingKnown) {
+    return null;
+  }
+
+  if (needsSetup) {
+    return <AccountSetup onSetupComplete={() => setNeedsSetup(false)} />;
   }
 
   if (showAnnouncements) {

@@ -169,6 +169,21 @@ function timelineTitle(event: TicketTimelineEvent): string {
   }
 }
 
+const TIMELINE_PAGE_SIZE = 5;
+
+/** Pages of 5, aligned so the last page is the latest activity. */
+function paginateTimeline<T>(items: T[], pageSize = TIMELINE_PAGE_SIZE): T[][] {
+  if (items.length === 0) return [];
+  const pages: T[][] = [];
+  let end = items.length;
+  while (end > 0) {
+    const start = Math.max(0, end - pageSize);
+    pages.unshift(items.slice(start, end));
+    end = start;
+  }
+  return pages;
+}
+
 const AssigneePicker: React.FC<{
   options: AssignOption[];
   selectedIds: string[];
@@ -257,7 +272,10 @@ const Tickets: React.FC<{
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [timeline, setTimeline] = useState<TicketTimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelinePage, setTimelinePage] = useState(1);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
+  const detailsScrollRef = useRef<HTMLDivElement>(null);
+  const timelineSectionRef = useRef<HTMLDivElement>(null);
 
   // ──── Modals / actions ────
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -328,6 +346,7 @@ const Tickets: React.FC<{
     const id = selectedId;
     if (!id) {
       setTimeline([]);
+      setTimelinePage(1);
       return;
     }
     let cancelled = false;
@@ -335,7 +354,9 @@ const Tickets: React.FC<{
     getTicketById(id)
       .then((data) => {
         if (!cancelled) {
-          setTimeline(data?.timeline ?? []);
+          const next = data?.timeline ?? [];
+          setTimeline(next);
+          setTimelinePage(paginateTimeline(next).length || 1);
         }
       })
       .catch(() => {
@@ -353,6 +374,27 @@ const Tickets: React.FC<{
   useEffect(() => {
     setNotesDraft(selectedTicket?.internal_notes ?? '');
   }, [selectedTicket?.id, selectedTicket?.internal_notes]);
+
+  const timelinePages = useMemo(() => paginateTimeline(timeline), [timeline]);
+  const timelinePageCount = timelinePages.length;
+  const activeTimelinePage =
+    timelinePageCount === 0 ? 1 : Math.min(timelinePage, timelinePageCount);
+  const visibleTimeline = timelinePages[activeTimelinePage - 1] ?? [];
+
+  // Opening a ticket lands on its activity timeline (latest page).
+  useEffect(() => {
+    if (!selectedTicket) return;
+    const handle = window.setTimeout(() => {
+      const container = detailsScrollRef.current;
+      const section = timelineSectionRef.current;
+      if (!container || !section) return;
+      const containerRect = container.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const top = container.scrollTop + (sectionRect.top - containerRect.top) - 8;
+      container.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+    }, 120);
+    return () => window.clearTimeout(handle);
+  }, [selectedTicket?.id]);
 
   const filteredTickets = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -952,7 +994,7 @@ const Tickets: React.FC<{
           )}
 
           {/* ──── Scrollable content ──── */}
-          <div className="flex-1 overflow-y-auto">
+          <div ref={detailsScrollRef} className="flex-1 overflow-y-auto">
             {/* Description */}
             <div className="mx-8 mt-5 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
               <div className="flex items-center space-x-2 mb-3">
@@ -1013,43 +1055,78 @@ const Tickets: React.FC<{
             </div>
 
             {/* Timeline */}
-            <div className="mx-8 my-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div
+              ref={timelineSectionRef}
+              className="mx-8 my-4 p-5 bg-white border border-gray-200 rounded-xl shadow-sm"
+            >
               <div className="flex items-center space-x-2 mb-5">
                 <Clock className="w-4 h-4 text-gray-500" />
                 <h3 className="text-sm font-semibold text-gray-700">Activity Timeline</h3>
+                {timelinePageCount > 1 && activeTimelinePage === timelinePageCount && (
+                  <span className="text-[11px] font-medium text-primary-600">Latest</span>
+                )}
                 {timelineLoading && <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />}
               </div>
 
               {timeline.length === 0 ? (
                 <p className="text-sm text-gray-400">No activity recorded yet.</p>
               ) : (
-                <div className="space-y-4">
-                  {timeline.map((event, idx) => (
-                    <div key={event.id} className="flex items-start space-x-3">
-                      <div className="flex flex-col items-center">
-                        <TimelineIcon type={event.event_type} />
-                        {idx < timeline.length - 1 && (
-                          <div className="w-0.5 flex-1 min-h-[16px] bg-gray-200 mt-1" />
-                        )}
-                      </div>
-                      <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-4 min-w-0 mb-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <span className="text-sm font-semibold text-gray-900">
-                            {timelineTitle(event)}
-                          </span>
-                          <span className="text-xs text-gray-400">·¢</span>
-                          <span className="text-xs text-gray-400">
-                            {formatDateTime(event.created_at)}
-                          </span>
+                <>
+                  <div className="space-y-4">
+                    {visibleTimeline.map((event, idx) => (
+                      <div key={event.id} className="flex items-start space-x-3">
+                        <div className="flex flex-col items-center">
+                          <TimelineIcon type={event.event_type} />
+                          {idx < visibleTimeline.length - 1 && (
+                            <div className="w-0.5 flex-1 min-h-[16px] bg-gray-200 mt-1" />
+                          )}
                         </div>
-                        <p className="text-xs text-gray-500 break-words">
-                          {fullName(event.performer) || 'System'}
-                          {event.description ? ` — ${event.description}` : ''}
-                        </p>
+                        <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-4 min-w-0 mb-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <span className="text-sm font-semibold text-gray-900">
+                              {timelineTitle(event)}
+                            </span>
+                            <span className="text-xs text-gray-400">•</span>
+                            <span className="text-xs text-gray-400">
+                              {formatDateTime(event.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 break-words">
+                            {fullName(event.performer) || 'System'}
+                            {event.description ? ` — ${event.description}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {timelinePageCount > 1 && (
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                      <p className="text-xs text-gray-500">
+                        Page {activeTimelinePage} of {timelinePageCount}
+                      </p>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setTimelinePage((page) => Math.max(1, page - 1))}
+                          disabled={activeTimelinePage === 1}
+                          className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTimelinePage((page) => Math.min(timelinePageCount, page + 1))
+                          }
+                          disabled={activeTimelinePage === timelinePageCount}
+                          className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           </div>

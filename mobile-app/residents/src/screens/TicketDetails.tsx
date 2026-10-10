@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -23,7 +23,59 @@ import {
   confirmWorkCompleted,
   rejectWorkCompleted,
 } from '@/services/ticketService';
-import { TICKET_CATEGORY_LABELS } from '@/types/tickets';
+import { TICKET_CATEGORY_LABELS, type TicketTimelineEvent } from '@/types/tickets';
+
+const TIMELINE_PAGE_SIZE = 5;
+
+/** Pages of 5, aligned so the last page is the latest activity. */
+function paginateTimeline<T>(items: T[], pageSize = TIMELINE_PAGE_SIZE): T[][] {
+  if (items.length === 0) return [];
+  const pages: T[][] = [];
+  let end = items.length;
+  while (end > 0) {
+    const start = Math.max(0, end - pageSize);
+    pages.unshift(items.slice(start, end));
+    end = start;
+  }
+  return pages;
+}
+
+function TimelinePager({
+  page,
+  pageCount,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+  return (
+    <View className="mt-4 flex-row items-center justify-between border-t border-slate-100 pt-4">
+      <Pressable
+        onPress={() => onPageChange(page - 1)}
+        disabled={page <= 1}
+        className="rounded-lg border border-slate-200 px-3 py-2 active:bg-slate-50 disabled:opacity-40"
+        accessibilityRole="button"
+        accessibilityLabel="Previous timeline page"
+      >
+        <Text className="text-sm font-semibold text-slate-600">Previous</Text>
+      </Pressable>
+      <Text className="text-xs text-slate-400">
+        {page === pageCount ? 'Latest activity' : `Page ${page} of ${pageCount}`}
+      </Text>
+      <Pressable
+        onPress={() => onPageChange(page + 1)}
+        disabled={page >= pageCount}
+        className="rounded-lg border border-slate-200 px-3 py-2 active:bg-slate-50 disabled:opacity-40"
+        accessibilityRole="button"
+        accessibilityLabel="Next timeline page"
+      >
+        <Text className="text-sm font-semibold text-slate-600">Next</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 type TicketDetailsScreenProps = {
   ticketId: string;
@@ -73,15 +125,62 @@ export default function TicketDetailsScreen({
 }: TicketDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
-  const { ticket, timeline, loading, error, refresh, searchQuery, setSearchQuery, loadMore, hasMore, loadingTimeline } = useTicketDetails(ticketId);
+  const { ticket, timeline, loading, error, refresh, searchQuery, setSearchQuery, loadingTimeline } =
+    useTicketDetails(ticketId);
   const dialog = useDialog();
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [timelinePage, setTimelinePage] = useState(1);
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const timelineRef = useRef<View>(null);
   // Skeleton only on the very first load — background realtime refreshes
   // (loading flips true while ticket already exists) must not flash it.
   const showSkeleton = loading && !ticket;
   const needsConfirmation = ticket?.status === 'work_completed';
+
+  const filteredTimeline = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return timeline;
+    return timeline.filter((event: TicketTimelineEvent) => {
+      const performer = event.performer
+        ? `${event.performer.first_name} ${event.performer.last_name}`.toLowerCase()
+        : '';
+      return (
+        (event.description ?? '').toLowerCase().includes(q) ||
+        event.event_type.replace(/_/g, ' ').includes(q) ||
+        performer.includes(q)
+      );
+    });
+  }, [timeline, searchQuery]);
+
+  const timelinePages = useMemo(() => paginateTimeline(filteredTimeline), [filteredTimeline]);
+  const timelinePageCount = timelinePages.length;
+  const activeTimelinePage =
+    timelinePageCount === 0 ? 1 : Math.min(timelinePage, timelinePageCount);
+  const visibleTimeline = timelinePages[activeTimelinePage - 1] ?? [];
+
+  useEffect(() => {
+    setTimelinePage(paginateTimeline(filteredTimeline).length || 1);
+  }, [ticketId, searchQuery, timeline, filteredTimeline]);
+
+  useEffect(() => {
+    if (showSkeleton || !ticket) return;
+    const timer = setTimeout(() => {
+      const content = contentRef.current;
+      const section = timelineRef.current;
+      if (!content || !section) return;
+      section.measureLayout(
+        content,
+        (_x, y) => {
+          scrollRef.current?.scrollTo({ y: Math.max(y - 8, 0), animated: true });
+        },
+        () => {}
+      );
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [ticket?.id, showSkeleton]);
 
   const handleConfirm = async () => {
     setConfirmBusy(true);
@@ -150,12 +249,13 @@ export default function TicketDetailsScreen({
       </View>
 
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="px-4 pt-5">
+        <View ref={contentRef} collapsable={false} className="px-4 pt-5">
           {showSkeleton ? (
             <SkeletonTicketDetails />
           ) : error && !ticket ? (
@@ -273,6 +373,8 @@ export default function TicketDetailsScreen({
 
               {/* Timeline card */}
               <View
+                ref={timelineRef}
+                collapsable={false}
                 className="rounded-2xl bg-white p-5"
                 style={{
                   shadowColor: '#000',
@@ -283,7 +385,7 @@ export default function TicketDetailsScreen({
                 }}
               >
                 <Text className="mb-3 text-base font-bold text-slate-800">Request Timeline</Text>
-                
+
                 <TextInput
                   value={searchQuery}
                   onChangeText={setSearchQuery}
@@ -292,19 +394,21 @@ export default function TicketDetailsScreen({
                   className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[14px] text-slate-800"
                 />
 
-                <TicketTimeline events={timeline} />
-                
-                {hasMore && (
-                  <Pressable
-                    onPress={loadMore}
-                    disabled={loadingTimeline}
-                    className="mt-4 items-center rounded-xl border border-slate-200 py-3 active:bg-slate-50 disabled:opacity-50"
-                  >
-                    <Text className="text-sm font-semibold text-slate-600">
-                      {loadingTimeline ? 'Loading...' : 'Load More'}
-                    </Text>
-                  </Pressable>
+                {loadingTimeline && timeline.length === 0 ? (
+                  <Text className="text-sm text-slate-400">Loading activity…</Text>
+                ) : filteredTimeline.length === 0 ? (
+                  <Text className="text-sm text-slate-400">
+                    {searchQuery.trim() ? 'No matching activity.' : 'No activity recorded yet.'}
+                  </Text>
+                ) : (
+                  <TicketTimeline events={visibleTimeline} />
                 )}
+
+                <TimelinePager
+                  page={activeTimelinePage}
+                  pageCount={timelinePageCount}
+                  onPageChange={setTimelinePage}
+                />
               </View>
 
               <View className="items-center py-2">

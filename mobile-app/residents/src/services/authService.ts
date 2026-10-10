@@ -38,7 +38,12 @@ async function getUserProfile(userId: string, email?: string) {
   }
 
   if (data) {
-    return data as { role: { name: string }; is_active: boolean; email: string };
+    return data as {
+      role: { name: string };
+      is_active: boolean;
+      email: string;
+      onboarded_at?: string | null;
+    };
   }
 
   if (email) {
@@ -53,7 +58,12 @@ async function getUserProfile(userId: string, email?: string) {
       return null;
     }
 
-    return emailData as { role: { name: string }; is_active: boolean; email: string } | null;
+    return emailData as {
+      role: { name: string };
+      is_active: boolean;
+      email: string;
+      onboarded_at?: string | null;
+    } | null;
   }
 
   return null;
@@ -174,19 +184,17 @@ export async function login(username: string, password: string): Promise<AuthUse
 }
 
 /**
- * The onboarding gate. A resident must complete Account Setup while
- * their profile has no onboarded_at timestamp, which is exactly when
- * they are still signing in with the internal login handle
- * (acc-<cons code>@example.com) issued by the barangay office.
- * Profiles with a real email were onboarded already (or are seeded
- * with real credentials) and skip setup entirely.
+ * First-login gate. `onboarded_at` stays null until Account Setup finishes.
+ *
+ * Existing residents who were given an account number (login handle, no
+ * real mailbox yet) still enter their own email during setup.
+ * New residents registered with an email sign in with that email, then
+ * confirm it with an OTP before choosing a password.
  */
 function profileNeedsOnboarding(profile: {
-  email: string;
   onboarded_at?: string | null;
 }): boolean {
-  if (profile.onboarded_at) return false;
-  return isLoginHandleEmail(profile.email);
+  return !profile.onboarded_at;
 }
 
 /** True when the email is our internal, cannot-receive-mail login handle. */
@@ -261,7 +269,6 @@ export async function getCurrentProfile(): Promise<FullProfileWithOnboarding | n
     service_address: account?.service_address ?? null,
     sitio: account?.sitio ?? null,
     needs_onboarding: profileNeedsOnboarding({
-      email: row.email,
       onboarded_at: row.onboarded_at,
     }),
   };
@@ -301,6 +308,37 @@ export async function sendVerificationEmail(newEmail: string): Promise<void> {
       throw new Error('That email is already linked to another account. Use a different one.');
     }
     throw new Error(error.message || 'Failed to send the verification code.');
+  }
+}
+
+/**
+ * First login for an account that was registered with a real email.
+ * Supabase Auth sends the confirmation code. The address is not changed.
+ * Forgot-password uses a different email.
+ */
+export async function sendRegisteredEmailOtp(): Promise<void> {
+  const { error } = await supabase.auth.reauthenticate();
+  if (error) {
+    throw new Error(error.message || 'Failed to send the verification code.');
+  }
+}
+
+/** Confirm the code sent to the registration email. */
+export async function verifyRegisteredEmailOtp(_email: string, token: string): Promise<void> {
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    throw new Error('Please enter the verification code from your email.');
+  }
+
+  const { data, error } = await supabase.rpc('confirm_registered_email', {
+    p_code: trimmedToken,
+  });
+  if (error) {
+    throw new Error(error.message || 'Invalid verification code. Please try again.');
+  }
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Invalid verification code. Please try again.');
   }
 }
 

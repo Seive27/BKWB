@@ -433,6 +433,9 @@ export default function Login({ onLogin }: LoginProps) {
               keyboardType="email-address"
               returnKeyType="next"
             />
+            <Text className="-mt-1 text-xs leading-4 text-slate-400">
+              New accounts sign in with the email from the registration message. If the office gave you an account number, use that instead.
+            </Text>
             <View className="relative justify-center">
               <TextInput
                 value={password}

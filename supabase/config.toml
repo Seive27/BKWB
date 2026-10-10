@@ -42,6 +42,11 @@ verify_jwt = true
 # indistinguishable from a wrong password.
 verify_jwt = false
 
+[functions.send-email-confirmation]
+# Signed-in user confirms the email already on their account. The function
+# generates the code server-side and emails it; the code is never returned.
+verify_jwt = true
+
 [functions.send-email]
 # Internal-only helper, invoked edge-to-edge by create-user with the project
 # secret key. The platform cannot JWT-verify requests made with the new secret

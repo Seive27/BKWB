@@ -21,6 +21,8 @@ export interface AuthContextValue {
   isClosing: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Clears the first-login gate after OTP, password, and profile are saved. */
+  finishOnboarding: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -74,7 +76,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     setIsClosing(false);
   }, [allowedRole, portalName]);
 
-  // ── Logout ──
+  const finishOnboarding = useCallback(() => {
+    const stamp = new Date().toISOString();
+    setProfile((current) => (current ? { ...current, onboarded_at: stamp } : current));
+    setUser((current) =>
+      current ? { ...current, profile: { ...current.profile, onboarded_at: stamp } } : current
+    );
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -101,8 +109,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       isClosing,
       login,
       logout,
+      finishOnboarding,
     }),
-    [isLoading, isAuthenticated, user, profile, showLogin, isClosing, login, logout],
+    [isLoading, isAuthenticated, user, profile, showLogin, isClosing, login, logout, finishOnboarding],
   );
 
   return (

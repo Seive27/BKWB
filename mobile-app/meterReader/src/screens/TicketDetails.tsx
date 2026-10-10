@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,11 +16,100 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { useReaderTickets } from '@/hooks/useReaderTickets';
 import {
+  getReaderTicketTimeline,
   markWorkCompleted,
   READER_TICKET_STATUS_LABELS,
   startTicketWork,
   type ReaderTicket,
+  type ReaderTimelineEvent,
 } from '@/services/ticketService';
+
+const TIMELINE_PAGE_SIZE = 5;
+
+/** Pages of 5, aligned so the last page is the latest activity. */
+function paginateTimeline<T>(items: T[], pageSize = TIMELINE_PAGE_SIZE): T[][] {
+  if (items.length === 0) return [];
+  const pages: T[][] = [];
+  let end = items.length;
+  while (end > 0) {
+    const start = Math.max(0, end - pageSize);
+    pages.unshift(items.slice(start, end));
+    end = start;
+  }
+  return pages;
+}
+
+function formatTimestamp(iso: string): string {
+  const date = new Date(iso);
+  const dateLabel = date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timeLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${dateLabel} · ${timeLabel}`;
+}
+
+function timelineTitle(event: ReaderTimelineEvent): string {
+  switch (event.event_type) {
+    case 'created':
+      return 'Ticket Created';
+    case 'assigned':
+      return 'Ticket Assigned';
+    case 'status_change': {
+      const desc = event.description?.toLowerCase() ?? '';
+      if (desc.includes('resolved')) return 'Ticket Resolved';
+      if (desc.includes('closed')) return 'Ticket Closed';
+      if (desc.includes('not yet completed')) return 'Work Not Completed';
+      return 'Status Updated';
+    }
+  }
+}
+
+function performerName(event: ReaderTimelineEvent): string {
+  const performer = event.performer;
+  if (performer) {
+    return `${performer.first_name} ${performer.last_name}`.trim() || 'BKWB';
+  }
+  return 'BKWB';
+}
+
+function TimelinePager({
+  page,
+  pageCount,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+  return (
+    <View className="mt-4 flex-row items-center justify-between border-t border-slate-100 pt-4">
+      <Pressable
+        onPress={() => onPageChange(page - 1)}
+        disabled={page <= 1}
+        className="rounded-lg border border-slate-200 px-3 py-2 active:bg-slate-50 disabled:opacity-40"
+        accessibilityRole="button"
+        accessibilityLabel="Previous timeline page"
+      >
+        <Text className="text-sm font-semibold text-slate-600">Previous</Text>
+      </Pressable>
+      <Text className="text-xs text-navy-muted">
+        {page === pageCount ? 'Latest activity' : `Page ${page} of ${pageCount}`}
+      </Text>
+      <Pressable
+        onPress={() => onPageChange(page + 1)}
+        disabled={page >= pageCount}
+        className="rounded-lg border border-slate-200 px-3 py-2 active:bg-slate-50 disabled:opacity-40"
+        accessibilityRole="button"
+        accessibilityLabel="Next timeline page"
+      >
+        <Text className="text-sm font-semibold text-slate-600">Next</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 type TicketDetailsProps = {
   ticketId: string;
@@ -87,11 +176,60 @@ export default function TicketDetails({
   const [busy, setBusy] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [completionText, setCompletionText] = useState('');
+  const [timeline, setTimeline] = useState<ReaderTimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const timelineRef = useRef<View>(null);
 
   const ticket = useMemo(
     () => tickets.find((t) => t.id === ticketId) ?? null,
     [tickets, ticketId]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setTimelineLoading(true);
+    getReaderTicketTimeline(ticketId)
+      .then((events) => {
+        if (cancelled) return;
+        setTimeline(events);
+        setTimelinePage(paginateTimeline(events).length || 1);
+      })
+      .catch(() => {
+        if (!cancelled) setTimeline([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTimelineLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketId, ticket?.updated_at]);
+
+  const timelinePages = useMemo(() => paginateTimeline(timeline), [timeline]);
+  const timelinePageCount = timelinePages.length;
+  const activeTimelinePage =
+    timelinePageCount === 0 ? 1 : Math.min(timelinePage, timelinePageCount);
+  const visibleTimeline = timelinePages[activeTimelinePage - 1] ?? [];
+
+  useEffect(() => {
+    if (!ticket) return;
+    const timer = setTimeout(() => {
+      const content = contentRef.current;
+      const section = timelineRef.current;
+      if (!content || !section) return;
+      section.measureLayout(
+        content,
+        (_x, y) => {
+          scrollRef.current?.scrollTo({ y: Math.max(y - 8, 0), animated: true });
+        },
+        () => {}
+      );
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [ticket?.id]);
 
   const canStart = ticket?.status === 'assigned' || ticket?.status === 'scheduled';
   const canComplete = ticket?.status === 'scheduled' || ticket?.status === 'in_progress';
@@ -153,13 +291,14 @@ export default function TicketDetails({
       </View>
 
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ paddingBottom: navbarHeight + 24 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refresh()} />}
       >
-        <View className="px-4 pt-5">
+        <View ref={contentRef} collapsable={false} className="px-4 pt-5">
           {loading && !ticket ? (
             <Text className="mt-6 text-center text-sm text-navy-muted">Loading ticket…</Text>
           ) : error && !ticket ? (
@@ -237,6 +376,56 @@ export default function TicketDetails({
                     </Text>
                   </View>
                 ) : null}
+              </View>
+
+              <View
+                ref={timelineRef}
+                collapsable={false}
+                className="rounded-2xl bg-white p-5"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
+              >
+                <Text className="text-base font-bold text-navy">Activity Timeline</Text>
+                {timelineLoading && timeline.length === 0 ? (
+                  <Text className="mt-3 text-sm text-navy-muted">Loading activity…</Text>
+                ) : visibleTimeline.length === 0 ? (
+                  <Text className="mt-3 text-sm text-navy-muted">No activity recorded yet.</Text>
+                ) : (
+                  <View className="mt-4">
+                    {visibleTimeline.map((event, index) => {
+                      const isLast = index === visibleTimeline.length - 1;
+                      return (
+                        <View key={event.id} className="flex-row">
+                          <View className="w-6 items-center">
+                            <View className="mt-1 h-2.5 w-2.5 rounded-full bg-brand" />
+                            {!isLast ? <View className="w-0.5 flex-1 bg-slate-200" /> : null}
+                          </View>
+                          <View className={`flex-1 pl-3 ${isLast ? 'pb-0' : 'pb-4'}`}>
+                            <Text className="text-sm font-bold text-navy">{timelineTitle(event)}</Text>
+                            <Text className="mt-0.5 text-xs text-navy-muted">
+                              {performerName(event)} · {formatTimestamp(event.created_at)}
+                            </Text>
+                            {event.description ? (
+                              <Text className="mt-1 text-sm leading-5 text-navy-soft">
+                                {event.description}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                <TimelinePager
+                  page={activeTimelinePage}
+                  pageCount={timelinePageCount}
+                  onPageChange={setTimelinePage}
+                />
               </View>
 
               {ticket.resident_not_yet_reason ? (

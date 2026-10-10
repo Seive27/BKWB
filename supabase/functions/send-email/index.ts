@@ -99,15 +99,16 @@ function renderTemplate(template: string, data: Record<string, unknown>) {
   const accountNumber = escapeHtml(data.account_number || '');
 
   switch (template) {
-    case 'account_credentials':
+    case 'account_credentials': {
+      const appName = escapeHtml(data.app_name || 'BKWB app');
       return {
         subject: 'Your Barangay Kalunasan Water Billing account is ready',
         html: `
         <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;">
           <h2 style="color:#1E3A5F;margin:0 0 16px;">Barangay Kalunasan Water Billing System</h2>
           <p>Hello <strong>${name}</strong>,</p>
-          <p>Your resident account has been created. Use the credentials below to log in to the
-             <strong>Residents</strong> mobile app:</p>
+          <p>Your account has been created. Sign in to the <strong>${appName}</strong> with the
+             email and temporary password below.</p>
           <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;">
             <tr>
               <td style="padding:10px 12px;background:#f3f4f6;border:1px solid #e5e7eb;font-weight:bold;">Email</td>
@@ -119,13 +120,35 @@ function renderTemplate(template: string, data: Record<string, unknown>) {
             </tr>
             ${accountNumber ? `<tr><td style="padding:10px 12px;border:1px solid #e5e7eb;font-weight:bold;">Account No.</td><td style="padding:10px 12px;border:1px solid #e5e7eb;">${accountNumber}</td></tr>` : ''}
           </table>
+          <p style="font-size:14px;line-height:1.6;">On your first login the app will ask you to:</p>
+          <ol style="font-size:14px;line-height:1.6;padding-left:20px;">
+            <li>Enter the verification code sent to this email</li>
+            <li>Replace the temporary password with one you choose</li>
+            <li>Confirm your profile</li>
+          </ol>
           <p style="font-size:13px;color:#6b7280;line-height:1.6;">
-            For security, please change your password after your first login
-            (use <strong>Forgot Password?</strong> on the login screen if needed).
-            If you did not request this account, please contact your water district office.
+            Sign in with this email address, not an account number.
+            If you did not expect this account, contact the barangay water office.
           </p>
         </div>`,
       };
+    }
+    case 'email_confirmation': {
+      const code = escapeHtml(data.code || '');
+      return {
+        subject: 'Verification code for email confirmation',
+        html: `
+        <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;">
+          <h2 style="color:#1E3A5F;margin:0 0 16px;">Verification code for email confirmation</h2>
+          <p>Hello <strong>${name}</strong>,</p>
+          <p>Enter this code in the app to confirm <strong>${email}</strong>.</p>
+          <p style="font-size:28px;font-weight:700;letter-spacing:6px;color:#1E3A5F;margin:24px 0;">${code}</p>
+          <p style="font-size:13px;color:#6b7280;line-height:1.6;">
+            This code expires shortly. If you did not try to confirm this email, you can ignore this message.
+          </p>
+        </div>`,
+      };
+    }
     default:
       return {
         subject: 'Notification from Barangay Kalunasan Water Billing System',

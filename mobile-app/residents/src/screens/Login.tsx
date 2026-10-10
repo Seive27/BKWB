@@ -424,7 +424,7 @@ export default function Login({ onLogin }: LoginProps) {
             <TextInput
               value={username}
               onChangeText={setUsername}
-              placeholder="Account number or email address"
+              placeholder="Email address"
               placeholderTextColor="#94A3B8"
               className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-4 text-[15px] text-slate-800"
               autoCapitalize="none"
@@ -433,9 +433,6 @@ export default function Login({ onLogin }: LoginProps) {
               keyboardType="email-address"
               returnKeyType="next"
             />
-            <Text className="-mt-1 text-xs leading-4 text-slate-400">
-              New accounts sign in with the email from the registration message. If the office gave you an account number, use that instead.
-            </Text>
             <View className="relative justify-center">
               <TextInput
                 value={password}
@@ -489,14 +486,6 @@ export default function Login({ onLogin }: LoginProps) {
           >
             <Text className="text-[14px] font-medium text-brand">Forgot Password?</Text>
           </Pressable>
-
-          <View className="mt-6 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3.5">
-            <Text className="text-center text-[13px] leading-5 text-brand-800">
-              First time here? Get your temporary password at the Barangay
-              Hall using your Account Number, then sign in with it above to
-              activate your account.
-            </Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 

@@ -3,7 +3,13 @@ import * as Linking from 'expo-linking';
 
 import { type NavTab } from '@/components/ui/Navbar';
 import { supabase } from '@/lib/supabase';
-import { getCurrentProfile, isPasswordResetPending } from '@/services/authService';
+import {
+  currentSessionAllowed,
+  getCurrentProfile,
+  isLoginGatePending,
+  isPasswordResetPending,
+  signOut,
+} from '@/services/authService';
 import AccountSetup from '@/screens/AccountSetup';
 import Announcements from '@/screens/Announcements';
 import Bills from '@/screens/Bills';
@@ -41,28 +47,58 @@ export default function HomeScreen() {
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
   // never report "You must be logged in" while the user is authenticated.
   // Skip PASSWORD_RECOVERY / in-progress reset so Forgot Password stays on Login.
+  // A session is ignored until login() finishes its role check, and a restored
+  // session for another role is signed out before the app opens.
   useEffect(() => {
     let cancelled = false;
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+
+    const applySession = (session: { user: { id: string } } | null) => {
       if (cancelled) return;
-      if (event === 'PASSWORD_RECOVERY' || isPasswordResetPending()) {
+      if (isPasswordResetPending() || isLoginGatePending()) {
         setSessionChecked(true);
         return;
       }
-      setIsLoggedIn(!!session);
-      setSessionChecked(true);
+      if (!session) {
+        setIsLoggedIn(false);
+        setSessionChecked(true);
+        return;
+      }
+      // Defer so this does not call Supabase inside the auth callback lock.
+      setTimeout(() => {
+        if (cancelled || isLoginGatePending()) {
+          if (!cancelled) setSessionChecked(true);
+          return;
+        }
+        void currentSessionAllowed().then(async (allowed) => {
+          if (cancelled || isLoginGatePending()) return;
+          if (allowed === false) {
+            await signOut().catch(() => {});
+            if (!cancelled) {
+              setIsLoggedIn(false);
+              setSessionChecked(true);
+            }
+            return;
+          }
+          if (!cancelled) {
+            setIsLoggedIn(true);
+            setSessionChecked(true);
+          }
+        });
+      }, 0);
+    };
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === 'PASSWORD_RECOVERY' || isPasswordResetPending() || isLoginGatePending()) {
+        setSessionChecked(true);
+        return;
+      }
+      applySession(session);
     });
     supabase.auth
       .getSession()
       .then(({ data }) => {
-        if (!cancelled) {
-          if (isPasswordResetPending()) {
-            setSessionChecked(true);
-            return;
-          }
-          setIsLoggedIn(!!data.session);
-          setSessionChecked(true);
-        }
+        if (!cancelled) applySession(data.session);
       })
       .catch(() => {
         if (!cancelled) setSessionChecked(true);

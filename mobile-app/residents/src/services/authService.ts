@@ -17,6 +17,35 @@ function endPasswordResetFlow(): void {
   passwordResetPending = false;
 }
 
+/** Shown for a wrong password and for a valid account that is not a
+ *  resident, so the two cases cannot be told apart. */
+const GENERIC_LOGIN_ERROR = 'Incorrect Credentials. Check Again.';
+
+/** True while sign-in is still checking that this account may use the app.
+ *  The shell must ignore the session until login() finishes. */
+let loginGatePending = false;
+
+export function isLoginGatePending(): boolean {
+  return loginGatePending;
+}
+
+function loginFailure(message: string | undefined): Error {
+  const raw = message?.trim() ?? '';
+  if (!raw || /invalid login credentials/i.test(raw)) {
+    return new Error(GENERIC_LOGIN_ERROR);
+  }
+  return new Error(raw);
+}
+
+/** Drop a session that authenticated but must not stay signed in. */
+async function abandonSession(): Promise<void> {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // The login gate still keeps the app on the login screen.
+  }
+}
+
 export interface AuthUser {
   id: string;
   email: string | null;
@@ -70,6 +99,21 @@ async function getUserProfile(userId: string, email?: string) {
 }
 
 /**
+ * Whether the current session belongs in this app.
+ * `null` means the profile could not be loaded — do not sign the user out.
+ */
+export async function currentSessionAllowed(): Promise<boolean | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return false;
+
+  const profile = await getUserProfile(session.user.id, session.user.email ?? undefined);
+  if (!profile) return null;
+  return profile.is_active && profile.role?.name === 'resident';
+}
+
+/**
  * Internal login handle for masterlist residents activated through the
  * `resident-login` edge function. MUST stay in sync with that function:
  * the resident types their Account Number and the app rebuilds the same
@@ -101,86 +145,93 @@ export async function login(username: string, password: string): Promise<AuthUse
     ? trimmedUsername.toLowerCase()
     : loginHandleForAccount(trimmedUsername);
 
-  let signInError: string | null = null;
+  loginGatePending = true;
+  try {
+    let signInError: string | null = null;
 
-  if (isEmailLogin) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) signInError = error.message;
-  } else {
-    // Account-number login. First attempt the pre-setup handle
-    // (acc-<conscode>@example.com); if that identity no longer exists the
-    // resident has completed Account Setup and their account number now
-    // resolves through the resident-account-login edge function instead.
-    const first = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (!first.error) {
-      // signed in with the handle — nothing more to do
-    } else if (/invalid login credentials/i.test(first.error.message ?? '')) {
-      const { data: resolved, error: resolveError } = await supabase.functions.invoke(
-        'resident-account-login',
-        {
-          body: { account_number: trimmedUsername, password },
-        }
-      );
-      const loginEmail =
-        !resolveError && (resolved as { ok?: boolean; login_email?: string } | null)?.ok
-          ? (resolved as { login_email: string }).login_email
-          : null;
-      if (!loginEmail) {
-        // Unknown account, not-yet-activated, or wrong password — the edge
-        // function returns the same generic error for all three so nothing
-        // about the account's existence can be discovered.
-        throw new Error(
-          'Account not found or not activated yet. Get your temporary password at the barangay office.',
-        );
-      }
-      const second = await supabase.auth.signInWithPassword({
-        email: loginEmail,
+    if (isEmailLogin) {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
         password,
       });
-      if (second.error) {
-        throw new Error(second.error.message || 'Login failed. Please try again.');
-      }
+      if (error) signInError = error.message;
     } else {
-      signInError = first.error.message;
+      // Account-number login. First attempt the pre-setup handle
+      // (acc-<conscode>@example.com); if that identity no longer exists the
+      // resident has completed Account Setup and their account number now
+      // resolves through the resident-account-login edge function instead.
+      const first = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (!first.error) {
+        // signed in with the handle — nothing more to do
+      } else if (/invalid login credentials/i.test(first.error.message ?? '')) {
+        const { data: resolved, error: resolveError } = await supabase.functions.invoke(
+          'resident-account-login',
+          {
+            body: { account_number: trimmedUsername, password },
+          }
+        );
+        const loginEmail =
+          !resolveError && (resolved as { ok?: boolean; login_email?: string } | null)?.ok
+            ? (resolved as { login_email: string }).login_email
+            : null;
+        if (!loginEmail) {
+          const edgeMessage = (resolved as { error?: string } | null)?.error ?? '';
+          if (/deactivated/i.test(edgeMessage)) {
+            throw new Error('Your account is deactivated. Please contact support.');
+          }
+          // Unknown account, not-yet-activated, wrong password, or a
+          // non-resident — identical message so nothing about the account
+          // can be discovered.
+          throw new Error(GENERIC_LOGIN_ERROR);
+        }
+        const second = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password,
+        });
+        if (second.error) {
+          throw loginFailure(second.error.message);
+        }
+      } else {
+        signInError = first.error.message;
+      }
     }
-  }
 
-  if (signInError) {
-    throw new Error(signInError || 'Login failed. Please try again.');
-  }
+    if (signInError) {
+      throw loginFailure(signInError);
+    }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error('Authentication failed.');
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      await abandonSession();
+      throw new Error(GENERIC_LOGIN_ERROR);
+    }
 
-  const profile = await getUserProfile(user.id, email);
-  if (!profile) {
-    throw new Error('Profile not found. Please contact support.');
-  }
+    const profile = await getUserProfile(user.id, user.email ?? email);
+    // Missing profile and the wrong role look the same as a bad password.
+    if (!profile || profile.role?.name !== 'resident') {
+      await abandonSession();
+      throw new Error(GENERIC_LOGIN_ERROR);
+    }
 
-  if (!profile.is_active) {
-    throw new Error('Your account is deactivated. Please contact support.');
-  }
+    if (!profile.is_active) {
+      await abandonSession();
+      throw new Error('Your account is deactivated. Please contact support.');
+    }
 
-  if (profile.role?.name !== 'resident') {
-    throw new Error('Unauthorized: this app is for Resident access only.');
+    return {
+      id: user.id,
+      email: user.email ?? null,
+      role: profile.role.name,
+      needsOnboarding: profileNeedsOnboarding(profile),
+    };
+  } finally {
+    loginGatePending = false;
   }
-
-  return {
-    id: user.id,
-    email: user.email ?? null,
-    role: profile.role.name,
-    needsOnboarding: profileNeedsOnboarding(profile),
-  };
 }
 
 /**

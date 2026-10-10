@@ -17,6 +17,35 @@ function endPasswordResetFlow(): void {
   passwordResetPending = false;
 }
 
+/** Shown for a wrong password and for a valid account that is not a meter
+ *  reader, so the two cases cannot be told apart. */
+const GENERIC_LOGIN_ERROR = 'Incorrect Credentials. Check Again.';
+
+/** True while sign-in is still checking that this account may use the app.
+ *  The shell must ignore the session until login() finishes. */
+let loginGatePending = false;
+
+export function isLoginGatePending(): boolean {
+  return loginGatePending;
+}
+
+function loginFailure(message: string | undefined): Error {
+  const raw = message?.trim() ?? '';
+  if (!raw || /invalid login credentials/i.test(raw)) {
+    return new Error(GENERIC_LOGIN_ERROR);
+  }
+  return new Error(raw);
+}
+
+/** Drop a session that authenticated but must not stay signed in. */
+async function abandonSession(): Promise<void> {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // The login gate still keeps the app on the login screen.
+  }
+}
+
 export interface AuthUser {
   id: string;
   email: string | null;
@@ -69,44 +98,60 @@ async function getUserProfile(userId: string, email?: string) {
   return null;
 }
 
+/**
+ * Whether the current session belongs in this app.
+ * `null` means the profile could not be loaded — do not sign the user out.
+ */
+export async function currentSessionAllowed(): Promise<boolean | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return false;
+
+  const profile = await getUserProfile(session.user.id, session.user.email ?? undefined);
+  if (!profile) return null;
+  return profile.is_active && profile.role?.name === 'meter_reader';
+}
+
 export async function login(username: string, password: string): Promise<AuthUser> {
   const email = username.trim().toLowerCase();
   if (!email.includes('@')) {
     throw new Error('Please log in with your email address.');
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  loginGatePending = true;
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error) {
-    throw new Error(error.message || 'Login failed. Please try again.');
+    if (error || !data.user) {
+      if (data.user) await abandonSession();
+      throw loginFailure(error?.message);
+    }
+
+    const profile = await getUserProfile(data.user.id, email);
+    // Missing profile and the wrong role look the same as a bad password.
+    if (!profile || profile.role?.name !== 'meter_reader') {
+      await abandonSession();
+      throw new Error(GENERIC_LOGIN_ERROR);
+    }
+
+    if (!profile.is_active) {
+      await abandonSession();
+      throw new Error('Your account is deactivated. Please contact support.');
+    }
+
+    return {
+      id: data.user.id,
+      email: data.user.email ?? null,
+      role: profile.role.name,
+      needsOnboarding: !profile.onboarded_at,
+    };
+  } finally {
+    loginGatePending = false;
   }
-
-  if (!data.user) {
-    throw new Error('Authentication failed.');
-  }
-
-  const profile = await getUserProfile(data.user.id, email);
-  if (!profile) {
-    throw new Error('Profile not found. Please contact support.');
-  }
-
-  if (!profile.is_active) {
-    throw new Error('Your account is deactivated. Please contact support.');
-  }
-
-  if (profile.role?.name !== 'meter_reader') {
-    throw new Error('Unauthorized: this app is for Meter Reader access only.');
-  }
-
-  return {
-    id: data.user.id,
-    email: data.user.email ?? null,
-    role: profile.role.name,
-    needsOnboarding: !profile.onboarded_at,
-  };
 }
 
 /** The current user's full profile row (with role). */

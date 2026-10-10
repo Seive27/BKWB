@@ -304,7 +304,12 @@ export async function rejectWorkCompleted(
 
   const { data, error } = await supabase
     .from('tickets')
-    .update({ status: 'in_progress' })
+    .update({
+      status: 'in_progress',
+      // Stored so the status trigger can include the reason when it notifies
+      // staff, super admins, and the assigned meter reader.
+      last_status_reason: trimmed,
+    })
     .eq('id', ticketId)
     .eq('resident_id', userId)
     .eq('status', 'work_completed')

@@ -67,8 +67,41 @@ BEGIN
     v_message := NEW.subject;
     v_type := NULL;
 
+    -- Resident answered "Not Yet" on work completed. Notify staff, super
+    -- admins, and the assigned meter reader — not the resident who reported it.
+    IF OLD.status = 'work_completed' AND NEW.status = 'in_progress' THEN
+      v_title := 'Work not yet completed: ' || NEW.ticket_number;
+      IF NEW.last_status_reason IS NOT NULL AND btrim(NEW.last_status_reason) <> '' THEN
+        v_message := 'Resident reported that work is not yet completed: ' || btrim(NEW.last_status_reason);
+      ELSE
+        v_message := 'Resident reported that work is not yet completed. ' || COALESCE(NEW.subject, '');
+      END IF;
+
+      INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+      SELECT DISTINCT
+        p.id,
+        'ticket_status',
+        v_title,
+        v_message,
+        'ticket',
+        NEW.id
+      FROM public.profiles p
+      JOIN public.roles r ON r.id = p.role_id
+      WHERE p.is_active = TRUE
+        AND p.id IS DISTINCT FROM NEW.resident_id
+        AND (
+          r.name IN ('staff', 'super_admin')
+          OR p.id = NEW.assigned_staff_id
+          OR EXISTS (
+            SELECT 1
+            FROM public.ticket_assignees ta
+            WHERE ta.ticket_id = NEW.id
+              AND ta.profile_id = p.id
+          )
+        );
+
     -- Handle explicit rejection
-    IF NEW.status = 'closed' AND OLD.status IN ('open', 'acknowledged', 'assigned', 'scheduled', 'in_progress') THEN
+    ELSIF NEW.status = 'closed' AND OLD.status IN ('open', 'acknowledged', 'assigned', 'scheduled', 'in_progress') THEN
       v_type := 'ticket_rejected';
       v_title := 'Ticket Not Accepted';
       IF NEW.last_status_reason IS NOT NULL AND NEW.last_status_reason <> '' THEN

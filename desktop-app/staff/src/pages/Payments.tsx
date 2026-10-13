@@ -5,7 +5,6 @@ import {
   MapPin,
   Calendar as CalendarIcon,
   CheckCircle,
-  Printer,
   Download,
   X,
   CreditCard,
@@ -1322,7 +1321,7 @@ interface PaymentSuccessModalProps {
   onClose: () => void;
 }
 
-type ReceiptAction = 'print' | 'download' | 'send' | null;
+type ReceiptAction = 'download' | 'send' | null;
 
 const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onClose }) => {
   const receiptCardRef = useRef<HTMLDivElement>(null);
@@ -1395,11 +1394,7 @@ const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onCl
     setActionMessage(null);
 
     try {
-      if (action === 'print') {
-        await new Promise((r) => setTimeout(r, 350));
-        window.print();
-        setActionMessage('Print dialog opened.');
-      } else if (action === 'download') {
+      if (action === 'download') {
         await downloadReceiptJpg();
         setActionMessage('Official receipt image downloaded.');
       } else if (action === 'send') {
@@ -1421,11 +1416,6 @@ const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onCl
   };
 
   const confirmCopy: Record<Exclude<ReceiptAction, null>, { title: string; body: string; label: string }> = {
-    print: {
-      title: 'Print Official Receipt?',
-      body: 'This will open your printer dialog for the official electronic receipt.',
-      label: 'Print',
-    },
     download: {
       title: 'Download Official Receipt?',
       body: 'A JPG image of this official receipt will be saved to your device.',
@@ -1533,32 +1523,18 @@ const PaymentSuccessModal: React.FC<PaymentSuccessModalProps> = ({ payment, onCl
                 </span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setConfirmAction('download')}
-                  disabled={isBusy}
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm disabled:opacity-50"
-                >
-                  {busyAction === 'download' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  <span>{busyAction === 'download' ? 'Preparing…' : 'Download'}</span>
-                </button>
-                <button
-                  onClick={() => setConfirmAction('print')}
-                  disabled={isBusy}
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm disabled:opacity-50"
-                >
-                  {busyAction === 'print' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Printer className="w-4 h-4" />
-                  )}
-                  <span>{busyAction === 'print' ? 'Preparing…' : 'Print'}</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setConfirmAction('download')}
+                disabled={isBusy}
+                className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-semibold text-sm disabled:opacity-50"
+              >
+                {busyAction === 'download' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span>{busyAction === 'download' ? 'Preparing…' : 'Download'}</span>
+              </button>
             </div>
           </div>
         </div>

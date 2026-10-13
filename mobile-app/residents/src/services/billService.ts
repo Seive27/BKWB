@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -45,7 +46,10 @@ export interface BillReceiptLine {
   previousReading: number | null;
   currentReading: number | null;
   consumption: number | null;
-  amount: number;
+  /** Original charge for this line. Does not shrink after payment. */
+  billAmount: number;
+  /** Remaining balance for this line. */
+  amountDue: number;
 }
 
 /** Receipt payload matching the barangay printed bill layout. */
@@ -207,28 +211,35 @@ export async function getBillReceiptData(bill: ResidentBill): Promise<BillReceip
 
   const lines: BillReceiptLine[] = [];
   for (const b of lineBills) {
-    const waterAmount = Math.max(
-      0,
-      Number(b.amount_due) -
-        (b.extra_components ?? []).reduce((sum, c) => sum + (Number(c.price) || 0), 0)
-    );
+    const extras = (b.extra_components ?? []).filter((c) => c.category?.trim());
+    const extrasTotal = extras.reduce((sum, c) => sum + (Number(c.price) || 0), 0);
+    const originalTotal = b.amount != null ? Number(b.amount) : Number(b.amount_due);
+    const waterBillAmount = Math.max(0, (Number.isFinite(originalTotal) ? originalTotal : 0) - extrasTotal);
+    let remainingDue = Math.max(0, Number(b.amount_due) || 0);
+    const waterDue = Math.min(waterBillAmount, remainingDue);
+    remainingDue -= waterDue;
+
     lines.push({
       accountName: 'WATER FEE',
       billPeriod: b.billing_period,
       previousReading: b.previous_reading,
       currentReading: b.current_reading,
       consumption: b.consumption,
-      amount: waterAmount,
+      billAmount: waterBillAmount,
+      amountDue: waterDue,
     });
-    for (const c of b.extra_components ?? []) {
-      if (!c.category?.trim()) continue;
+    for (const c of extras) {
+      const price = Number(c.price) || 0;
+      const due = Math.min(price, remainingDue);
+      remainingDue -= due;
       lines.push({
         accountName: c.category.trim().toUpperCase(),
         billPeriod: b.billing_period,
         previousReading: null,
         currentReading: null,
         consumption: null,
-        amount: Number(c.price) || 0,
+        billAmount: price,
+        amountDue: due,
       });
     }
   }
@@ -273,6 +284,7 @@ export async function getBillReceiptData(bill: ResidentBill): Promise<BillReceip
 
 /** HTML matching the barangay printed billing receipt. */
 export function buildBillReceiptHtml(receipt: BillReceiptData): string {
+  const totalBillAmount = receipt.lines.reduce((sum, line) => sum + line.billAmount, 0);
   const rows = receipt.lines
     .map(
       (line) => `
@@ -282,7 +294,8 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
         <td class="num">${escapeHtml(formatReading(line.previousReading))}</td>
         <td class="num">${escapeHtml(formatReading(line.currentReading))}</td>
         <td class="num">${escapeHtml(formatReading(line.consumption))}</td>
-        <td class="num">${escapeHtml(formatAmount(line.amount))}</td>
+        <td class="num">${escapeHtml(formatAmount(line.billAmount))}</td>
+        <td class="num">${escapeHtml(formatAmount(line.amountDue))}</td>
       </tr>`
     )
     .join('');
@@ -338,13 +351,15 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
           <th class="num">Prev Reading</th>
           <th class="num">Curr Reading</th>
           <th class="num">Consumption</th>
-          <th class="num">Amount</th>
+          <th class="num">Bill Amount</th>
+          <th class="num">Amount Due</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
         <tr class="total-row">
-          <td colspan="5" style="text-align:right;">Total Amount Due:</td>
+          <td colspan="5" style="text-align:right;">Total:</td>
+          <td class="num">${escapeHtml(formatAmount(totalBillAmount))}</td>
           <td class="num">${escapeHtml(formatAmount(receipt.totalAmountDue))}</td>
         </tr>
       </tbody>
@@ -354,21 +369,36 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
 </html>`;
 }
 
+function pdfFileName(bill: ResidentBill): string {
+  const raw = `${bill.bill_number}-${bill.billing_period}`.replace(/[^\w.-]+/g, '_');
+  return `${raw || 'water-bill'}.pdf`;
+}
+
 /**
- * Generate a PDF of the barangay-style bill receipt and open the system share sheet
- * so the resident can save / download it.
+ * Generate a PDF of the barangay-style bill receipt and hand it to the system
+ * share sheet so the resident can save it (Downloads, Files, Drive, and so on).
+ *
+ * expo-print writes into a cache folder that Android sharing rejects
+ * ("Not allowed to read file under given URL"). Rewrite the PDF into the
+ * app cache, which sharing is allowed to read, then share that copy.
  */
 export async function downloadBillPdf(bill: ResidentBill): Promise<void> {
   const receipt = await getBillReceiptData(bill);
   const html = buildBillReceiptHtml(receipt);
-  const file = await Print.printToFileAsync({ html });
+  const printed = await Print.printToFileAsync({ html, base64: true });
+  if (!printed.base64) {
+    throw new Error('Could not create the PDF receipt.');
+  }
+
+  const destination = new File(Paths.cache, pdfFileName(bill));
+  destination.write(printed.base64, { encoding: 'base64' });
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) {
-    throw new Error('Sharing is not available on this device.');
+    throw new Error('Saving files is not available on this device.');
   }
 
-  await Sharing.shareAsync(file.uri, {
+  await Sharing.shareAsync(destination.uri, {
     mimeType: 'application/pdf',
     UTI: 'com.adobe.pdf',
     dialogTitle: `Bill ${bill.bill_number}`,

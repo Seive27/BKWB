@@ -11,20 +11,24 @@ export function useTauriWindowFocus(): void {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
 
-    getCurrentWindow()
-      .onFocusChanged(({ payload: focused }) => {
-        focusManager.setFocused(focused);
-      })
-      .then((stop) => {
-        if (cancelled) {
-          stop();
-          return;
-        }
-        unlisten = stop;
-      })
-      .catch(() => {
-        // Vite-only runs outside the Tauri shell keep the default focus listener.
-      });
+    try {
+      getCurrentWindow()
+        .onFocusChanged(({ payload: focused }) => {
+          focusManager.setFocused(focused);
+        })
+        .then((stop) => {
+          if (cancelled) {
+            stop();
+            return;
+          }
+          unlisten = stop;
+        })
+        .catch(() => {
+          // Vite-only runs outside the Tauri shell keep the default focus listener.
+        });
+    } catch {
+      // getCurrentWindow throws immediately when this page is opened outside Tauri.
+    }
 
     return () => {
       cancelled = true;

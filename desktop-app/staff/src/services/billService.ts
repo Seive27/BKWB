@@ -20,6 +20,9 @@ export interface BillReceiptLine {
   previousReading: number | null;
   currentReading: number | null;
   consumption: number | null;
+  /** Original charge for this line. Does not shrink after payment. */
+  billAmount: number;
+  /** Remaining balance for this line. */
   amount: number;
 }
 
@@ -292,11 +295,16 @@ async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
         ? b.previous_reading
         : priorForRow?.current_reading ?? b.previous_reading;
 
-    const waterAmount = Math.max(
+    const extras = (b.extra_components ?? []).filter((c) => c.category?.trim());
+    const extrasTotal = extras.reduce((sum, c) => sum + (Number(c.price) || 0), 0);
+    const originalTotal = b.amount != null ? Number(b.amount) : Number(b.amount_due);
+    const waterBillAmount = Math.max(
       0,
-      Number(b.amount_due) -
-        (b.extra_components ?? []).reduce((sum, c) => sum + (Number(c.price) || 0), 0)
+      (Number.isFinite(originalTotal) ? originalTotal : 0) - extrasTotal
     );
+    let remainingDue = Math.max(0, Number(b.amount_due) || 0);
+    const waterDue = Math.min(waterBillAmount, remainingDue);
+    remainingDue -= waterDue;
 
     const lineStatus = receiptStatusLabel(b.status);
 
@@ -307,13 +315,16 @@ async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
       previousReading,
       currentReading: b.current_reading,
       consumption: b.consumption,
-      amount: waterAmount,
+      billAmount: waterBillAmount,
+      amount: waterDue,
     });
 
     // Extra components only on unpaid / current open bills (avoid re-listing paid fees).
     if (b.status === 'pending' || b.status === 'overdue' || b.id === bill.id) {
-      for (const c of b.extra_components ?? []) {
-        if (!c.category?.trim()) continue;
+      for (const c of extras) {
+        const price = Number(c.price) || 0;
+        const due = Math.min(price, remainingDue);
+        remainingDue -= due;
         lines.push({
           accountName: c.category.trim().toUpperCase(),
           billPeriod: b.billing_period,
@@ -321,7 +332,8 @@ async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
           previousReading: null,
           currentReading: null,
           consumption: null,
-          amount: Number(c.price) || 0,
+          billAmount: price,
+          amount: due,
         });
       }
     }

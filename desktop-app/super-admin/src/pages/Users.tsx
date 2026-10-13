@@ -11,6 +11,7 @@ import {
   ChevronDown,
   RefreshCw,
   UserCheck,
+  UserX,
   AlertCircle,
 } from 'lucide-react';
 import AddUserModal, { UserFormData, UserCreatedInfo } from '../components/modals/AddUserModal';
@@ -21,11 +22,27 @@ import { queryKeys } from '../lib/queryKeys';
 import {
   getUsers,
   createUser,
+  setUserActive,
+  type ManagedUser,
 } from '../services/userService';
 import type { Role } from '../types';
 
-const ROLE_FILTERS = ['All Roles', 'Super Admin', 'Staff', 'Meter Reader', 'Resident'] as const;
+const ROLE_FILTERS = ['All Roles', 'Super Admin', 'Staff', 'Staff + Admins', 'Meter Reader', 'Resident'] as const;
+const STATUS_FILTERS = ['All Statuses', 'Active', 'Inactive'] as const;
+type StatusFilter = 'all' | 'active' | 'inactive';
 const PAGE_SIZE = 10;
+
+function statusFilterValue(label: (typeof STATUS_FILTERS)[number]): StatusFilter {
+  if (label === 'Active') return 'active';
+  if (label === 'Inactive') return 'inactive';
+  return 'all';
+}
+
+function statusFilterLabel(value: StatusFilter): (typeof STATUS_FILTERS)[number] {
+  if (value === 'active') return 'Active';
+  if (value === 'inactive') return 'Inactive';
+  return 'All Statuses';
+}
 
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
@@ -36,7 +53,7 @@ function formatLastActive(createdAt: string): string {
 }
 
 const Users: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user: currentUser } = useAuth();
   const usersQuery = useQuery({
     queryKey: queryKeys.users.list(),
     queryFn: getUsers,
@@ -44,6 +61,10 @@ const Users: React.FC = () => {
   });
   const createUserMutation = useInvalidatingMutation(
     (input: Parameters<typeof createUser>[0]) => createUser(input),
+    [queryKeys.users.all]
+  );
+  const setUserActiveMutation = useInvalidatingMutation(
+    (input: { userId: string; isActive: boolean }) => setUserActive(input.userId, input.isActive),
     [queryKeys.users.all]
   );
   const users = usersQuery.data ?? [];
@@ -54,7 +75,9 @@ const Users: React.FC = () => {
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('All Roles');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showRoleFilter, setShowRoleFilter] = useState(false);
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -64,6 +87,13 @@ const Users: React.FC = () => {
   const [createdUser, setCreatedUser] = useState<UserCreatedInfo | null>(null);
   /** Monotonic id of the latest create request — used to ignore stale in-flight results. */
   const addUserRequestRef = useRef(0);
+  const [openMenu, setOpenMenu] = useState<{ userId: string; top: number; left: number } | null>(null);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  /** Brief border flash on a stats-card click; fades out over 3s. */
+  const [cardFlash, setCardFlash] = useState<'total' | 'active' | 'residents' | 'staff' | null>(null);
+  const [cardFlashOpaque, setCardFlashOpaque] = useState(false);
+  const cardFlashTimersRef = useRef<{ fade?: number; clear?: number }>({});
 
   const roleCounts = () => {
     const counts: Record<string, number> = {
@@ -88,14 +118,41 @@ const Users: React.FC = () => {
       fullName.includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.roleLabel.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'All Roles' || user.roleLabel === roleFilter;
-    return matchesSearch && matchesRole;
+    const matchesRole =
+      roleFilter === 'All Roles' ||
+      (roleFilter === 'Staff + Admins'
+        ? user.roleLabel === 'Staff' || user.roleLabel === 'Super Admin'
+        : user.roleLabel === roleFilter);
+    const matchesStatus =
+      statusFilter === 'all' || (statusFilter === 'active' ? user.isActive : !user.isActive);
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   // Reset pagination whenever search/filters change.
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, roleFilter]);
+  }, [searchQuery, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
+    document.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [openMenu]);
+
+  useEffect(() => {
+    return () => {
+      const timers = cardFlashTimersRef.current;
+      if (timers.fade) window.clearTimeout(timers.fade);
+      if (timers.clear) window.clearTimeout(timers.clear);
+    };
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -165,6 +222,75 @@ const Users: React.FC = () => {
     return 'text-gray-600 bg-gray-50';
   };
 
+  const applyCardFilter = (card: 'total' | 'active' | 'residents' | 'staff') => {
+    setShowRoleFilter(false);
+    setShowStatusFilter(false);
+    if (card === 'total') {
+      setRoleFilter('All Roles');
+      setStatusFilter('all');
+    } else if (card === 'active') {
+      setRoleFilter('All Roles');
+      setStatusFilter('active');
+    } else if (card === 'residents') {
+      setRoleFilter('Resident');
+      setStatusFilter('all');
+    } else {
+      setRoleFilter('Staff + Admins');
+      setStatusFilter('all');
+    }
+
+    const timers = cardFlashTimersRef.current;
+    if (timers.fade) window.clearTimeout(timers.fade);
+    if (timers.clear) window.clearTimeout(timers.clear);
+
+    setCardFlash(card);
+    setCardFlashOpaque(true);
+    // Paint the solid outline, then start the 3s fade to the default border.
+    timers.fade = window.setTimeout(() => setCardFlashOpaque(false), 40);
+    timers.clear = window.setTimeout(() => {
+      setCardFlash(null);
+      setCardFlashOpaque(false);
+    }, 3040);
+  };
+
+  const selectedCard =
+    roleFilter === 'All Roles' && statusFilter === 'all'
+      ? 'total'
+      : roleFilter === 'All Roles' && statusFilter === 'active'
+        ? 'active'
+        : roleFilter === 'Resident' && statusFilter === 'all'
+          ? 'residents'
+          : roleFilter === 'Staff + Admins' && statusFilter === 'all'
+            ? 'staff'
+            : null;
+
+  const handleSetActive = async (target: ManagedUser, isActive: boolean) => {
+    setOpenMenu(null);
+    setActionError(null);
+    setActioningId(target.id);
+    try {
+      await setUserActiveMutation.mutateAsync({ userId: target.id, isActive });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update account status.');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const openActionsMenu = (userId: string, button: HTMLButtonElement) => {
+    if (openMenu?.userId === userId) {
+      setOpenMenu(null);
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = 88;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight + 8 ? rect.top - menuHeight - 4 : rect.bottom + 4;
+    const left = Math.max(8, rect.right - menuWidth);
+    setOpenMenu({ userId, top, left });
+  };
+
   const getStatusIndicator = (isActive: boolean) => {
     return isActive ? (
       <Circle className="w-2 h-2 fill-emerald-500 text-emerald-500" />
@@ -180,6 +306,9 @@ const Users: React.FC = () => {
     { label: 'Resident', count: counts.Resident, color: 'bg-gray-500' },
   ];
 
+  const menuUser = openMenu ? users.find((u) => u.id === openMenu.userId) ?? null : null;
+  const menuIsSelf = menuUser != null && currentUser?.id === menuUser.id;
+
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="p-8">
@@ -194,42 +323,60 @@ const Users: React.FC = () => {
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
         )}
+        {actionError && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{actionError}</div>
+        )}
 
-        {/* Stats Cards */}
+        {/* Stats Cards — click to filter the table */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Total Users</span>
-              <UsersIcon className="w-4 h-4 text-gray-400" />
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900">{totalUsers.toLocaleString()}</h3>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Active Users</span>
-              <UserCheck className="w-4 h-4 text-emerald-500" />
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900">{activeNow.toLocaleString()}</h3>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Residents</span>
-              <UsersIcon className="w-4 h-4 text-gray-400" />
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900">{counts.Resident.toLocaleString()}</h3>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-600 uppercase font-medium">Staff + Admins</span>
-              <Key className="w-4 h-4 text-gray-400" />
-            </div>
-            <h3 className="text-3xl font-bold text-gray-900">
-              {(counts.Staff + counts['Super Admin']).toLocaleString()}
-            </h3>
-          </div>
+          {(
+            [
+              {
+                id: 'total' as const,
+                label: 'Total Users',
+                value: totalUsers,
+                icon: <UsersIcon className="w-4 h-4 text-gray-400" />,
+              },
+              {
+                id: 'active' as const,
+                label: 'Active Users',
+                value: activeNow,
+                icon: <UserCheck className="w-4 h-4 text-emerald-500" />,
+              },
+              {
+                id: 'residents' as const,
+                label: 'Residents',
+                value: counts.Resident,
+                icon: <UsersIcon className="w-4 h-4 text-gray-400" />,
+              },
+              {
+                id: 'staff' as const,
+                label: 'Staff + Admins',
+                value: counts.Staff + counts['Super Admin'],
+                icon: <Key className="w-4 h-4 text-gray-400" />,
+              },
+            ]
+          ).map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => applyCardFilter(card.id)}
+              aria-pressed={selectedCard === card.id}
+              className={`text-left bg-white rounded-xl border p-6 cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 ${
+                cardFlash === card.id
+                  ? cardFlashOpaque
+                    ? 'border-primary-400 shadow-md transition-none'
+                    : 'border-gray-200 shadow-none transition-[border-color,box-shadow] duration-[3000ms] ease-out'
+                  : 'border-gray-200 hover:border-primary-300 transition-all duration-150'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-600 uppercase font-medium">{card.label}</span>
+                {card.icon}
+              </div>
+              <h3 className="text-3xl font-bold text-gray-900">{card.value.toLocaleString()}</h3>
+            </button>
+          ))}
         </div>
 
         {/* Role Distribution */}
@@ -264,7 +411,10 @@ const Users: React.FC = () => {
                 {/* Role Filter Dropdown */}
                 <div className="relative">
                   <button
-                    onClick={() => setShowRoleFilter(!showRoleFilter)}
+                    onClick={() => {
+                      setShowRoleFilter(!showRoleFilter);
+                      setShowStatusFilter(false);
+                    }}
                     className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <Filter className="w-4 h-4 text-gray-600" />
@@ -288,8 +438,48 @@ const Users: React.FC = () => {
                         >
                           {role}
                           {role !== 'All Roles' && (
-                            <span className="float-right text-xs text-gray-400">({counts[role] ?? 0})</span>
+                            <span className="float-right text-xs text-gray-400">
+                              (
+                              {role === 'Staff + Admins'
+                                ? counts.Staff + counts['Super Admin']
+                                : counts[role] ?? 0}
+                              )
+                            </span>
                           )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowStatusFilter(!showStatusFilter);
+                      setShowRoleFilter(false);
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <Circle className="w-4 h-4 text-gray-600" />
+                    <span className="text-sm text-gray-700">{statusFilterLabel(statusFilter)}</span>
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  </button>
+                  {showStatusFilter && (
+                    <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-44">
+                      {STATUS_FILTERS.map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => {
+                            setStatusFilter(statusFilterValue(status));
+                            setShowStatusFilter(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                            statusFilterLabel(statusFilter) === status
+                              ? 'text-primary-600 font-medium bg-primary-50'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {status}
                         </button>
                       ))}
                     </div>
@@ -373,9 +563,19 @@ const Users: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {formatLastActive(user.createdAt)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                          <MoreVertical className="w-4 h-4 text-gray-600" />
+                      <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => openActionsMenu(user.id, e.currentTarget)}
+                          disabled={actioningId === user.id}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40"
+                          title="Actions"
+                        >
+                          {actioningId === user.id ? (
+                            <RefreshCw className="w-4 h-4 text-gray-600 animate-spin" />
+                          ) : (
+                            <MoreVertical className="w-4 h-4 text-gray-600" />
+                          )}
                         </button>
                       </td>
                     </tr>
@@ -447,6 +647,43 @@ const Users: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {menuUser && openMenu && (
+        <div
+          className="fixed z-50 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+          style={{ top: openMenu.top, left: openMenu.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => handleSetActive(menuUser, true)}
+            disabled={actioningId === menuUser.id || menuUser.isActive || menuIsSelf}
+            title={
+              menuIsSelf
+                ? 'You cannot change your own account status.'
+                : 'Allow this user to sign in.'
+            }
+            className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <UserCheck className="w-4 h-4 text-emerald-600" />
+            <span>Activate</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetActive(menuUser, false)}
+            disabled={actioningId === menuUser.id || !menuUser.isActive || menuIsSelf}
+            title={
+              menuIsSelf
+                ? 'You cannot change your own account status.'
+                : 'Block this user from signing in.'
+            }
+            className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-left text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <UserX className="w-4 h-4" />
+            <span>Disable</span>
+          </button>
+        </div>
+      )}
 
       {/* Add User Modal */}
       <AddUserModal

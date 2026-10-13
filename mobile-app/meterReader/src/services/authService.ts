@@ -1,3 +1,9 @@
+import {
+  assertLoginAllowed,
+  clearFailedLogins,
+  isInvalidCredentialMessage,
+  recordFailedLogin,
+} from '@/lib/loginLockout';
 import { getPasswordValidationError } from '@/lib/password';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
@@ -123,6 +129,8 @@ export async function login(username: string, password: string): Promise<AuthUse
 
   loginGatePending = true;
   try {
+    await assertLoginAllowed(supabase, email);
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -130,8 +138,13 @@ export async function login(username: string, password: string): Promise<AuthUse
 
     if (error || !data.user) {
       if (data.user) await abandonSession();
+      if (isInvalidCredentialMessage(error?.message)) {
+        await recordFailedLogin(supabase, email);
+      }
       throw loginFailure(error?.message);
     }
+
+    await clearFailedLogins(supabase, email);
 
     const profile = await getUserProfile(data.user.id, email);
     // Missing profile and the wrong role look the same as a bad password.

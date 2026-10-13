@@ -35,6 +35,15 @@ function formatPeso(value: number | null | undefined): string {
   return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Money already received on a bill. Paid bills zero amount_due and keep the original charge in amount. */
+function moneyCollected(bill: Bill): number {
+  if (bill.status === 'void') return 0;
+  const original = bill.amount != null ? Number(bill.amount) : Number(bill.amount_due ?? 0);
+  const remaining = Number(bill.amount_due ?? 0);
+  if (!Number.isFinite(original) || !Number.isFinite(remaining)) return 0;
+  return Math.max(0, original - remaining);
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
@@ -185,8 +194,8 @@ const Bills: React.FC = () => {
     let pendingCount = 0;
     let overdueCount = 0;
     for (const b of bills) {
-      if (b.status === 'paid') collected += Number(b.amount_due ?? 0);
-      else if (b.status === 'pending') pendingCount += 1;
+      collected += moneyCollected(b);
+      if (b.status === 'pending') pendingCount += 1;
       else if (b.status === 'overdue') overdueCount += 1;
     }
     return { total: bills.length, collected, pendingCount, overdueCount };
@@ -329,7 +338,7 @@ const Bills: React.FC = () => {
               </div>
               <p className="text-xs text-gray-500 uppercase mb-1">Total Collected Revenue</p>
               <h3 className="text-3xl font-bold text-gray-900">{formatPeso(stats.collected)}</h3>
-              <p className="text-xs text-gray-500 mt-1">From bills marked as paid</p>
+              <p className="text-xs text-gray-500 mt-1">Money residents have paid</p>
             </button>
 
             <button

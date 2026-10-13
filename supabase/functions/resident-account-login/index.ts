@@ -49,6 +49,38 @@ function json(body: unknown, status = 200): Response {
 /** Same generic error for every failure — no information leaks. */
 const GENERIC_ERROR = 'Invalid account number or password.';
 
+function lockoutMessage(seconds: number): string {
+  const unit = seconds === 1 ? 'second' : 'seconds';
+  return `Too many incorrect attempts. Please wait ${seconds} ${unit} before trying again.`;
+}
+
+function retryAfterSeconds(data: unknown): number {
+  const seconds = Number(
+    (data as { retry_after_seconds?: unknown } | null)?.retry_after_seconds ?? 0
+  );
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.ceil(seconds);
+}
+
+/** Credential rejection. HTTP 200 so supabase-js returns the JSON body. */
+function credentialFailure(seconds: number): Response {
+  if (seconds > 0) {
+    return json(
+      {
+        ok: false,
+        error: lockoutMessage(seconds),
+        retry_after_seconds: seconds,
+        lockout_recorded: true,
+      },
+      200
+    );
+  }
+  return json(
+    { ok: false, error: GENERIC_ERROR, retry_after_seconds: 0, lockout_recorded: true },
+    200
+  );
+}
+
 function fail(message: string = GENERIC_ERROR, status = 401): Response {
   console.error(`[resident-account-login] reject (${status})`);
   return json({ error: message }, status);
@@ -107,6 +139,30 @@ async function handleRequest(req: Request): Promise<Response> {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  const lockKey = accountNumber.toLowerCase();
+
+  const { data: lockStatus, error: lockStatusError } = await adminClient.rpc(
+    'login_lockout_status',
+    { p_identifier: lockKey }
+  );
+  if (lockStatusError) {
+    console.error('[resident-account-login] lockout status failed:', lockStatusError.message);
+  } else {
+    const waiting = retryAfterSeconds(lockStatus);
+    if (waiting > 0) return credentialFailure(waiting);
+  }
+
+  const recordFailure = async (): Promise<Response> => {
+    const { data, error } = await adminClient.rpc('register_failed_login', {
+      p_identifier: lockKey,
+    });
+    if (error) {
+      console.error('[resident-account-login] lockout record failed:', error.message);
+      return fail();
+    }
+    return credentialFailure(retryAfterSeconds(data));
+  };
+
   // 1. Resolve the account number to its resident profile.
   const { data: account, error: accountError } = await adminClient
     .from('resident_accounts')
@@ -119,7 +175,7 @@ async function handleRequest(req: Request): Promise<Response> {
   }
   // Unknown account number -> identical response to a wrong password.
   if (!account) {
-    return fail();
+    return recordFailure();
   }
 
   // 2. Read the profile's current login email + activity state.
@@ -140,10 +196,10 @@ async function handleRequest(req: Request): Promise<Response> {
   if (!profileRow?.email) {
     // Not activated yet (no handle assigned) — indistinguishable from a
     // wrong password from the caller's point of view.
-    return fail();
+    return recordFailure();
   }
   if (profileRow.role?.name !== 'resident') {
-    return fail();
+    return recordFailure();
   }
   if (!profileRow.is_active) {
     return json({ error: 'Your account is deactivated. Please contact support.' }, 403);
@@ -159,8 +215,10 @@ async function handleRequest(req: Request): Promise<Response> {
     password,
   });
   if (signInError) {
-    return fail();
+    return recordFailure();
   }
+
+  await adminClient.rpc('clear_login_lockout', { p_identifier: lockKey });
 
   // 4. Success — return the login email so the app completes sign-in.
   //    (This response only ever reaches a caller who just proved the

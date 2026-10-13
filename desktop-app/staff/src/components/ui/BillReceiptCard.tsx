@@ -78,6 +78,7 @@ const BillReceiptCard: React.FC<BillReceiptCardProps> = ({ receipt }) => {
                 <th className="text-right py-2 px-2 font-bold">Prev Reading</th>
                 <th className="text-right py-2 px-2 font-bold">Curr Reading</th>
                 <th className="text-right py-2 px-2 font-bold">Consumption</th>
+                <th className="text-right py-2 px-2 font-bold">Bill Amount</th>
                 <th className="text-right py-2 pl-2 font-bold">Amount</th>
               </tr>
             </thead>
@@ -96,13 +97,16 @@ const BillReceiptCard: React.FC<BillReceiptCardProps> = ({ receipt }) => {
                   <td className="text-right py-1.5 px-2 tabular-nums">
                     {formatReading(line.consumption)}
                   </td>
+                  <td className="text-right py-1.5 px-2 tabular-nums">
+                    {formatAmount(line.billAmount)}
+                  </td>
                   <td className="text-right py-1.5 pl-2 tabular-nums">
                     {formatAmount(line.amount)}
                   </td>
                 </tr>
               ))}
               <tr>
-                <td colSpan={6} className="text-right pt-3 font-bold">
+                <td colSpan={7} className="text-right pt-3 font-bold">
                   Total Amount Due:
                 </td>
                 <td className="text-right pt-3 font-bold tabular-nums border-t-2 border-gray-900">

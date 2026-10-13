@@ -1,6 +1,12 @@
 import { supabase } from '../lib/supabase';
 import type { Profile, AuthUser, Role } from '../types';
 import { logAuthAction } from './auditLogService';
+import {
+  assertLoginAllowed,
+  clearFailedLogins,
+  isInvalidCredentialMessage,
+  recordFailedLogin,
+} from '../lib/loginLockout';
 
 // ── Error Handling ──
 
@@ -109,18 +115,26 @@ async function getUserProfile(userId: string, email?: string): Promise<Profile |
 // ── Auth Functions ──
 
 export async function login(email: string, password: string): Promise<AuthUser> {
+  const identifier = email.trim().toLowerCase();
+  await assertLoginAllowed(supabase, identifier);
+
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: identifier,
     password,
   });
 
   if (error) {
+    if (isInvalidCredentialMessage(error.message)) {
+      await recordFailedLogin(supabase, identifier);
+    }
     throw new Error(getAuthErrorMessage(error));
   }
 
   if (!data.user) {
     throw new Error('Authentication succeeded but no user data returned.');
   }
+
+  await clearFailedLogins(supabase, identifier);
 
   const profile = await getUserProfile(data.user.id, email);
   if (!profile) {

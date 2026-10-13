@@ -60,9 +60,14 @@ function HistoryBillCard({ bill, onPress }: { bill: ResidentBill; onPress: () =>
         ) : null}
       </View>
 
-      <View className="mt-4 items-center rounded-xl border border-brand bg-white py-3 active:bg-slate-50">
-        <Text className="text-base font-semibold text-brand">View / Download PDF</Text>
-      </View>
+      <Pressable
+        onPress={onPress}
+        className="mt-4 items-center rounded-xl border border-brand bg-white py-3 active:bg-slate-50"
+        accessibilityRole="button"
+        accessibilityLabel={`View your ${formatPeriod(bill.billing_period)} bill`}
+      >
+        <Text className="text-base font-semibold text-brand">View</Text>
+      </Pressable>
     </Pressable>
   );
 }

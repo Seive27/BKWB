@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { useDialog } from '@/components/ui/AppDialog';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { LoginLockoutError, loginLockoutMessage, normalizeLoginIdentifier } from '@/lib/loginLockout';
 import { getPasswordValidationError } from '@/lib/password';
 import {
   cancelPasswordReset,
@@ -370,14 +371,31 @@ export default function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [lockedIdentifier, setLockedIdentifier] = useState('');
+  const loginLocked =
+    lockoutSeconds > 0 && normalizeLoginIdentifier(username) === lockedIdentifier;
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((current) => (current <= 1 ? 0 : current - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds > 0]);
 
   // Single login path for both the button and the keyboard submit action so
   // the app is never marked logged-in without a real Supabase session.
   const handleLogin = async () => {
+    if (loginLocked) return;
     try {
       const user = await login(username, password);
       onLogin?.(user.needsOnboarding);
     } catch (error) {
+      if (error instanceof LoginLockoutError) {
+        setLockedIdentifier(normalizeLoginIdentifier(username));
+        setLockoutSeconds(error.retryAfterSeconds);
+      }
       dialog.alert(
         'Login Failed',
         friendlyErrorMessage(error, 'An unexpected error occurred. Please try again.'),
@@ -446,6 +464,7 @@ export default function Login({ onLogin }: LoginProps) {
                 autoComplete="password"
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}
+                editable={!loginLocked}
               />
               <Pressable
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -467,13 +486,23 @@ export default function Login({ onLogin }: LoginProps) {
             </View>
           </View>
 
+          {loginLocked ? (
+            <Text className="mt-5 text-center text-sm font-medium text-red-600">
+              {loginLockoutMessage(lockoutSeconds)}
+            </Text>
+          ) : null}
+
           <Pressable
             onPress={handleLogin}
-            className="mt-5 items-center justify-center rounded-xl bg-brand py-4 shadow-lg active:bg-brand-dark"
+            disabled={loginLocked}
+            className={`mt-5 items-center justify-center rounded-xl py-4 shadow-lg ${loginLocked ? 'bg-slate-300' : 'bg-brand active:bg-brand-dark'}`}
             accessibilityRole="button"
             accessibilityLabel="Login"
+            accessibilityState={{ disabled: loginLocked }}
           >
-            <Text className="text-base font-bold text-white">Login</Text>
+            <Text className="text-base font-bold text-white">
+              {loginLocked ? `Try again in ${lockoutSeconds}s` : 'Login'}
+            </Text>
           </Pressable>
 
           <Pressable

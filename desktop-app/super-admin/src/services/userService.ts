@@ -220,3 +220,19 @@ export async function createUser(input: CreateUserInput): Promise<{ user_id: str
 
   return { user_id: data.user_id as string };
 }
+
+/**
+ * Turn a user's login on or off.
+ * profiles.is_active is checked by every app at sign-in: false rejects
+ * the login and signs out a restored session.
+ */
+export async function setUserActive(userId: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase.rpc('set_profile_active', {
+    target_id: userId,
+    active: isActive,
+  });
+
+  if (error) {
+    throw new Error(getUserServiceErrorMessage(error));
+  }
+}

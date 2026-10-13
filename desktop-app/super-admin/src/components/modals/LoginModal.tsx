@@ -3,6 +3,7 @@ import { LogIn, Loader2, Eye, EyeOff, KeyRound, Mail, ArrowLeft, CheckCircle2 } 
 import logo from '../../assets/logo.jpg';
 import { PasswordStrengthHint } from '../ui/PasswordStrengthHint';
 import { getPasswordValidationError } from '../../lib/password';
+import { LoginLockoutError, loginLockoutMessage } from '../../lib/loginLockout';
 import {
   cancelPasswordReset,
   completePasswordReset,
@@ -22,6 +23,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ portalName, closing, onLogin })
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [lockedEmail, setLockedEmail] = useState('');
+  const loginLocked =
+    lockoutSeconds > 0 && email.trim().toLowerCase() === lockedEmail;
   // Forgot-password flow state.
   const [mode, setMode] = useState<'login' | 'forgot'>('login');
   const emailRef = useRef<HTMLInputElement>(null);
@@ -35,8 +40,30 @@ const LoginModal: React.FC<LoginModalProps> = ({ portalName, closing, onLogin })
     dialogRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setLockoutSeconds((current) => (current <= 1 ? 0 : current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [lockoutSeconds > 0]);
+
+  useEffect(() => {
+    if (loginLocked) {
+      setError(loginLockoutMessage(lockoutSeconds));
+      return;
+    }
+    setError((current) =>
+      current.startsWith('Too many incorrect attempts') ? '' : current
+    );
+  }, [loginLocked, lockoutSeconds]);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loginLocked) {
+      setError(loginLockoutMessage(lockoutSeconds));
+      return;
+    }
     setError('');
     if (!email.trim()) {
       setError('Please enter your email address.');
@@ -55,11 +82,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ portalName, closing, onLogin })
     try {
       await onLogin(email.trim().toLowerCase(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      if (err instanceof LoginLockoutError) {
+        setLockedEmail(email.trim().toLowerCase());
+        setLockoutSeconds(err.retryAfterSeconds);
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, password, onLogin]);
+  }, [email, password, onLogin, loginLocked, lockoutSeconds]);
 
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -150,11 +183,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ portalName, closing, onLogin })
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || loginLocked}
             className="w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-sm hover:shadow-md"
           >
             {isSubmitting ? (
               <><Loader2 className="w-5 h-5 animate-spin" /><span>Signing in...</span></>
+            ) : loginLocked ? (
+              <span>Try again in {lockoutSeconds}s</span>
             ) : (
               <><LogIn className="w-5 h-5" /><span>Login</span></>
             )}

@@ -173,6 +173,7 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
         <td>${escapeHtml(formatReading(line.previousReading))}</td>
         <td>${escapeHtml(formatReading(line.currentReading))}</td>
         <td>${escapeHtml(formatReading(line.consumption))}</td>
+        <td>${escapeHtml(formatAmount(line.billAmount))}</td>
         <td>${escapeHtml(formatAmount(line.amount))}</td>
       </tr>`
     )
@@ -209,13 +210,14 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
             <th>Prev. Reading</th>
             <th>Curr. Reading</th>
             <th>Consumption</th>
+            <th>Bill Amount</th>
             <th>Amount</th>
           </tr>
         </thead>
         <tbody>
           ${lines}
           <tr class="total-row">
-            <td colspan="6" class="total-label">Total Amount Due:</td>
+            <td colspan="7" class="total-label">Total Amount Due:</td>
             <td>${escapeHtml(formatAmount(receipt.totalAmountDue))}</td>
           </tr>
         </tbody>

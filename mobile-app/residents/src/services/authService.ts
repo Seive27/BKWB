@@ -1,3 +1,10 @@
+import {
+  assertLoginAllowed,
+  clearFailedLogins,
+  isInvalidCredentialMessage,
+  LoginLockoutError,
+  recordFailedLogin,
+} from '@/lib/loginLockout';
 import { getPasswordValidationError } from '@/lib/password';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
@@ -147,16 +154,26 @@ export async function login(username: string, password: string): Promise<AuthUse
     ? trimmedUsername.toLowerCase()
     : loginHandleForAccount(trimmedUsername);
 
+  const lockoutKey = isEmailLogin ? email : trimmedUsername;
+
   loginGatePending = true;
   try {
     let signInError: string | null = null;
+    await assertLoginAllowed(supabase, lockoutKey);
 
     if (isEmailLogin) {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      if (error) signInError = error.message;
+      if (error) {
+        if (isInvalidCredentialMessage(error.message)) {
+          await recordFailedLogin(supabase, lockoutKey);
+        }
+        signInError = error.message;
+      } else {
+        await clearFailedLogins(supabase, lockoutKey);
+      }
     } else {
       // Account-number login. First attempt the pre-setup handle
       // (acc-<conscode>@example.com); if that identity no longer exists the
@@ -167,7 +184,7 @@ export async function login(username: string, password: string): Promise<AuthUse
         password,
       });
       if (!first.error) {
-        // signed in with the handle — nothing more to do
+        await clearFailedLogins(supabase, lockoutKey);
       } else if (/invalid login credentials/i.test(first.error.message ?? '')) {
         const { data: resolved, error: resolveError } = await supabase.functions.invoke(
           'resident-account-login',
@@ -175,14 +192,28 @@ export async function login(username: string, password: string): Promise<AuthUse
             body: { account_number: trimmedUsername, password },
           }
         );
+        const payload = resolved as {
+          ok?: boolean;
+          login_email?: string;
+          error?: string;
+          retry_after_seconds?: number;
+          lockout_recorded?: boolean;
+        } | null;
         const loginEmail =
-          !resolveError && (resolved as { ok?: boolean; login_email?: string } | null)?.ok
-            ? (resolved as { login_email: string }).login_email
-            : null;
+          !resolveError && payload?.ok ? payload.login_email ?? null : null;
         if (!loginEmail) {
-          const edgeMessage = (resolved as { error?: string } | null)?.error ?? '';
+          const edgeMessage = payload?.error ?? '';
           if (/deactivated/i.test(edgeMessage)) {
             throw new Error('Your account is deactivated. Please contact support.');
+          }
+          const retryAfter = Number(payload?.retry_after_seconds ?? 0);
+          if (Number.isFinite(retryAfter) && retryAfter > 0) {
+            throw new LoginLockoutError(retryAfter);
+          }
+          // The edge function records the failure. If it could not (older
+          // deploy or a network error), record it here so the wait still starts.
+          if (!payload?.lockout_recorded) {
+            await recordFailedLogin(supabase, lockoutKey);
           }
           // Unknown account, not-yet-activated, wrong password, or a
           // non-resident — identical message so nothing about the account
@@ -196,6 +227,7 @@ export async function login(username: string, password: string): Promise<AuthUse
         if (second.error) {
           throw loginFailure(second.error.message);
         }
+        await clearFailedLogins(supabase, lockoutKey);
       } else {
         signInError = first.error.message;
       }

@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,9 +10,11 @@ import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
 import { cardShadow } from '@/components/ui/cardShadow';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { getPasswordValidationError } from '@/lib/password';
+import { queryKeys } from '@/lib/queryKeys';
 import {
-  getCurrentProfile,
   updateProfile,
   uploadAvatar,
   changePassword,
@@ -92,9 +95,28 @@ function EditableField({
 export default function Profile({ activeTab = 'profile', onTabPress }: ProfileProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
-
-  const [profile, setProfile] = useState<FullProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const userId = useSessionUserId();
+  const queryClient = useQueryClient();
+  const { profile, loading } = useCurrentProfile();
+  const setProfile = (
+    updater: FullProfile | null | ((prev: FullProfile | null) => FullProfile | null)
+  ) => {
+    queryClient.setQueryData<FullProfile | null>(
+      queryKeys.profile.detail(userId ?? ''),
+      (current) => {
+        const prev = current ?? null;
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (next && userId) {
+          queryClient.setQueryData(queryKeys.profile.reader(userId), {
+            id: next.id,
+            first_name: next.first_name,
+            last_name: next.last_name,
+          });
+        }
+        return next;
+      }
+    );
+  };
 
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -119,25 +141,9 @@ export default function Profile({ activeTab = 'profile', onTabPress }: ProfilePr
     setAvatarUrl(data?.avatar_url ?? '');
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getCurrentProfile();
-      setProfile(data);
-      applyProfileFields(data);
-    } catch (err) {
-      Alert.alert(
-        'Profile Error',
-        err instanceof Error ? err.message : 'Failed to load your profile.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [applyProfileFields]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!isEditing) applyProfileFields(profile);
+  }, [applyProfileFields, isEditing, profile]);
 
   const displayName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 

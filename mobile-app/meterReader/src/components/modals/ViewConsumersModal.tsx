@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   ActivityIndicator,
   Dimensions,
@@ -24,6 +25,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { cardShadow } from '@/components/ui/cardShadow';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
 import { getSitioConsumers } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 
@@ -108,13 +112,21 @@ export function ViewConsumersModal({
   onClose,
 }: ViewConsumersModalProps) {
   const insets = useSafeAreaInsets();
+  const userId = useSessionUserId();
+  const consumersQuery = useQuery({
+    queryKey: queryKeys.readings.consumers(userId ?? '', sitio ?? ''),
+    queryFn: () => getSitioConsumers(sitio ?? ''),
+    enabled: visible && !!sitio && !!userId,
+  });
+  const readings = consumersQuery.data ?? [];
+  const loading = visible && consumersQuery.isLoading && !consumersQuery.data;
+  const error = consumersQuery.data
+    ? null
+    : queryErrorMessage(consumersQuery.error, 'Failed to load consumers.');
   const [tab, setTab] = useState<ConsumerTab>('pending');
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [monthOpen, setMonthOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [readings, setReadings] = useState<MeterReading[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Full-width bottom sheet that rises up to just below the search bar.
   const safeTop = Math.max(topOffset, 80);
@@ -156,42 +168,21 @@ export function ViewConsumersModal({
 
   useEffect(() => {
     if (!visible || !sitio) return;
-
-    let active = true;
     setTab('pending');
     setMonthOpen(false);
     setPage(1);
-    setLoading(true);
-    setError(null);
-
-    getSitioConsumers(sitio)
-      .then((rows) => {
-        if (!active) return;
-        setReadings(rows);
-
-        const keys = [
-          ...new Set(rows.map(readingMonthKey).filter((k) => k !== 'unknown')),
-        ].sort((a, b) => b.localeCompare(a));
-        const preferred = keys.includes(currentMonthKey())
-          ? currentMonthKey()
-          : (keys[0] ?? currentMonthKey());
-        setSelectedMonth(preferred);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setReadings([]);
-        setError(
-          err instanceof Error ? err.message : 'Failed to load consumers.',
-        );
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
   }, [visible, sitio]);
+
+  useEffect(() => {
+    if (!visible || !consumersQuery.data) return;
+    const keys = [
+      ...new Set(consumersQuery.data.map(readingMonthKey).filter((k) => k !== 'unknown')),
+    ].sort((a, b) => b.localeCompare(a));
+    const preferred = keys.includes(currentMonthKey())
+      ? currentMonthKey()
+      : (keys[0] ?? currentMonthKey());
+    setSelectedMonth(preferred);
+  }, [visible, consumersQuery.data]);
 
   const monthOptions = useMemo(() => {
     const keys = new Set<string>();

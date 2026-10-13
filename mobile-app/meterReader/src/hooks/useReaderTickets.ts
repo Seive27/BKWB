@@ -1,6 +1,9 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-import { supabase } from '@/lib/supabase';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
 import { getMyTickets, type ReaderTicket } from '@/services/ticketService';
 
 interface UseReaderTicketsResult {
@@ -11,55 +14,24 @@ interface UseReaderTicketsResult {
   refresh: () => Promise<void>;
 }
 
-/**
- * Loads the meter reader's assigned tickets and keeps them in sync via a
- * realtime subscription on the tickets table (staff assignments appear
- * without a manual refresh).
- */
+/** The meter reader's assigned tickets, shared across the tickets screens. */
 export function useReaderTickets(): UseReaderTicketsResult {
-  const [tickets, setTickets] = useState<ReaderTicket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const userId = useSessionUserId();
+  const query = useQuery({
+    queryKey: queryKeys.tickets.list(userId ?? ''),
+    queryFn: getMyTickets,
+    enabled: !!userId,
+  });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      setTickets(await getMyTickets());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load your tickets.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  useEffect(() => {
-    load();
-
-    // Supabase channels are singletons keyed by name; a unique name per mount
-    // avoids "cannot add callbacks after subscribe()" on remounts.
-    const channelName = `reader-tickets-${Date.now()}`;
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
-        load(true);
-      })
-      // Resident "Not Yet" reasons live on ticket_timeline — refresh so feedback
-      // appears without requiring a manual pull.
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_timeline' }, () => {
-        load(true);
-      })
-      .subscribe();
-
-    return () => {
-      void channel.unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { tickets, loading, refreshing, error, refresh };
+  return {
+    tickets: query.data ?? [],
+    loading: query.isLoading && !query.data,
+    refreshing: query.isFetching && !query.isLoading,
+    error: query.data ? null : queryErrorMessage(query.error, 'Failed to load your tickets.'),
+    refresh,
+  };
 }

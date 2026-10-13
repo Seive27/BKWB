@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getAssignedReadings,
   getSitioRouteProgress,
-  subscribeToMeterReadings,
   type SitioRouteProgress,
 } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
+
+interface AssignedBundle {
+  assignments: MeterReading[];
+  sitioRoutes: SitioRouteProgress[];
+}
 
 interface UseAssignmentsResult {
   assignments: MeterReading[];
@@ -21,54 +29,35 @@ interface UseAssignmentsResult {
 }
 
 /**
- * Loads the reader's active (assigned, not yet submitted) meter readings and
- * keeps them in sync via a realtime channel. Also loads sitio route progress
- * so the Assigned screen can show completion bars per sitio.
+ * One shared query for assigned readings and sitio route progress, so
+ * Dashboard and Assigned reuse the same cache.
  */
 export function useAssignments(): UseAssignmentsResult {
-  const [assignments, setAssignments] = useState<MeterReading[]>([]);
-  const [sitioRoutes, setSitioRoutes] = useState<SitioRouteProgress[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const [assigned, routes] = await Promise.all([
+  const userId = useSessionUserId();
+  const query = useQuery({
+    queryKey: queryKeys.readings.assigned(userId ?? ''),
+    queryFn: async (): Promise<AssignedBundle> => {
+      const [assignments, sitioRoutes] = await Promise.all([
         getAssignedReadings(),
         getSitioRouteProgress(),
       ]);
-      setAssignments(assigned);
-      setSitioRoutes(routes);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load assigned readings.'
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+      return { assignments, sitioRoutes };
+    },
+    enabled: !!userId,
+  });
 
-  useEffect(() => {
-    load();
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-    const unsubscribe = subscribeToMeterReadings(() => {
-      load(true);
-    });
+  const bundle = query.data;
 
-    return () => {
-      unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { assignments, sitioRoutes, loading, refreshing, error, refresh };
+  return {
+    assignments: bundle?.assignments ?? [],
+    sitioRoutes: bundle?.sitioRoutes ?? [],
+    loading: query.isLoading && !bundle,
+    refreshing: query.isFetching && !query.isLoading,
+    error: bundle ? null : queryErrorMessage(query.error, 'Failed to load assigned readings.'),
+    refresh,
+  };
 }

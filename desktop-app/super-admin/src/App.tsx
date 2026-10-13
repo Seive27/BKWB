@@ -1,10 +1,14 @@
 import { useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import SessionTimeout from './components/ui/SessionTimeout';
 import { ToastProvider } from './components/ui/ToastProvider';
+import { RealtimeSync } from './components/RealtimeSync';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
+import { useTauriWindowFocus } from './hooks/useTauriWindowFocus';
+import { queryClient } from './lib/queryClient';
 import AuthOverlay from './components/layout/AuthOverlay';
 import LoginModal from './components/modals/LoginModal';
 import AccountSetupModal from './components/modals/AccountSetupModal';
@@ -152,12 +156,21 @@ function AppContent() {
   );
 }
 
+function TauriQueryFocus() {
+  useTauriWindowFocus();
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider allowedRole="super_admin" portalName="Super Admin Portal">
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <TauriQueryFocus />
+          <RealtimeSync />
+          <AppContent />
+        </ToastProvider>
+      </QueryClientProvider>
     </AuthProvider>
   );
 }

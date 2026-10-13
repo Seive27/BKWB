@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   X,
   User,
@@ -11,6 +12,9 @@ import {
 } from 'lucide-react';
 import type { MeterReading } from '../../types';
 import { METER_READING_STATUS_LABELS } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { queryErrorMessage } from '../../lib/queryError';
+import { queryKeys } from '../../lib/queryKeys';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBillsByResident } from '../../services/billService';
 import { hasMobileAccount, type ResidentRecord } from '../../services/residentService';
@@ -129,54 +133,22 @@ const ResidentOverviewModal: React.FC<{
   resident: ResidentRecord;
   onClose: () => void;
 }> = ({ resident, onClose }) => {
+  const { isAuthenticated } = useAuth();
   const [tab, setTab] = useState<OverviewTab>('information');
-  const [readings, setReadings] = useState<MeterReading[]>([]);
-  const [bills, setBills] = useState<Awaited<ReturnType<typeof getBillsByResident>>>([]);
-  const [loadingData, setLoadingData] = useState(true);
-  const [dataError, setDataError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingData(true);
-    setDataError(null);
-
-    const tasks: Promise<void>[] = [];
-    if (resident.accountId) {
-      tasks.push(
-        getAccountReadings(resident.accountId)
-          .then((rows) => {
-            if (!cancelled) setReadings(rows);
-          })
-          .catch((err: unknown) => {
-            throw err instanceof Error ? err : new Error('Failed to load reading history.');
-          })
-      );
-    }
-    tasks.push(
-      getBillsByResident(resident.id)
-        .then((rows) => {
-          if (!cancelled) setBills(rows);
-        })
-        .catch(() => {
-          // Bills table may not exist yet on this backend — treat as no bills.
-          if (!cancelled) setBills([]);
-        })
-    );
-
-    Promise.all(tasks)
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setDataError(err instanceof Error ? err.message : 'Failed to load details.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingData(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [resident.id, resident.accountId]);
+  const readingsQuery = useQuery({
+    queryKey: queryKeys.meterReadings.byAccount(resident.accountId ?? ''),
+    queryFn: () => getAccountReadings(resident.accountId ?? ''),
+    enabled: isAuthenticated && !!resident.accountId,
+  });
+  const billsQuery = useQuery({
+    queryKey: queryKeys.bills.byResident(resident.id),
+    queryFn: () => getBillsByResident(resident.id).catch(() => []),
+    enabled: isAuthenticated,
+  });
+  const readings = readingsQuery.data ?? [];
+  const bills = billsQuery.data ?? [];
+  const loadingData = readingsQuery.isLoading || billsQuery.isLoading;
+  const dataError = queryErrorMessage(readingsQuery.error, 'Failed to load details.');
 
   const consumption = useMemo(() => {
     if (

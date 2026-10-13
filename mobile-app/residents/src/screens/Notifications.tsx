@@ -11,6 +11,8 @@ import { NotificationList } from '@/components/notifications/NotificationList';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { useDialog } from '@/components/ui/AppDialog';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   markAllNotificationsRead,
   markNotificationRead,
@@ -60,12 +62,15 @@ export default function NotificationsScreen({
   const dialog = useDialog();
 
   const { notifications, unreadCount, loading, refreshing, error, refresh } = useNotifications();
+  const notificationWrite = useInvalidatingMutation(
+    (run: () => Promise<unknown>) => run(),
+    [queryKeys.notifications.all]
+  );
 
   const handlePressItem = async (item: AppNotification) => {
     if (!item.is_read) {
       try {
-        await markNotificationRead(item.id);
-        await refresh();
+        await notificationWrite.mutateAsync(() => markNotificationRead(item.id));
       } catch {
         // Best-effort; the feed will re-sync on the next realtime event.
       }
@@ -79,8 +84,7 @@ export default function NotificationsScreen({
 
   const handleMarkAllRead = async () => {
     try {
-      await markAllNotificationsRead();
-      await refresh();
+      await notificationWrite.mutateAsync(() => markAllNotificationsRead());
       dialog.toast('Marked as read');
     } catch (err) {
       dialog.toast(
@@ -98,8 +102,7 @@ export default function NotificationsScreen({
       destructive: true,
       onConfirm: async () => {
         try {
-          await softDeleteNotification(item.id);
-          await refresh();
+          await notificationWrite.mutateAsync(() => softDeleteNotification(item.id));
           dialog.toast('Deleted successfully');
         } catch (err) {
           dialog.toast(
@@ -120,8 +123,7 @@ export default function NotificationsScreen({
       destructive: true,
       onConfirm: async () => {
         try {
-          await softDeleteAllNotifications();
-          await refresh();
+          await notificationWrite.mutateAsync(() => softDeleteAllNotifications());
           dialog.toast('Deleted successfully');
         } catch (err) {
           dialog.toast(

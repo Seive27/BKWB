@@ -1,17 +1,21 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDialog } from '@/components/ui/AppDialog';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { ChatBotFab } from '@/components/ui/ChatBotFab';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { queryKeys } from '@/lib/queryKeys';
 import { getPasswordValidationError } from '@/lib/password';
 import {
-  getCurrentProfile,
   updateProfile,
   uploadAvatar,
   changePassword,
@@ -106,9 +110,20 @@ export default function Profile({
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const dialog = useDialog();
-
-  const [profile, setProfile] = useState<FullProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const userId = useSessionUserId();
+  const queryClient = useQueryClient();
+  const { profile, loading } = useCurrentProfile();
+  const setProfile = (
+    updater: FullProfile | null | ((prev: FullProfile | null) => FullProfile | null)
+  ) => {
+    queryClient.setQueryData<FullProfile | null>(
+      queryKeys.profile.detail(userId ?? ''),
+      (current) => {
+        const prev = current ?? null;
+        return typeof updater === 'function' ? updater(prev) : updater;
+      }
+    );
+  };
 
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -133,26 +148,9 @@ export default function Profile({
     setAvatarUrl(data?.avatar_url ?? '');
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getCurrentProfile();
-      setProfile(data);
-      applyProfileFields(data);
-    } catch (err) {
-      dialog.alert(
-        'Profile Error',
-        friendlyErrorMessage(err, 'Failed to load your profile.'),
-        { tone: 'danger' }
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [applyProfileFields]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!isEditing) applyProfileFields(profile);
+  }, [applyProfileFields, isEditing, profile]);
 
   const displayName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 

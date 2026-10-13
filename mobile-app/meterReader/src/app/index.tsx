@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 
 import type { ReadingFilter } from '@/components/assigned/FilterTabs';
 import { type NavTab } from '@/components/NavBar/Navbar';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { supabase } from '@/lib/supabase';
 import {
   currentSessionAllowed,
-  getCurrentProfile,
   isLoginGatePending,
   isPasswordResetPending,
   signOut,
@@ -30,6 +30,7 @@ export default function HomeScreen() {
   const [historyFilter, setHistoryFilter] = useState<ReadingFilter>('all');
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const { profile, loading: profileLoading } = useCurrentProfile();
 
   const handleTabPress = (tab: NavTab) => {
     if (tab === 'history') setHistoryFilter('all');
@@ -113,21 +114,10 @@ export default function HomeScreen() {
       setNeedsSetup(false);
       return;
     }
-    if (onboardingKnown) return;
-    let cancelled = false;
-    getCurrentProfile()
-      .then((profile) => {
-        if (cancelled) return;
-        setNeedsSetup(!!profile?.needs_onboarding);
-        setOnboardingKnown(true);
-      })
-      .catch(() => {
-        if (!cancelled) setOnboardingKnown(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoggedIn, onboardingKnown]);
+    if (profileLoading) return;
+    setNeedsSetup(!!profile?.needs_onboarding);
+    setOnboardingKnown(true);
+  }, [isLoggedIn, profileLoading, profile]);
 
   const handleNotificationNavigate = (destination: NotificationDestination) => {
     if (!destination) return;

@@ -1,64 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
+import { getResidentTickets } from '@/services/ticketService';
 import type { Ticket } from '@/types/tickets';
-import {
-  getResidentTickets,
-  subscribeToTickets,
-} from '@/services/ticketService';
 
 interface UseTicketsResult {
   tickets: Ticket[];
-  /** True on the very first load. */
   loading: boolean;
-  /** True while re-fetching after realtime events or manual refresh. */
   refreshing: boolean;
   error: string | null;
   refresh: () => Promise<void>;
 }
 
-/**
- * Loads the logged-in resident's tickets from Supabase and keeps them in
- * sync via a realtime channel. The subscription is cleaned up on unmount.
- */
+/** The signed-in resident's tickets, shared across tab switches. */
 export function useTickets(): UseTicketsResult {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const userId = useSessionUserId();
+  const query = useQuery({
+    queryKey: queryKeys.tickets.list(userId ?? ''),
+    queryFn: () => getResidentTickets(),
+    enabled: !!userId,
+  });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getResidentTickets();
-      setTickets(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tickets.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  useEffect(() => {
-    load();
-
-    // Re-fetch whenever a row changes (RLS limits events to own tickets).
-    const unsubscribe = subscribeToTickets(() => {
-      load(true);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { tickets, loading, refreshing, error, refresh };
+  return {
+    tickets: query.data ?? [],
+    loading: query.isLoading && !query.data,
+    refreshing: query.isFetching && !query.isLoading,
+    error: query.data ? null : queryErrorMessage(query.error, 'Failed to load tickets.'),
+    refresh,
+  };
 }
-

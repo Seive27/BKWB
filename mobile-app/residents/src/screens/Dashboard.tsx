@@ -10,13 +10,12 @@ import type { Announcement, AnnouncementCategory } from '@/types/announcements';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { AnnouncementDetailModal } from '@/components/announcements/AnnouncementDetailModal';
 import { useNotifications } from '@/hooks/useNotifications';
-import { getCurrentProfile } from '@/services/authService';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+import { pickCurrentBill, useMyBills } from '@/hooks/useMyBills';
 import {
   formatBillDate,
   formatPeriod,
   formatPeso,
-  getMyBills,
-  subscribeToMyBills,
   type ResidentBill,
 } from '@/services/billService';
 import NotificationsScreen from '@/screens/Notifications';
@@ -63,9 +62,10 @@ export default function Dashboard({
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const [quickActionScreen, setQuickActionScreen] = useState<QuickActionScreen>(null);
   const [focusTicketId, setFocusTicketId] = useState<string | null>(null);
-  const [residentName, setResidentName] = useState('Resident');
-  const [currentBill, setCurrentBill] = useState<ResidentBill | null>(null);
-  const [billLoading, setBillLoading] = useState(true);
+  const { profile } = useCurrentProfile();
+  const residentName = profile?.first_name || 'Resident';
+  const { bills, loading: billLoading, refresh: refreshBills } = useMyBills();
+  const currentBill = pickCurrentBill(bills);
 
   useEffect(() => {
     if (!deepLink) return;
@@ -101,43 +101,6 @@ export default function Dashboard({
     }
   };
 
-  // Greet the resident by their real first name from the profiles table.
-  useEffect(() => {
-    getCurrentProfile()
-      .then((profile) => {
-        if (profile?.first_name) setResidentName(profile.first_name);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Mirror Bills → Current Bill: newest unpaid, else newest overall.
-  // Stays subscribed to realtime so a webhook-confirmed payment is reflected
-  // on the dashboard (and the Payments screen) without a manual refresh.
-  const loadBills = (showSpinner = false) => {
-    if (showSpinner) setBillLoading(true);
-    getMyBills()
-      .then((bills) => {
-        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
-        setCurrentBill(unpaid ?? bills[0] ?? null);
-      })
-      .catch(() => {
-        setCurrentBill(null);
-      })
-      .finally(() => {
-        if (showSpinner) setBillLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    loadBills(true);
-    const unsubscribe = subscribeToMyBills(() => {
-      loadBills(false);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
   if (quickActionScreen === 'viewBills') {
     return (
       <ViewBillsScreen
@@ -162,7 +125,7 @@ export default function Dashboard({
         }}
         onBack={() => setQuickActionScreen(null)}
         onBillPaid={() => {
-          loadBills(false);
+          void refreshBills();
           setQuickActionScreen(null);
           onOpenBills?.();
         }}

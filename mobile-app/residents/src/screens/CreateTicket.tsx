@@ -6,7 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDialog } from '@/components/ui/AppDialog';
 import { TicketForm } from '@/components/tickets/TicketForm';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { queryKeys } from '@/lib/queryKeys';
 import { createTicket } from '@/services/ticketService';
 import type { Ticket, TicketDraft } from '@/types/tickets';
 
@@ -44,6 +46,7 @@ export default function CreateTicketScreen({
   const insets = useSafeAreaInsets();
   const navbarHeight = 64 + Math.max(insets.bottom, 8);
   const dialog = useDialog();
+  const create = useInvalidatingMutation(createTicket, [queryKeys.tickets.all]);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (draft: TicketDraft) => {
@@ -52,7 +55,7 @@ export default function CreateTicketScreen({
     }
     setSubmitting(true);
     try {
-      const ticket = await createTicket(draft);
+      const ticket = await create.mutateAsync(draft);
       dialog.alert(
         'Ticket Submitted',
         `Your ticket ${ticket.ticket_number} has been received. Staff will update you on its progress.`,

@@ -17,6 +17,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import {
   getResidents,
   getResidentStats,
@@ -110,6 +115,10 @@ const AddResidentModal: React.FC<{
   onCreated: () => void;
   sitioOptions: string[];
 }> = ({ onClose, onCreated, sitioOptions }) => {
+  const createResidentMutation = useInvalidatingMutation(
+    (input: Parameters<typeof createResident>[0]) => createResident(input),
+    [queryKeys.residents.all]
+  );
   const [form, setForm] = useState<AddResidentForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +172,7 @@ const AddResidentModal: React.FC<{
 
     setSaving(true);
     try {
-      const result = await createResident({
+      const result = await createResidentMutation.mutateAsync({
         email: form.email.trim().toLowerCase(),
         firstName: form.firstName,
         middleName: form.middleName,
@@ -514,14 +523,40 @@ const SuccessView: React.FC<{
 
 
 const Residents: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  const residentsQuery = useQuery({
+    queryKey: queryKeys.residents.list(),
+    queryFn: getResidents,
+    enabled: isAuthenticated,
+  });
+  const statsQuery = useQuery({
+    queryKey: queryKeys.residents.stats(),
+    queryFn: getResidentStats,
+    enabled: isAuthenticated,
+  });
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.residents.sitios(),
+    queryFn: () => getSitioOptions().catch(() => [] as string[]),
+    enabled: isAuthenticated,
+  });
+  const residents = residentsQuery.data ?? [];
+  const loading = residentsQuery.isLoading;
+  const refreshing = residentsQuery.isFetching && !residentsQuery.isLoading;
+  const error = queryErrorMessage(residentsQuery.error, 'Failed to load residents.');
+  const stats = {
+    totalResidents: statsQuery.data?.totalResidents ?? 0,
+    activeAccounts: statsQuery.data?.activeAccounts ?? 0,
+    noAccountYet: statsQuery.data?.inactiveAccounts ?? 0,
+  };
+  const sitioOptions = sitiosQuery.data ?? [];
+  const load = () => {
+    void residentsQuery.refetch();
+    void statsQuery.refetch();
+    void sitiosQuery.refetch();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [sitioFilter, setSitioFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [sitioOptions, setSitioOptions] = useState<string[]>([]);
-  const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [stats, setStats] = useState({ totalResidents: 0, activeAccounts: 0, noAccountYet: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
   const [page, setPage] = useState(1);
@@ -555,34 +590,6 @@ const Residents: React.FC = () => {
     };
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [residentData, statData, sitioData] = await Promise.all([
-        getResidents(),
-        getResidentStats(),
-        getSitioOptions().catch(() => [] as string[]),
-      ]);
-      setResidents(residentData);
-      setStats({
-        totalResidents: statData.totalResidents,
-        activeAccounts: statData.activeAccounts,
-        noAccountYet: statData.inactiveAccounts,
-      });
-      if (sitioData.length > 0) setSitioOptions(sitioData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load residents.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Reset pagination whenever search/filters change.
   useEffect(() => {
     setPage(1);
   }, [searchQuery, sitioFilter, statusFilter]);
@@ -782,7 +789,7 @@ const Residents: React.FC = () => {
                     className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     title="Refresh"
                   >
-                    <RefreshCw className="w-5 h-5 text-gray-600" />
+                    <RefreshCw className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
                   </button>
                   <button
                     onClick={handleExport}

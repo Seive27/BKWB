@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -13,10 +14,13 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import AddUserModal, { UserFormData, UserCreatedInfo } from '../components/modals/AddUserModal';
+import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import {
   getUsers,
   createUser,
-  type ManagedUser,
 } from '../services/userService';
 import type { Role } from '../types';
 
@@ -32,13 +36,26 @@ function formatLastActive(createdAt: string): string {
 }
 
 const Users: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  const usersQuery = useQuery({
+    queryKey: queryKeys.users.list(),
+    queryFn: getUsers,
+    enabled: isAuthenticated,
+  });
+  const createUserMutation = useInvalidatingMutation(
+    (input: Parameters<typeof createUser>[0]) => createUser(input),
+    [queryKeys.users.all]
+  );
+  const users = usersQuery.data ?? [];
+  const loading = usersQuery.isLoading;
+  const error = queryErrorMessage(usersQuery.error, 'Failed to load users.');
+  const load = () => {
+    void usersQuery.refetch();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('All Roles');
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [creating, setCreating] = useState(false);
   /** Error from the last create attempt — shown inside the Add User modal. */
@@ -48,24 +65,7 @@ const Users: React.FC = () => {
   /** Monotonic id of the latest create request — used to ignore stale in-flight results. */
   const addUserRequestRef = useRef(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getUsers();
-      setUsers(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const roleCounts = useCallback(() => {
+  const roleCounts = () => {
     const counts: Record<string, number> = {
       'Super Admin': 0,
       Staff: 0,
@@ -76,7 +76,7 @@ const Users: React.FC = () => {
       if (counts[u.roleLabel] !== undefined) counts[u.roleLabel] += 1;
     });
     return counts;
-  }, [users]);
+  };
 
   const totalUsers = users.length;
   const activeNow = users.filter((u) => u.isActive).length;
@@ -118,7 +118,7 @@ const Users: React.FC = () => {
         'Super Admin': 'super_admin',
       };
       const role = roleMap[userData.role] ?? 'resident';
-      await createUser({
+      await createUserMutation.mutateAsync({
         email: userData.emailAddress,
         password: userData.password,
         firstName: userData.firstName,
@@ -139,7 +139,6 @@ const Users: React.FC = () => {
         role: userData.role,
         password: userData.password,
       });
-      await load();
     } catch (err) {
       if (addUserRequestRef.current !== requestId) return;
       setCreateError(err instanceof Error ? err.message : 'Failed to create user.');

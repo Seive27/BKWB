@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-import type { AppNotification } from '@/types/notifications';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getNotifications,
   getUnreadNotificationCount,
-  subscribeToNotifications,
   type NotificationQueryOptions,
 } from '@/services/notificationService';
+import type { AppNotification } from '@/types/notifications';
 
 interface UseNotificationsResult {
   notifications: AppNotification[];
@@ -19,58 +22,34 @@ interface UseNotificationsResult {
   refresh: () => Promise<void>;
 }
 
-/**
- * Loads the signed-in user's notifications and keeps them in sync via a
- * realtime channel, including the unread badge count.
- */
-export function useNotifications(
-  options?: NotificationQueryOptions
-): UseNotificationsResult {
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** Notification feed and unread badge share one cache per user and filter. */
+export function useNotifications(options?: NotificationQueryOptions): UseNotificationsResult {
+  const userId = useSessionUserId();
+  const enabled = !!userId;
 
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const listQuery = useQuery({
+    queryKey: queryKeys.notifications.list(userId ?? '', options),
+    queryFn: () => getNotifications(options),
+    enabled,
+  });
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.notifications.unread(userId ?? ''),
+    queryFn: getUnreadNotificationCount,
+    enabled,
+  });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getNotifications(optionsRef.current);
-      setNotifications(data);
-      try {
-        setUnreadCount(await getUnreadNotificationCount());
-      } catch {
-        // Badge count is best-effort.
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load notifications.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await Promise.all([listQuery.refetch(), unreadQuery.refetch()]);
+  }, [listQuery, unreadQuery]);
 
-  useEffect(() => {
-    load();
-
-    const unsubscribe = subscribeToNotifications(() => {
-      load(true);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { notifications, unreadCount, loading, refreshing, error, refresh };
+  return {
+    notifications: listQuery.data ?? [],
+    unreadCount: unreadQuery.data ?? 0,
+    loading: listQuery.isLoading && !listQuery.data,
+    refreshing: listQuery.isFetching && !listQuery.isLoading,
+    error: listQuery.data
+      ? null
+      : queryErrorMessage(listQuery.error, 'Failed to load notifications.'),
+    refresh,
+  };
 }

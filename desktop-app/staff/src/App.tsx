@@ -1,8 +1,12 @@
 import { useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
+import { useTauriWindowFocus } from './hooks/useTauriWindowFocus';
+import { queryClient } from './lib/queryClient';
+import { RealtimeSync } from './components/RealtimeSync';
 import AuthOverlay from './components/layout/AuthOverlay';
 import SessionTimeout from './components/ui/SessionTimeout';
 import { ToastProvider } from './components/ui/ToastProvider';
@@ -134,12 +138,21 @@ function AppContent() {
   );
 }
 
+function TauriQueryFocus() {
+  useTauriWindowFocus();
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider allowedRole="staff" portalName="Staff Portal">
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <TauriQueryFocus />
+          <RealtimeSync />
+          <AppContent />
+        </ToastProvider>
+      </QueryClientProvider>
     </AuthProvider>
   );
 }

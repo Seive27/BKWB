@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -22,7 +23,9 @@ import TicketCard from '../components/ui/TicketCard';
 import StyledSelect from '../components/ui/StyledSelect';
 import CreateTicketModal from '../components/modals/CreateTicketModal';
 import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { useTickets } from '../hooks/useTickets';
+import { queryKeys } from '../lib/queryKeys';
 import {
   assignTicket,
   createTicket,
@@ -254,8 +257,14 @@ const Tickets: React.FC<{
   initialStatusFilter = null,
   onInitialStatusFilterConsumed,
 }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { tickets, loading, refreshing, error, refresh } = useTickets();
+  const ticketWrite = useInvalidatingMutation(
+    async (run: () => Promise<unknown>) => {
+      await run();
+    },
+    [queryKeys.tickets.all]
+  );
 
   // ── Filters / sort ──
   const [searchQuery, setSearchQuery] = useState('');
@@ -268,8 +277,6 @@ const Tickets: React.FC<{
 
   // ── Selection / details ──
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
-  const [timeline, setTimeline] = useState<TicketTimelineEvent[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelinePage, setTimelinePage] = useState(1);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
   const detailsScrollRef = useRef<HTMLDivElement>(null);
@@ -280,7 +287,21 @@ const Tickets: React.FC<{
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [staffOptions, setStaffOptions] = useState<AssignOption[]>([]);
+  const assigneesQuery = useQuery({
+    queryKey: queryKeys.tickets.assignees(),
+    queryFn: async () => {
+      const [staff, readers] = await Promise.all([
+        getStaffProfiles(),
+        getMeterReaderProfiles(),
+      ]);
+      return [
+        ...staff.map((person) => ({ ...person, role: 'staff' as const })),
+        ...readers.map((person) => ({ ...person, role: 'meter_reader' as const })),
+      ].sort((a, b) => a.last_name.localeCompare(b.last_name));
+    },
+    enabled: isAuthenticated,
+  });
+  const staffOptions = assigneesQuery.data ?? [];
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
@@ -319,50 +340,22 @@ const Tickets: React.FC<{
 
   const selectedTicket = tickets.find((t) => t.id === selectedId) ?? null;
 
-  // Load staff options once (for the assign picker).
-    useEffect(() => {
-    Promise.all([getStaffProfiles(), getMeterReaderProfiles()])
-      .then(([staff, readers]) =>
-        setStaffOptions(
-          [
-            ...staff.map((s) => ({ ...s, role: 'staff' as const })),
-            ...readers.map((r) => ({ ...r, role: 'meter_reader' as const })),
-          ].sort((a, b) => a.last_name.localeCompare(b.last_name))
-        )
-      )
-      .catch(() => {
-        // Non-fatal - the assign modal will show an error when used.
-      });
-  }, []);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.tickets.detail(selectedId ?? ''),
+    queryFn: () => getTicketById(selectedId ?? ''),
+    enabled: isAuthenticated && !!selectedId,
+  });
+  const timeline = detailQuery.data?.timeline ?? [];
+  const timelineLoading = !!selectedId && detailQuery.isFetching && !detailQuery.data;
 
-  // Fetch the selected ticket's timeline whenever it (or its updated_at) changes.
   useEffect(() => {
-    const id = selectedId;
-    if (!id) {
-      setTimeline([]);
+    if (!selectedId) {
       setTimelinePage(1);
       return;
     }
-    let cancelled = false;
-    setTimelineLoading(true);
-    getTicketById(id)
-      .then((data) => {
-        if (!cancelled) {
-          const next = data?.timeline ?? [];
-          setTimeline(next);
-          setTimelinePage(paginateTimeline(next).length || 1);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setTimeline([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTimelineLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, selectedTicket?.updated_at]);
+    if (!detailQuery.data) return;
+    setTimelinePage(paginateTimeline(detailQuery.data.timeline ?? []).length || 1);
+  }, [selectedId, detailQuery.data]);
 
   // Keep the notes draft in sync with the selected ticket.
   useEffect(() => {
@@ -431,8 +424,7 @@ const Tickets: React.FC<{
       showToast('error', 'You must be logged in to create tickets.');
       return;
     }
-    await createTicket(draft, actorId);
-    await refresh();
+    await ticketWrite.mutateAsync(() => createTicket(draft, actorId));
     showToast('success', 'Ticket created successfully.');
   };
 
@@ -452,8 +444,9 @@ const Tickets: React.FC<{
       const names = ordered
         .map((option) => `${option.first_name} ${option.last_name}`.trim() || 'staff')
         .join(', ');
-      await assignTicket(selectedTicket.id, selectedStaffIds, actorId, names || 'staff');
-      await refresh();
+      await ticketWrite.mutateAsync(() =>
+        assignTicket(selectedTicket.id, selectedStaffIds, actorId, names || 'staff')
+      );
       setShowAssignModal(false);
       showToast(
         'success',
@@ -472,8 +465,7 @@ const Tickets: React.FC<{
     if (!selectedTicket || actionBusy) return;
     setActionBusy(true);
     try {
-      await updateStatus(selectedTicket.id, status, actorId);
-      await refresh();
+      await ticketWrite.mutateAsync(() => updateStatus(selectedTicket.id, status, actorId));
       showToast('success', `Ticket marked as ${TICKET_STATUS_LABELS[status]}.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update status.');
@@ -486,13 +478,14 @@ const Tickets: React.FC<{
     if (!selectedTicket || actionBusy) return;
     setActionBusy(true);
     try {
-      await updateStatus(
-        selectedTicket.id,
-        'resolved',
-        actorId,
-        resolutionDraft.trim().length > 0 ? resolutionDraft.trim() : undefined
+      await ticketWrite.mutateAsync(() =>
+        updateStatus(
+          selectedTicket.id,
+          'resolved',
+          actorId,
+          resolutionDraft.trim().length > 0 ? resolutionDraft.trim() : undefined
+        )
       );
-      await refresh();
       setShowResolveModal(false);
       setResolutionDraft('');
       showToast('success', 'Ticket marked as Resolved.');
@@ -507,8 +500,9 @@ const Tickets: React.FC<{
     if (!selectedTicket || actionBusy) return;
     setActionBusy(true);
     try {
-      await updateTicket(selectedTicket.id, { internal_notes: notesDraft });
-      await refresh();
+      await ticketWrite.mutateAsync(() =>
+        updateTicket(selectedTicket.id, { internal_notes: notesDraft })
+      );
       showToast('success', 'Internal notes saved. They are never shown to residents.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to save notes.');
@@ -521,8 +515,7 @@ const Tickets: React.FC<{
     if (!selectedTicket || actionBusy || selectedTicket.priority === priority) return;
     setActionBusy(true);
     try {
-      await updateTicket(selectedTicket.id, { priority });
-      await refresh();
+      await ticketWrite.mutateAsync(() => updateTicket(selectedTicket.id, { priority }));
       showToast('success', `Priority set to ${TICKET_PRIORITY_LABELS[priority]}.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update priority.');
@@ -535,8 +528,7 @@ const Tickets: React.FC<{
     if (!selectedTicket || actionBusy) return;
     setActionBusy(true);
     try {
-      await deleteTicket(selectedTicket.id);
-      await refresh();
+      await ticketWrite.mutateAsync(() => deleteTicket(selectedTicket.id));
       setShowDeleteModal(false);
       setSelectedId(null);
       showToast('success', 'Ticket deleted.');

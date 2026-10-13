@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { usePayMongoCheckout } from '@/hooks/usePayMongoCheckout';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   formatBillDate,
   formatPeriod,
@@ -180,8 +183,16 @@ export function PaymentJourney({
   onBillPaid?: () => void;
 }) {
   const flow = usePayMongoCheckout(bill);
-  const [loading, setLoading] = useState(true);
-  const [paymentRecord, setPaymentRecord] = useState<ResidentPayment | null>(null);
+  const userId = useSessionUserId();
+  const queryClient = useQueryClient();
+  const paymentQuery = useQuery({
+    queryKey: queryKeys.payments.forBill(userId ?? '', bill.id),
+    queryFn: () => getPaymentForBill(bill.id),
+    enabled: !!userId,
+  });
+  const [payAgain, setPayAgain] = useState(false);
+  const paymentRecord = payAgain ? null : (paymentQuery.data ?? null);
+  const loading = paymentQuery.isLoading && paymentQuery.data === undefined;
   const [step, setStep] = useState<'options' | 'receipt' | 'rejected'>('options');
 
   // Fire the parent's confirmation callbacks exactly once per bill.
@@ -194,34 +205,18 @@ export function PaymentJourney({
   // Load any existing payment record for this bill so already-paid bills and
   // previously submitted payments show their real status instead of a pay button.
   useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      setLoading(true);
-      try {
-        const p = await getPaymentForBill(bill.id);
-        if (cancelled) return;
-        setPaymentRecord(p);
-
-        if (!unpaid) {
-          setStep('receipt');
-        } else if (p && (p.status === 'rejected' || p.status === 'cancelled')) {
-          setStep('rejected');
-        } else if (p && p.status === 'pending') {
-          setStep('receipt');
-        } else {
-          setStep('options');
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    if (payAgain || paymentQuery.isLoading) return;
+    const p = paymentQuery.data ?? null;
+    if (!unpaid) {
+      setStep('receipt');
+    } else if (p && (p.status === 'rejected' || p.status === 'cancelled')) {
+      setStep('rejected');
+    } else if (p && p.status === 'pending') {
+      setStep('receipt');
+    } else {
+      setStep('options');
     }
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, [bill.id, unpaid]);
+  }, [payAgain, paymentQuery.data, paymentQuery.isLoading, unpaid]);
 
   // Surface the webhook/database confirmation to the parent (refresh bill card,
   // etc.) — once per bill.
@@ -238,9 +233,12 @@ export function PaymentJourney({
   }, [flow.state, flow.confirmedPayment, onConfirmed, onBillPaid]);
 
   const handlePayAgain = () => {
-    setPaymentRecord(null);
+    setPayAgain(true);
     setStep('options');
     flow.reset();
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.payments.forBill(userId ?? '', bill.id),
+    });
   };
 
   if (loading) {

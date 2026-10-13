@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Gauge,
@@ -15,7 +16,10 @@ import {
 import StyledSelect from '../components/ui/StyledSelect';
 import BillReceiptCard from '../components/ui/BillReceiptCard';
 import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { useMeterReadings } from '../hooks/useMeterReadings';
+import { queryKeys } from '../lib/queryKeys';
+import { queryErrorMessage } from '../lib/queryError';
 import GenerateBillModal from '../components/modals/GenerateBillModal';
 import {
   generateBillForReading,
@@ -82,8 +86,14 @@ const MeterReadings: React.FC<{
   initialStatusFilter = null,
   onInitialStatusFilterConsumed,
 }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
+  const readingWrite = useInvalidatingMutation(
+    async (run: () => Promise<unknown>) => {
+      await run();
+    },
+    [queryKeys.meterReadings.all, queryKeys.bills.all]
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(
@@ -96,9 +106,6 @@ const MeterReadings: React.FC<{
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [previewReceipt, setPreviewReceipt] = useState<BillReceiptData | null>(null);
-  const [previewReceiptLoading, setPreviewReceiptLoading] = useState(false);
-  const [previewReceiptError, setPreviewReceiptError] = useState<string | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showGenerateBillModal, setShowGenerateBillModal] = useState(false);
   const [billReceipt, setBillReceipt] = useState<BillReceiptData | null>(null);
@@ -155,6 +162,20 @@ const MeterReadings: React.FC<{
   };
 
   const selectedReading = readings.find((r) => r.id === selectedId) ?? null;
+  const previewEnabled =
+    showReviewModal &&
+    !!selectedReading &&
+    (selectedReading.status === 'pending_review' || selectedReading.status === 'approved');
+  const previewQuery = useQuery({
+    queryKey: queryKeys.bills.receiptPreview(selectedReading?.id ?? ''),
+    queryFn: () => previewBillReceiptForReading(selectedReading as MeterReading),
+    enabled: isAuthenticated && previewEnabled,
+  });
+  const previewReceipt = previewEnabled ? (previewQuery.data ?? null) : null;
+  const previewReceiptLoading = previewEnabled && previewQuery.isLoading;
+  const previewReceiptError = previewEnabled
+    ? queryErrorMessage(previewQuery.error, 'Failed to load receipt preview.')
+    : null;
   const actorId = user?.id ?? '';
 
   const stats = useMemo(() => {
@@ -193,26 +214,14 @@ const MeterReadings: React.FC<{
     });
   }, [readings, searchQuery, statusFilter]);
 
-  const loadPreviewReceipt = async (reading: MeterReading) => {
-    if (reading.status !== 'pending_review' && reading.status !== 'approved') {
-      setPreviewReceipt(null);
-      setPreviewReceiptError(null);
-      setPreviewReceiptLoading(false);
-      return;
-    }
-    setPreviewReceipt(null);
-    setPreviewReceiptError(null);
-    setPreviewReceiptLoading(true);
-    try {
-      const receipt = await previewBillReceiptForReading(reading);
-      setPreviewReceipt(receipt);
-    } catch (err) {
-      setPreviewReceiptError(
-        err instanceof Error ? err.message : 'Failed to load receipt preview.'
-      );
-    } finally {
-      setPreviewReceiptLoading(false);
-    }
+  const openReview = (reading: MeterReading) => {
+    setSelectedId(reading.id);
+    setRejectionReason('');
+    setShowReviewModal(true);
+  };
+
+  const closeReviewModal = () => {
+    setShowReviewModal(false);
   };
 
   const handleApprove = async () => {
@@ -223,8 +232,7 @@ const MeterReadings: React.FC<{
     }
     setActionBusy(true);
     try {
-      await approveReading(selectedReading.id, actorId);
-      await refresh();
+      await readingWrite.mutateAsync(() => approveReading(selectedReading.id, actorId));
       showToast('success', 'Reading approved. Use Issue Bill to create the resident bill.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to approve reading.');
@@ -249,8 +257,9 @@ const MeterReadings: React.FC<{
       const billId = result.bill_id ?? null;
       setGeneratedBillNumber(result.bill_number ?? null);
 
-      await markReadingBilled(reading.id);
-      await refresh();
+      await readingWrite.mutateAsync(async () => {
+        await markReadingBilled(reading.id);
+      });
 
       if (!billId) {
         setBillReceiptError(
@@ -293,8 +302,9 @@ const MeterReadings: React.FC<{
     }
     setActionBusy(true);
     try {
-      await rejectReading(selectedReading.id, actorId, rejectionReason);
-      await refresh();
+      await readingWrite.mutateAsync(() =>
+        rejectReading(selectedReading.id, actorId, rejectionReason)
+      );
       setShowRejectModal(false);
       setRejectionReason('');
       showToast('success', 'Reading rejected. The meter reader has been notified.');
@@ -303,20 +313,6 @@ const MeterReadings: React.FC<{
     } finally {
       setActionBusy(false);
     }
-  };
-
-  const openReview = (reading: MeterReading) => {
-    setSelectedId(reading.id);
-    setRejectionReason('');
-    setShowReviewModal(true);
-    void loadPreviewReceipt(reading);
-  };
-
-  const closeReviewModal = () => {
-    setShowReviewModal(false);
-    setPreviewReceipt(null);
-    setPreviewReceiptError(null);
-    setPreviewReceiptLoading(false);
   };
 
   const getStatusBadge = (status: MeterReadingStatus) => {

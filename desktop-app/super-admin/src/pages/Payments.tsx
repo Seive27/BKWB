@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   User,
   MapPin,
@@ -23,15 +24,19 @@ import {
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { getPendingPayments, verifyPendingPaymentRPC } from '../services/paymentService';
 import { useToast } from '../components/ui/ToastProvider';
+import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { subscribePaymentEvents } from '../lib/paymentEvents';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import StyledSelect from '../components/ui/StyledSelect';
-import { getBills, subscribeToBills } from '../services/billService';
+import { getBills } from '../services/billService';
 import {
   recordMultiBillPayment,
   sendOfficialReceiptToResident,
-  subscribeToPayments,
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
-import type { Bill, BillStatus, PaymentMethod } from '../types';
+import type { Bill, BillStatus, Payment, PaymentMethod } from '../types';
 import { sitiosMatch } from '../utils';
 import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
 import { downloadFile } from '../utils/downloadFile';
@@ -83,11 +88,46 @@ interface CompletedPaymentData {
 }
 
 const Payments: React.FC = () => {
-  const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [sitios, setSitios] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+  const residentsQuery = useQuery({
+    queryKey: queryKeys.residents.list(),
+    queryFn: getResidents,
+    enabled: isAuthenticated,
+  });
+  const billsQuery = useQuery({
+    queryKey: queryKeys.bills.list(),
+    queryFn: () => getBills().catch(() => [] as Bill[]),
+    enabled: isAuthenticated,
+  });
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.residents.sitios(),
+    queryFn: () => getSitioOptions().catch(() => [] as string[]),
+    enabled: isAuthenticated,
+  });
+  const pendingQuery = useQuery({
+    queryKey: queryKeys.payments.pending(),
+    queryFn: () => getPendingPayments().catch(() => [] as Payment[]),
+    enabled: isAuthenticated,
+  });
+  const paymentWrite = useInvalidatingMutation(
+    async (run: () => Promise<void>) => {
+      await run();
+    },
+    [queryKeys.payments.all, queryKeys.bills.all]
+  );
+  const residents = residentsQuery.data ?? [];
+  const bills = billsQuery.data ?? [];
+  const sitios = sitiosQuery.data ?? [];
+  const pendingOnlinePayments = pendingQuery.data ?? [];
+  const loading = residentsQuery.isLoading;
+  const error = queryErrorMessage(residentsQuery.error, 'Failed to load billing and resident data.');
+  const loadData = () => {
+    void residentsQuery.refetch();
+    void billsQuery.refetch();
+    void sitiosQuery.refetch();
+    void pendingQuery.refetch();
+  };
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,9 +138,7 @@ const Payments: React.FC = () => {
   // Selected resident & bills
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
-  const [pendingOnlinePayments, setPendingOnlinePayments] = useState<any[]>([]);
   const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
-  const { showToast } = useToast();
 
   // Payment processing state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -116,49 +154,19 @@ const Payments: React.FC = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [completedPayment, setCompletedPayment] = useState<CompletedPaymentData | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [resList, billList, sitioList, pendingPaymentsList] = await Promise.all([
-        getResidents(),
-        getBills().catch(() => [] as Bill[]),
-        getSitioOptions().catch(() => [] as string[]),
-          getPendingPayments().catch(() => []),
-      ]);
-      setResidents(resList);
-      setBills(billList);
-        setPendingOnlinePayments(pendingPaymentsList);
-      setSitios(sitioList);
-
-      // Auto-select first resident if none selected
-      if (!selectedResidentId && resList.length > 0) {
-        setSelectedResidentId(resList[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load billing and resident data.');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!selectedResidentId && residents.length > 0) {
+      setSelectedResidentId(residents[0].id);
     }
-  }, [selectedResidentId]);
+  }, [residents, selectedResidentId]);
 
   useEffect(() => {
-    loadData();
-    const unsubBills = subscribeToBills(() => {
-      getBills().then((b) => setBills(b)).catch(() => {});
+    return subscribePaymentEvents((event, row) => {
+      if (event === 'INSERT' && row && row.status === 'pending') {
+        showToast('info', 'New online payment submitted!');
+      }
     });
-    const unsubPayments = subscribeToPayments((event, row) => {
-        getBills().then((b) => setBills(b)).catch(() => {});
-        getPendingPayments().then((p) => setPendingOnlinePayments(p)).catch(() => {});
-        if (event === 'INSERT' && row && row.status === 'pending') {
-          showToast('info', 'New online payment submitted!');
-        }
-    });
-    return () => {
-      unsubBills();
-      unsubPayments();
-    };
-  }, [loadData]);
+  }, [showToast]);
 
   // Distinct billing periods
   const billingPeriods = useMemo(() => {
@@ -322,24 +330,29 @@ const Payments: React.FC = () => {
       setProcessingError('Resident account not found.');
       return;
     }
+    const accountId = selectedResident.accountId;
     setIsProcessing(true);
     setProcessingError(null);
     try {
       const amountToApply = Math.round(parsedPaymentAmount * 100) / 100;
-      const res = await recordMultiBillPayment({
-        billIds: selectedBillIds,
-        accountId: selectedResident.accountId,
-        residentId: selectedResident.id,
-        totalAmount: amountToApply,
-        paymentMethod,
-        referenceNumber: referenceNumber.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
-
-      if (res.success) {
+        await paymentWrite.mutateAsync(() =>
+          recordMultiBillPayment({
+            billIds: selectedBillIds,
+            accountId,
+            residentId: selectedResident.id,
+            totalAmount: amountToApply,
+            paymentMethod,
+            referenceNumber: referenceNumber.trim() || undefined,
+            notes: notes.trim() || undefined,
+          }).then((res) => {
+            if (!res.success) {
+              throw new Error('Failed to record payment transaction.');
+            }
+          })
+        );
         const receiptOR = `OR-${Date.now().toString().slice(-6)}`;
         setCompletedPayment({
-          totalPaid: res.totalAmount,
+          totalPaid: amountToApply,
           residentId: selectedResident.id,
           residentName: selectedResident.fullName,
           accountNumber: selectedResident.accountNumber ?? '—',
@@ -358,8 +371,6 @@ const Payments: React.FC = () => {
         setAmountReceived('');
         setReferenceNumber('');
         setNotes('');
-        await loadData();
-      }
     } catch (err) {
       setProcessingError(err instanceof Error ? err.message : 'Failed to record payment transaction.');
     } finally {
@@ -608,8 +619,9 @@ const Payments: React.FC = () => {
                                       if(window.confirm('Approve ' + p.payment_method + ' payment?')) {
                                         setVerifyingPaymentId(p.id);
                                         try {
-                                          await verifyPendingPaymentRPC(p.id, 'approve');
-                                          await loadData();
+                                          await paymentWrite.mutateAsync(() =>
+                                            verifyPendingPaymentRPC(p.id, 'approve')
+                                          );
                                         } catch(e: any) { alert(e.message); }
                                         setVerifyingPaymentId(null);
                                       }
@@ -629,8 +641,9 @@ const Payments: React.FC = () => {
                                           }
                                           setVerifyingPaymentId(p.id);
                                           try {
-                                            await verifyPendingPaymentRPC(p.id, 'reject', reason.trim());
-                                            await loadData();
+                                            await paymentWrite.mutateAsync(() =>
+                                              verifyPendingPaymentRPC(p.id, 'reject', reason.trim())
+                                            );
                                           } catch(e: any) { alert(e.message); }
                                           setVerifyingPaymentId(null);
                                         }

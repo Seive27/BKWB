@@ -3,9 +3,9 @@ import * as Linking from 'expo-linking';
 
 import { type NavTab } from '@/components/ui/Navbar';
 import { supabase } from '@/lib/supabase';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import {
   currentSessionAllowed,
-  getCurrentProfile,
   isLoginGatePending,
   isPasswordResetPending,
   signOut,
@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const [showChatBot, setShowChatBot] = useState(false);
   const [dashboardDeepLink, setDashboardDeepLink] = useState<DashboardDeepLink>(null);
   const [focusAnnouncementId, setFocusAnnouncementId] = useState<string | null>(null);
+  const { profile, loading: profileLoading } = useCurrentProfile();
 
   // Restore the persisted Supabase session on launch and keep the login state
   // in sync with the real session (sign-in, sign-out, token expiry) so screens
@@ -117,21 +118,10 @@ export default function HomeScreen() {
       setNeedsSetup(false);
       return;
     }
-    if (onboardingKnown) return;
-    let cancelled = false;
-    getCurrentProfile()
-      .then((profile) => {
-        if (cancelled) return;
-        setNeedsSetup(!!profile?.needs_onboarding);
-        setOnboardingKnown(true);
-      })
-      .catch(() => {
-        if (!cancelled) setOnboardingKnown(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoggedIn, onboardingKnown]);
+    if (profileLoading) return;
+    setNeedsSetup(!!profile?.needs_onboarding);
+    setOnboardingKnown(true);
+  }, [isLoggedIn, profileLoading, profile]);
 
   // After PayMongo "Return to Merchant", reopen on the Bills tab.
   useEffect(() => {

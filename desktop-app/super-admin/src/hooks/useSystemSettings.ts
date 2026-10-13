@@ -1,59 +1,50 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from './useAuth';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import type { SystemSetting } from '../types';
-import {
-  getSystemSettings,
-  subscribeToSystemSettings,
-} from '../services/systemSettingsService';
+import { getSystemSettings } from '../services/systemSettingsService';
 
 interface UseSystemSettingsResult {
   settings: SystemSetting[];
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  /** Re-apply realtime updates to the local list. */
+  /** Re-apply realtime updates to the cached list. */
   applyChange: (key: string, value: unknown) => void;
 }
 
-/** Loads system settings and keeps them in sync via realtime. */
+/** Loads system settings from the shared cache. Realtime patches one key in place. */
 export function useSystemSettings(category?: string): UseSystemSettingsResult {
-  const [settings, setSettings] = useState<SystemSetting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: queryKeys.systemSettings.list(category),
+    queryFn: () => getSystemSettings(category),
+    enabled: isAuthenticated,
+  });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getSystemSettings(category);
-      setSettings(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load system settings.');
-    } finally {
-      setLoading(false);
-    }
-  }, [category]);
+  const applyChange = useCallback(
+    (key: string, value: unknown) => {
+      queryClient.setQueriesData<SystemSetting[]>(
+        { queryKey: queryKeys.systemSettings.all },
+        (current) =>
+          current?.map((setting) => (setting.key === key ? { ...setting, value } : setting))
+      );
+    },
+    [queryClient]
+  );
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category]);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  const applyChange = useCallback((key: string, value: unknown) => {
-    setSettings((prev) =>
-      prev.map((s) => (s.key === key ? { ...s, value } : s))
-    );
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToSystemSettings((event, row) => {
-      if (event === 'UPDATE' && row) {
-        applyChange(row.key, row.value);
-      }
-    });
-    return unsubscribe;
-  }, [applyChange]);
-
-  const refresh = useCallback(() => load(), [load]);
-
-  return { settings, loading, error, refresh, applyChange };
+  return {
+    settings: query.data ?? [],
+    loading: query.isLoading,
+    error: queryErrorMessage(query.error, 'Failed to load system settings.'),
+    refresh,
+    applyChange,
+  };
 }

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from './useAuth';
+import { ANALYTICS_STALE_TIME } from '../lib/queryClient';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import type { AnalyticsData } from '../types';
 import {
   getAnalyticsData,
   type TrendGranularity,
 } from '../services/analyticsService';
-import { useAuth } from './useAuth';
 
 interface UseAnalyticsResult {
   data: AnalyticsData | null;
@@ -13,43 +17,27 @@ interface UseAnalyticsResult {
   refresh: () => Promise<void>;
 }
 
-/** Loads the analytics dashboard data for the given lookback window. */
+/** Loads the analytics dashboard for the given lookback window. */
 export function useAnalytics(
   days = 30,
   granularity: TrendGranularity = 'day'
 ): UseAnalyticsResult {
   const { isAuthenticated } = useAuth();
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: queryKeys.analytics.detail(days, granularity),
+    queryFn: () => getAnalyticsData(days, granularity),
+    enabled: isAuthenticated,
+    staleTime: ANALYTICS_STALE_TIME,
+  });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getAnalyticsData(days, granularity);
-      setData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load analytics data.');
-    } finally {
-      setLoading(false);
-    }
-  }, [days, granularity]);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  useEffect(() => {
-    // Dashboard stays mounted behind the login overlay; wait for a session
-    // so role lookups don't run anonymously and fall back to empty UUIDs.
-    if (!isAuthenticated) {
-      setData(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, granularity, isAuthenticated]);
-
-  const refresh = useCallback(() => load(), [load]);
-
-  return { data, loading, error, refresh };
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: queryErrorMessage(query.error, 'Failed to load analytics data.'),
+    refresh,
+  };
 }

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Pressable, Text, View } from 'react-native';
 
 import { OfficialReceiptModal } from '@/components/bills/OfficialReceiptModal';
 import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
 import { DetailModal } from '@/components/ui/DetailModal';
 import { useDialog } from '@/components/ui/AppDialog';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   downloadBillPdf,
   formatBillDate,
@@ -70,28 +73,18 @@ export function BillDetailModal({
   const [downloading, setDownloading] = useState(false);
   const [showPay, setShowPay] = useState(false);
   const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
-  const [payment, setPayment] = useState<ResidentPayment | null>(null);
-
+  const userId = useSessionUserId();
   const unpaid = bill?.status === 'pending' || bill?.status === 'overdue';
+  const paymentQuery = useQuery({
+    queryKey: queryKeys.payments.forBill(userId ?? '', bill?.id ?? ''),
+    queryFn: () => getPaymentForBill(bill!.id),
+    enabled: visible && !!bill && !unpaid && !!userId,
+  });
+  const payment = paymentQuery.data ?? null;
 
   useEffect(() => {
-    let cancelled = false;
-    if (visible && bill && !unpaid) {
-      getPaymentForBill(bill.id)
-        .then((row) => {
-          if (!cancelled) setPayment(row);
-        })
-        .catch(() => {
-          if (!cancelled) setPayment(null);
-        });
-    } else if (!visible || !bill) {
-      setPayment(null);
-      setShowOfficialReceipt(false);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, bill, unpaid]);
+    if (!visible || !bill) setShowOfficialReceipt(false);
+  }, [visible, bill]);
 
   const officialReceipt = useMemo(() => {
     if (!bill || !payment) return null;

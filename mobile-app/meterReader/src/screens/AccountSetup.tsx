@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,10 +15,10 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { getPasswordValidationError } from '@/lib/password';
 import {
   completeAccountSetup,
-  getCurrentProfile,
   sendRegisteredEmailOtp,
   setPermanentPassword,
   signOut,
@@ -71,11 +71,15 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  const { profile: cachedProfile, loading: profileLoading } = useCurrentProfile();
+  const setupStarted = useRef(false);
 
   useEffect(() => {
+    if (profileLoading || setupStarted.current) return;
+    setupStarted.current = true;
     let cancelled = false;
     (async () => {
-      const profile = await getCurrentProfile();
+      const profile = cachedProfile;
       if (cancelled) return;
       if (profile) {
         setEmail(profile.email ?? '');
@@ -96,7 +100,7 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cachedProfile, profileLoading]);
 
   const handleVerifyCode = async () => {
     setError('');

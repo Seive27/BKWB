@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X, Upload, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import StyledSelect from '../ui/StyledSelect';
+import { useAuth } from '../../hooks/useAuth';
+import { queryErrorMessage } from '../../lib/queryError';
+import { queryKeys } from '../../lib/queryKeys';
 import { getResidents } from '../../services/ticketService';
 import {
-  ResidentOption,
   TicketCategory,
   TicketDraft,
   TicketPriority,
@@ -24,8 +27,14 @@ const CATEGORIES = Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[];
 const PRIORITIES = TICKET_PRIORITY_ORDER;
 
 const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onCreate }) => {
-  const [residents, setResidents] = useState<ResidentOption[]>([]);
-  const [loadingResidents, setLoadingResidents] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const residentsQuery = useQuery({
+    queryKey: queryKeys.tickets.residentOptions(),
+    queryFn: getResidents,
+    enabled: isOpen && isAuthenticated,
+  });
+  const residents = residentsQuery.data ?? [];
+  const loadingResidents = isOpen && residentsQuery.isLoading;
   const [residentId, setResidentId] = useState('');
   const [category, setCategory] = useState<TicketCategory>('water_supply');
   const [subject, setSubject] = useState('');
@@ -44,15 +53,10 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
     setPriority('medium');
     setError(null);
     setSubmitting(false);
-
-    setLoadingResidents(true);
-    getResidents()
-      .then(setResidents)
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : 'Failed to load residents.')
-      )
-      .finally(() => setLoadingResidents(false));
   }, [isOpen]);
+
+  const residentError = queryErrorMessage(residentsQuery.error, 'Failed to load residents.');
+  const visibleError = error ?? (isOpen ? residentError : null);
 
   if (!isOpen) return null;
 
@@ -228,10 +232,10 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               </div>
             </div>
 
-            {error && (
+            {visibleError && (
               <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-xl border border-red-100">
                 <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-red-800">{error}</p>
+                <p className="text-sm text-red-800">{visibleError}</p>
               </div>
             )}
 

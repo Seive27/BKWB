@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   User,
   MapPin,
@@ -23,18 +24,23 @@ import {
 import StyledSelect from '../components/ui/StyledSelect';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { useToast } from '../components/ui/ToastProvider';
-import { getBills, subscribeToBills } from '../services/billService';
+import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { subscribePaymentEvents } from '../lib/paymentEvents';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
+import { getBills } from '../services/billService';
 import {
   getPendingPayments,
   getRecentOnlinePayments,
   isPayMongoPayment,
   recordMultiBillPayment,
   sendOfficialReceiptToResident,
-  subscribeToPayments,
   verifyPendingPaymentRPC,
   type OfficialReceiptSnapshot,
+  type RecordMultiBillPaymentResult,
 } from '../services/paymentService';
-import type { Bill, BillStatus, PaymentMethod } from '../types';
+import type { Bill, BillStatus, Payment, PaymentMethod } from '../types';
 import { sitiosMatch } from '../utils';
 import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
 import { downloadFile } from '../utils/downloadFile';
@@ -72,6 +78,11 @@ function getStatusBadge(status: BillStatus) {
   }
 }
 
+type OnlinePaymentRow = Payment & {
+  profiles?: { first_name?: string | null; last_name?: string | null } | null;
+  bills?: { bill_number?: string | null } | null;
+};
+
 interface CompletedPaymentData {
   totalPaid: number;
   residentId: string;
@@ -86,11 +97,59 @@ interface CompletedPaymentData {
 }
 
 const Payments: React.FC = () => {
-  const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [sitios, setSitios] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+  const residentsQuery = useQuery({
+    queryKey: queryKeys.residents.list(),
+    queryFn: getResidents,
+    enabled: isAuthenticated,
+  });
+  const billsQuery = useQuery({
+    queryKey: queryKeys.bills.list(),
+    queryFn: () => getBills().catch(() => [] as Bill[]),
+    enabled: isAuthenticated,
+  });
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.residents.sitios(),
+    queryFn: () => getSitioOptions().catch(() => [] as string[]),
+    enabled: isAuthenticated,
+  });
+  const pendingQuery = useQuery({
+    queryKey: queryKeys.payments.pending(),
+    queryFn: () => getPendingPayments().catch(() => [] as Payment[]),
+    enabled: isAuthenticated,
+  });
+  const recentQuery = useQuery({
+    queryKey: [...queryKeys.payments.all, 'recent-online'] as const,
+    queryFn: () =>
+      getRecentOnlinePayments()
+        .then((rows) => rows as OnlinePaymentRow[])
+        .catch(() => [] as OnlinePaymentRow[]),
+    enabled: isAuthenticated,
+  });
+  const paymentWrite = useInvalidatingMutation(
+    async (run: () => Promise<unknown>) => run(),
+    [queryKeys.payments.all, queryKeys.bills.all]
+  );
+  const residents = residentsQuery.data ?? [];
+  const bills = billsQuery.data ?? [];
+  const sitios = sitiosQuery.data ?? [];
+  const pendingOnlinePayments = pendingQuery.data ?? [];
+  const recentOnlinePayments = recentQuery.data ?? [];
+  const loading = residentsQuery.isLoading;
+  const refreshing =
+    (residentsQuery.isFetching && !residentsQuery.isLoading) ||
+    (billsQuery.isFetching && !billsQuery.isLoading) ||
+    (pendingQuery.isFetching && !pendingQuery.isLoading) ||
+    (recentQuery.isFetching && !recentQuery.isLoading);
+  const error = queryErrorMessage(residentsQuery.error, 'Failed to load billing and resident data.');
+  const loadData = () => {
+    void residentsQuery.refetch();
+    void billsQuery.refetch();
+    void sitiosQuery.refetch();
+    void pendingQuery.refetch();
+    void recentQuery.refetch();
+  };
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,10 +160,7 @@ const Payments: React.FC = () => {
   // Selected resident & bills
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
-  const [pendingOnlinePayments, setPendingOnlinePayments] = useState<any[]>([]);
-  const [recentOnlinePayments, setRecentOnlinePayments] = useState<any[]>([]);
   const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
-  const { showToast } = useToast();
 
   // Payment processing state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -120,50 +176,19 @@ const Payments: React.FC = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [completedPayment, setCompletedPayment] = useState<CompletedPaymentData | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [resList, billList, sitioList, pendingPaymentsList, recentOnlineList] = await Promise.all([
-        getResidents(),
-        getBills().catch(() => [] as Bill[]),
-        getSitioOptions().catch(() => [] as string[]),
-        getPendingPayments().catch(() => []),
-        getRecentOnlinePayments().catch(() => []),
-      ]);
-      setResidents(resList);
-      setBills(billList);
-      setPendingOnlinePayments(pendingPaymentsList);
-      setRecentOnlinePayments(recentOnlineList);
-      setSitios(sitioList);
-
-      // Auto-select first resident if none selected
-      if (!selectedResidentId && resList.length > 0) {
-        setSelectedResidentId(resList[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load billing and resident data.');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!selectedResidentId && residents.length > 0) {
+      setSelectedResidentId(residents[0].id);
     }
-  }, [selectedResidentId]);
+  }, [residents, selectedResidentId]);
 
   useEffect(() => {
-    loadData();
-    const unsubBills = subscribeToBills(() => {
-      getBills().then((b) => setBills(b)).catch(() => {});
-    });
-    const unsubPayments = subscribeToPayments((event, row) => {
-      getBills().then((b) => setBills(b)).catch(() => {});
-      getPendingPayments().then((p) => setPendingOnlinePayments(p)).catch(() => {});
-      getRecentOnlinePayments().then((p) => setRecentOnlinePayments(p)).catch(() => {});
-
+    return subscribePaymentEvents((event, row) => {
       if (event === 'INSERT' && row && row.status === 'pending') {
         showToast('info', 'New online payment submitted for verification.');
         return;
       }
 
-      // PayMongo webhook inserts completed payments — surface amount + jump to that resident.
       if (
         (event === 'INSERT' || event === 'UPDATE') &&
         row &&
@@ -179,11 +204,7 @@ const Payments: React.FC = () => {
         }
       }
     });
-    return () => {
-      unsubBills();
-      unsubPayments();
-    };
-  }, [loadData, showToast]);
+  }, [showToast]);
 
   // Distinct billing periods
   const billingPeriods = useMemo(() => {
@@ -347,19 +368,22 @@ const Payments: React.FC = () => {
       setProcessingError('Resident account not found.');
       return;
     }
+    const accountId = selectedResident.accountId;
     setIsProcessing(true);
     setProcessingError(null);
     try {
       const amountToApply = Math.round(parsedPaymentAmount * 100) / 100;
-      const res = await recordMultiBillPayment({
-        billIds: selectedBillIds,
-        accountId: selectedResident.accountId,
-        residentId: selectedResident.id,
-        totalAmount: amountToApply,
-        paymentMethod,
-        referenceNumber: referenceNumber.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
+      const res = (await paymentWrite.mutateAsync(() =>
+        recordMultiBillPayment({
+          billIds: selectedBillIds,
+          accountId,
+          residentId: selectedResident.id,
+          totalAmount: amountToApply,
+          paymentMethod,
+          referenceNumber: referenceNumber.trim() || undefined,
+          notes: notes.trim() || undefined,
+        })
+      )) as RecordMultiBillPaymentResult;
 
       if (res.success) {
         const receiptOR = `OR-${Date.now().toString().slice(-6)}`;
@@ -383,7 +407,6 @@ const Payments: React.FC = () => {
         setAmountReceived('');
         setReferenceNumber('');
         setNotes('');
-        await loadData();
       }
     } catch (err) {
       setProcessingError(err instanceof Error ? err.message : 'Failed to record payment transaction.');
@@ -420,7 +443,7 @@ const Payments: React.FC = () => {
                 className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors shadow-sm"
                 title="Refresh bills and residents"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-600' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${loading || refreshing ? 'animate-spin text-primary-600' : ''}`} />
               </button>
               <div>
                 <p className="text-xs text-gray-500 uppercase">Current Date</p>
@@ -549,7 +572,9 @@ const Payments: React.FC = () => {
               {/* Status Filter */}
               <StyledSelect
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as 'all' | 'unpaid' | 'overdue' | 'paid')
+                }
                 className="w-full py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 wrapperClassName="w-full"
                 title="Filter by payment status"
@@ -696,9 +721,12 @@ const Payments: React.FC = () => {
                                       if(window.confirm('Approve ' + p.payment_method + ' payment?')) {
                                         setVerifyingPaymentId(p.id);
                                         try {
-                                          await verifyPendingPaymentRPC(p.id, 'approve');
-                                          await loadData();
-                                        } catch(e: any) { alert(e.message); }
+                                          await paymentWrite.mutateAsync(() =>
+                                            verifyPendingPaymentRPC(p.id, 'approve')
+                                          );
+                                        } catch (e: unknown) {
+                                          alert(e instanceof Error ? e.message : 'Failed to verify payment.');
+                                        }
                                         setVerifyingPaymentId(null);
                                       }
                                     }}
@@ -717,9 +745,12 @@ const Payments: React.FC = () => {
                                           }
                                           setVerifyingPaymentId(p.id);
                                           try {
-                                            await verifyPendingPaymentRPC(p.id, 'reject', reason.trim());
-                                            await loadData();
-                                          } catch(e: any) { alert(e.message); }
+                                            await paymentWrite.mutateAsync(() =>
+                                              verifyPendingPaymentRPC(p.id, 'reject', reason.trim())
+                                            );
+                                          } catch (e: unknown) {
+                                            alert(e instanceof Error ? e.message : 'Failed to verify payment.');
+                                          }
                                           setVerifyingPaymentId(null);
                                         }
                                       }}

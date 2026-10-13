@@ -20,7 +20,9 @@ import {
 import type { NotificationType, AppNotification } from '../types';
 import { NOTIFICATION_TYPE_LABELS } from '../types';
 import { useNotifications } from '../hooks/useNotifications';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { useAuth } from '../hooks/useAuth';
+import { queryKeys } from '../lib/queryKeys';
 import { useToast } from '../components/ui/ToastProvider';
 import {
   markNotificationRead,
@@ -82,6 +84,12 @@ function formatRelativeTime(iso: string): string {
 const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const notificationWrite = useInvalidatingMutation(
+    async (run: () => Promise<void>) => {
+      await run();
+    },
+    [queryKeys.notifications.all]
+  );
   const isSuperAdmin = user?.role === 'super_admin';
 
   const [filter, setFilter] = useState<NotificationFilter>('all');
@@ -120,7 +128,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
     };
   }, []);
 
-  const { notifications, unreadCount, loading, error, refresh } = useNotifications({
+  const { notifications, unreadCount, loading, error } = useNotifications({
     mineOnly: isSuperAdmin ? mineOnly : true,
   });
 
@@ -158,8 +166,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
     if (!notification.is_read) {
       setBusyId(notification.id);
       try {
-        await markNotificationRead(notification.id);
-        await refresh();
+        await notificationWrite.mutateAsync(() => markNotificationRead(notification.id));
       } catch (err) {
         showToast('error', 'Failed to update notification', err instanceof Error ? err.message : undefined);
       } finally {
@@ -171,8 +178,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
 
   const handleMarkAllRead = async () => {
     try {
-      await markAllNotificationsRead();
-      await refresh();
+      await notificationWrite.mutateAsync(() => markAllNotificationsRead());
       showToast('success', 'Marked as read', 'All notifications marked as read.');
     } catch (err) {
       showToast('error', 'Failed to mark as read', err instanceof Error ? err.message : undefined);
@@ -182,8 +188,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
   const handleDelete = async (id: string) => {
     setBusyId(id);
     try {
-      await softDeleteNotification(id);
-      await refresh();
+      await notificationWrite.mutateAsync(() => softDeleteNotification(id));
       showToast('success', 'Deleted successfully');
     } catch (err) {
       showToast('error', 'Failed to delete notification', err instanceof Error ? err.message : undefined);
@@ -195,8 +200,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onNavigateToRelated }) =>
   const handleDeleteAll = async () => {
     setDeletingAll(true);
     try {
-      await softDeleteAllNotifications();
-      await refresh();
+      await notificationWrite.mutateAsync(() => softDeleteAllNotifications());
       setConfirmDeleteAll(false);
       showToast('success', 'Deleted successfully', 'All notifications removed.');
     } catch (err) {

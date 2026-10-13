@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-import type { Announcement } from '@/types/announcements';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { ANNOUNCEMENT_REFETCH_INTERVAL } from '@/lib/queryClient';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getAnnouncements,
-  subscribeToAnnouncements,
   type AnnouncementQueryOptions,
 } from '@/services/announcementService';
+import type { Announcement } from '@/types/announcements';
 
 interface UseAnnouncementsResult {
   announcements: Announcement[];
@@ -18,60 +22,27 @@ interface UseAnnouncementsResult {
 }
 
 /**
- * Loads announcements from Supabase and keeps them in sync via a realtime
- * channel. The subscription is cleaned up automatically on unmount.
+ * Shared announcements. A scheduled publish does not emit a postgres event,
+ * so the list also refreshes once a minute.
  */
-export function useAnnouncements(
-  options?: AnnouncementQueryOptions
-): UseAnnouncementsResult {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useAnnouncements(options?: AnnouncementQueryOptions): UseAnnouncementsResult {
+  const userId = useSessionUserId();
+  const query = useQuery({
+    queryKey: queryKeys.announcements.list(options),
+    queryFn: () => getAnnouncements(options),
+    enabled: !!userId,
+    refetchInterval: ANNOUNCEMENT_REFETCH_INTERVAL,
+  });
 
-  // Keep options in a ref so the load callback stays stable.
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getAnnouncements(optionsRef.current);
-      setAnnouncements(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load announcements.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-
-    const unsubscribe = subscribeToAnnouncements(() => {
-      load(true);
-    });
-
-    // Scheduled announcements become visible when their publish time passes,
-    // which does not fire a realtime event. Poll lightly so they appear
-    // automatically (realtime still covers instant changes).
-    const schedulePoll = setInterval(() => {
-      load(true);
-    }, 60_000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(schedulePoll);
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { announcements, loading, refreshing, error, refresh };
+  return {
+    announcements: query.data ?? [],
+    loading: query.isLoading && !query.data,
+    refreshing: query.isFetching && !query.isLoading,
+    error: query.data ? null : queryErrorMessage(query.error, 'Failed to load announcements.'),
+    refresh,
+  };
 }

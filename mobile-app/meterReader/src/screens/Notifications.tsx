@@ -3,6 +3,8 @@ import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useNotifications } from '@/hooks/useNotifications';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   markAllNotificationsRead,
   markNotificationRead,
@@ -71,6 +73,10 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { notifications, unreadCount, loading, refreshing, error, refresh } = useNotifications();
+  const notificationWrite = useInvalidatingMutation(
+    (run: () => Promise<unknown>) => run(),
+    [queryKeys.notifications.all]
+  );
 
   const visible = activeFilter === 'unread' ? notifications.filter((n) => !n.is_read) : notifications;
 
@@ -89,8 +95,7 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
   const handlePress = async (item: AppNotification) => {
     if (!item.is_read) {
       try {
-        await markNotificationRead(item.id);
-        await refresh();
+        await notificationWrite.mutateAsync(() => markNotificationRead(item.id));
       } catch {
         // Best-effort.
       }
@@ -104,8 +109,7 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
 
   const handleMarkAllRead = async () => {
     try {
-      await markAllNotificationsRead();
-      await refresh();
+      await notificationWrite.mutateAsync(() => markAllNotificationsRead());
       showToast('Marked as read');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to mark as read', 'error');
@@ -120,8 +124,7 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
         style: 'destructive',
         onPress: async () => {
           try {
-            await softDeleteNotification(item.id);
-            await refresh();
+            await notificationWrite.mutateAsync(() => softDeleteNotification(item.id));
             showToast('Deleted successfully');
           } catch (err) {
             showToast(
@@ -143,8 +146,7 @@ export default function Notifications({ onBack, onOpenRelated }: NotificationsPr
         style: 'destructive',
         onPress: async () => {
           try {
-            await softDeleteAllNotifications();
-            await refresh();
+            await notificationWrite.mutateAsync(() => softDeleteAllNotifications());
             showToast('Deleted successfully');
           } catch (err) {
             showToast(

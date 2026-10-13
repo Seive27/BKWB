@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,9 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
 import { getMySitioAssignments } from '@/services/sitioAssignmentService';
 import { useAssignments } from '@/hooks/useAssignments';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryKeys } from '@/lib/queryKeys';
 import { submitReadingByMeterNumber } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 import NetInfo from '@react-native-community/netinfo';
@@ -119,7 +123,16 @@ export default function Assigned({
 
   const { assignments, sitioRoutes, loading, refreshing, error, refresh } =
     useAssignments();
-  const [coveredSitios, setCoveredSitios] = useState<string[]>([]);
+  const userId = useSessionUserId();
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.sitios.mine(userId ?? ''),
+    queryFn: getMySitioAssignments,
+    enabled: !!userId,
+  });
+  const coveredSitios = (sitiosQuery.data ?? []).map((row) => row.sitio);
+  const submitReading = useInvalidatingMutation(submitReadingByMeterNumber, [
+    queryKeys.readings.all,
+  ]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSitio, setActiveSitio] = useState<string | null>(null);
   const [consumersSitio, setConsumersSitio] = useState<string | null>(null);
@@ -142,22 +155,6 @@ export default function Assigned({
         setActiveSitio(lastStartedSitio);
       }
     });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Official sitio coverage (sitio_assignments). RLS returns only this
-  // reader's rows; consumers outside these sitios are hidden server-side.
-  useEffect(() => {
-    let active = true;
-    getMySitioAssignments()
-      .then((rows) => {
-        if (active) setCoveredSitios(rows.map((r) => r.sitio));
-      })
-      .catch(() => {
-        // Non-blocking: route cards still come from assigned readings.
-      });
     return () => {
       active = false;
     };
@@ -312,7 +309,7 @@ export default function Assigned({
             const state = await NetInfo.fetch();
             if (state.isConnected && state.isInternetReachable !== false) {
               try {
-                const submitted = await submitReadingByMeterNumber({
+                const submitted = await submitReading.mutateAsync({
                   meterNumber: payload.meterNumber,
                   sitio: payload.sitio,
                   currentReading: current,
@@ -320,7 +317,6 @@ export default function Assigned({
                   photoUri: payload.photoUri,
                   photoBase64: payload.photoBase64,
                 });
-                await refresh();
                 Alert.alert(
                   'Submitted',
                   `Matched ${payload.meterNumber} to ${residentLabel(submitted)}. The reading is pending review.`,

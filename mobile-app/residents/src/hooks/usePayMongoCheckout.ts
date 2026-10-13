@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LinkingExpo from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
 import { friendlyErrorMessage } from '@/lib/errors';
+import { invalidateDebounced } from '@/lib/invalidate';
+import { queryKeys } from '@/lib/queryKeys';
 import { SUPABASE_URL } from '@/lib/env';
 import {
   getMyBills,
-  subscribeToMyBills,
   type ResidentBill,
 } from '@/services/billService';
 import {
@@ -62,6 +64,7 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
   const [checking, setChecking] = useState(false);
   const [confirmedPayment, setConfirmedPayment] = useState<ResidentPayment | null>(null);
   const [checkoutReference, setCheckoutReference] = useState('');
+  const queryClient = useQueryClient();
 
   const busyRef = useRef(false);
   const billIdRef = useRef<string | null>(bill?.id ?? null);
@@ -118,13 +121,15 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     setConfirmedPayment(payment);
     setStatusMessage('');
     setState('confirmed');
+    invalidateDebounced(queryClient, queryKeys.bills.all);
+    invalidateDebounced(queryClient, queryKeys.payments.all);
     try {
       await AsyncStorage.removeItem(sessionStorageKey(billId));
     } catch {
       // ignore
     }
     return true;
-  }, []);
+  }, [queryClient]);
 
   /** Ask PayMongo (via edge function) whether this checkout is paid yet. */
   const reconcileWithPayMongo = useCallback(async (): Promise<{
@@ -174,9 +179,6 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
   const startWatching = useCallback(() => {
     stopWatcherRef.current?.();
 
-    const unsubscribe = subscribeToMyBills(() => {
-      checkBillStatus().catch(() => {});
-    });
     const pollTimer = setInterval(() => {
       checkBillStatus()
         .then(async (confirmed) => {
@@ -193,7 +195,6 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }, 500);
 
     stopWatcherRef.current = () => {
-      unsubscribe();
       clearInterval(pollTimer);
       clearInterval(guard);
       stopWatcherRef.current = null;

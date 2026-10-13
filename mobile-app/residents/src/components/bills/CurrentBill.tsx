@@ -1,15 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
+import { pickCurrentBill, useMyBills } from '@/hooks/useMyBills';
 import {
   formatBillDate,
   formatPeriod,
   formatPeso,
-  getMyBills,
-  subscribeToMyBills,
-  type ResidentBill,
 } from '@/services/billService';
 
 const PAYMENT_OPTIONS = [
@@ -19,37 +17,10 @@ const PAYMENT_OPTIONS = [
 ];
 
 export function CurrentBill() {
-  const [bill, setBill] = useState<ResidentBill | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { bills, loading, error, refresh } = useMyBills();
+  const bill = pickCurrentBill(bills);
   const [showDetails, setShowDetails] = useState(false);
   const [showPay, setShowPay] = useState(false);
-
-  const loadBill = (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
-    getMyBills()
-      .then((bills) => {
-        // Prefer newest unpaid bill; otherwise newest bill overall.
-        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
-        setBill(unpaid ?? bills[0] ?? null);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Failed to load your bill.');
-      })
-      .finally(() => {
-        if (showSpinner) setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    loadBill(true);
-    const unsubscribe = subscribeToMyBills(() => {
-      loadBill(false);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -208,7 +179,9 @@ export function CurrentBill() {
         visible={showPay}
         onClose={() => setShowPay(false)}
         bill={bill}
-        onConfirmed={() => loadBill(false)}
+        onConfirmed={() => {
+          void refresh();
+        }}
       />
 
       <BillDetailModal
@@ -218,4 +191,4 @@ export function CurrentBill() {
       />
     </View>
   );
-}
+}

@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from './useAuth';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import type { MeterReading } from '../types';
 import {
   getMeterReadings,
-  subscribeToMeterReadings,
   type MeterReadingQueryOptions,
 } from '../services/meterReadingService';
 
@@ -16,55 +19,26 @@ interface UseMeterReadingsResult {
   refresh: () => Promise<void>;
 }
 
-/**
- * Loads meter readings from Supabase and keeps them in sync via a realtime
- * channel. The subscription is cleaned up automatically on unmount.
- */
+/** Loads meter readings from the shared cache. Realtime invalidation lives in RealtimeSync. */
 export function useMeterReadings(
   options?: MeterReadingQueryOptions
 ): UseMeterReadingsResult {
-  const [readings, setReadings] = useState<MeterReading[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const query = useQuery({
+    queryKey: queryKeys.meterReadings.list(options ?? {}),
+    queryFn: () => getMeterReadings(options ?? {}),
+    enabled: isAuthenticated,
+  });
 
-  // Keep options in a ref so the load callback stays stable.
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getMeterReadings(optionsRef.current);
-      setReadings(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load meter readings.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-
-    // Re-fetch whenever a row changes anywhere (assign/submit/review).
-    const unsubscribe = subscribeToMeterReadings(() => {
-      load(true);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { readings, loading, refreshing, error, refresh };
+  return {
+    readings: query.data ?? [],
+    loading: query.isLoading,
+    refreshing: query.isFetching && !query.isLoading,
+    error: queryErrorMessage(query.error, 'Failed to load meter readings.'),
+    refresh,
+  };
 }
-

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Plus,
   Search,
@@ -36,6 +37,9 @@ import { SITIO_OPTIONS } from '../constants';
 import StyledSelect from '../components/ui/StyledSelect';
 import ResidentOverviewModal from '../components/modals/ResidentOverviewModal';
 import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import { sitiosMatch } from '../utils';
 import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
@@ -122,9 +126,12 @@ function getInitials(firstName: string, lastName: string): string {
 
 const AddResidentModal: React.FC<{
   onClose: () => void;
-  onCreated: () => void;
   sitioOptions: string[];
-}> = ({ onClose, onCreated, sitioOptions }) => {
+}> = ({ onClose, sitioOptions }) => {
+  const createResidentMutation = useInvalidatingMutation(
+    (input: Parameters<typeof createResident>[0]) => createResident(input),
+    [queryKeys.residents.all]
+  );
   const [form, setForm] = useState<AddResidentForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +185,7 @@ const AddResidentModal: React.FC<{
 
     setSaving(true);
     try {
-      const result = await createResident({
+      const result = await createResidentMutation.mutateAsync({
         email: form.email.trim().toLowerCase(),
         firstName: form.firstName,
         middleName: form.middleName,
@@ -195,7 +202,6 @@ const AddResidentModal: React.FC<{
         temporaryPassword: result.temporary_password ?? generatedPassword,
         accountNumber: result.account_number,
       });
-      onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create resident.');
     } finally {
@@ -529,9 +535,12 @@ const SuccessView: React.FC<{
 const EditResidentModal: React.FC<{
   resident: ResidentRecord;
   onClose: () => void;
-  onSaved: () => void;
   sitioOptions: string[];
-}> = ({ resident, onClose, onSaved, sitioOptions }) => {
+}> = ({ resident, onClose, sitioOptions }) => {
+  const saveResident = useInvalidatingMutation(
+    (input: Parameters<typeof updateResident>[1]) => updateResident(resident, input),
+    [queryKeys.residents.all]
+  );
   const [form, setForm] = useState<AddResidentForm>({
     firstName: resident.firstName,
     middleName: resident.middleName ?? '',
@@ -568,7 +577,7 @@ const EditResidentModal: React.FC<{
 
     setSaving(true);
     try {
-      await updateResident(resident, {
+      await saveResident.mutateAsync({
         firstName: form.firstName,
         middleName: form.middleName,
         lastName: form.lastName,
@@ -581,7 +590,6 @@ const EditResidentModal: React.FC<{
         currentReading: form.currentReading.trim() === '' ? null : Number(form.currentReading),
         previousReadingDate: form.previousReadingDate || null,
       });
-      onSaved();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update resident.');
@@ -800,14 +808,39 @@ const EditResidentModal: React.FC<{
 };
 
 const Residents: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const residentsQuery = useQuery({
+    queryKey: queryKeys.residents.list(),
+    queryFn: getResidents,
+    enabled: isAuthenticated,
+  });
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.residents.sitios(),
+    queryFn: () => getSitioOptions().catch(() => [] as string[]),
+    enabled: isAuthenticated,
+  });
+  const statusWrite = useInvalidatingMutation(
+    (input: { resident: ResidentRecord; status: 'active' | 'inactive' | 'applicant' }) =>
+      setResidentStatus(input.resident, input.status),
+    [queryKeys.residents.all]
+  );
+  const issueLoginMutation = useInvalidatingMutation(
+    (accountNumber: string) => issueResidentLogin(accountNumber),
+    [queryKeys.residents.all]
+  );
+  const residents = residentsQuery.data ?? [];
+  const loading = residentsQuery.isLoading;
+  const refreshing = residentsQuery.isFetching && !residentsQuery.isLoading;
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error = actionError ?? queryErrorMessage(residentsQuery.error, 'Failed to load residents.');
+  const sitioOptions = sitiosQuery.data ?? [];
+  const load = () => {
+    void residentsQuery.refetch();
+    void sitiosQuery.refetch();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [sitioFilter, setSitioFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [sitioOptions, setSitioOptions] = useState<string[]>([]);
-  const [residents, setResidents] = useState<ResidentRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingResident, setEditingResident] = useState<ResidentRecord | null>(null);
   const [viewingResident, setViewingResident] = useState<ResidentRecord | null>(null);
@@ -864,27 +897,6 @@ const Residents: React.FC = () => {
   // Staff hold write permissions on residents (RLS is_staff()); other roles
   // viewing this page get read-only access.
   const canManageResidents = user?.role === 'staff';
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [residentData, sitioData] = await Promise.all([
-        getResidents(),
-        getSitioOptions().catch(() => [] as string[]),
-      ]);
-      setResidents(residentData);
-      if (sitioData.length > 0) setSitioOptions(sitioData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load residents.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   // Close any open row menu when clicking elsewhere.
   useEffect(() => {
@@ -974,12 +986,11 @@ const Residents: React.FC = () => {
     if (resident.connectionStatus === status) return;
     setActioningId(resident.id);
     setOpenMenuId(null);
-    setError(null);
+    setActionError(null);
     try {
-      await setResidentStatus(resident, status);
-      await load();
+      await statusWrite.mutateAsync({ resident, status });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update resident status.');
+      setActionError(err instanceof Error ? err.message : 'Failed to update resident status.');
     } finally {
       setActioningId(null);
     }
@@ -1021,13 +1032,14 @@ const Residents: React.FC = () => {
 
   const handleIssueLogin = async (resident: ResidentRecord) => {
     if (!resident.accountNumber) return;
+    const accountNumber = resident.accountNumber;
     setOpenMenuId(null);
     setIssuingLoginId(resident.id);
     setIssueLoginError(null);
     try {
-      const result = await issueResidentLogin(resident.accountNumber);
+      const result = await issueLoginMutation.mutateAsync(accountNumber);
       setIssuedCredentials({
-        accountNumber: resident.accountNumber,
+        accountNumber,
         temporaryPassword: result.temporary_password,
         generatedFrom: result.generated_from,
         profileIsActive: result.profile_is_active,
@@ -1037,7 +1049,6 @@ const Residents: React.FC = () => {
         next.delete(resident.id);
         return next;
       });
-      await load();
     } catch (err) {
       setIssueLoginError(
         err instanceof Error ? err.message : 'Failed to issue login credentials.'
@@ -1086,11 +1097,12 @@ const Residents: React.FC = () => {
     try {
       for (const resident of targets) {
         if (!resident.accountNumber) continue;
+        const accountNumber = resident.accountNumber;
         try {
-          const result = await issueResidentLogin(resident.accountNumber);
+          const result = await issueLoginMutation.mutateAsync(accountNumber);
           created.push({
             fullName: resident.fullName,
-            accountNumber: resident.accountNumber,
+            accountNumber,
             temporaryPassword: result.temporary_password,
           });
         } catch (err) {
@@ -1105,7 +1117,6 @@ const Residents: React.FC = () => {
       if (created.length > 0) {
         setBulkIssuedCredentials(created);
         setSelectedIds(new Set());
-        await load();
       }
 
       if (failures.length > 0) {
@@ -1342,7 +1353,7 @@ const Residents: React.FC = () => {
                         className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                         title="Refresh"
                       >
-                        <RefreshCw className="w-5 h-5 text-gray-600" />
+                        <RefreshCw className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         onClick={handleExport}
@@ -1551,13 +1562,12 @@ const Residents: React.FC = () => {
       </div>
 
       {showAddModal && (
-        <AddResidentModal onClose={() => setShowAddModal(false)} onCreated={load} sitioOptions={sitioOptions} />
+        <AddResidentModal onClose={() => setShowAddModal(false)} sitioOptions={sitioOptions} />
       )}
       {editingResident && (
         <EditResidentModal
           resident={editingResident}
           onClose={() => setEditingResident(null)}
-          onSaved={load}
           sitioOptions={sitioOptions}
         />
       )}

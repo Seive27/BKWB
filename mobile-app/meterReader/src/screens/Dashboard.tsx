@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,8 +12,11 @@ import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 import { useAssignments } from '@/hooks/useAssignments';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useReadingHistory } from '@/hooks/useReadingHistory';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getCurrentReaderProfile,
   submitReadingByMeterNumber,
@@ -75,21 +79,18 @@ export default function Dashboard({
 
   const { assignments, sitioRoutes, refreshing, refresh } = useAssignments();
   const { readings: history } = useReadingHistory();
+  const userId = useSessionUserId();
+  const readerQuery = useQuery({
+    queryKey: queryKeys.profile.reader(userId ?? ''),
+    queryFn: getCurrentReaderProfile,
+    enabled: !!userId,
+  });
+  const readerName = readerQuery.data?.first_name || 'Reader';
+  const submitReading = useInvalidatingMutation(submitReadingByMeterNumber, [
+    queryKeys.readings.all,
+  ]);
 
-  const [readerName, setReaderName] = useState('Reader');
   const [showStartReading, setShowStartReading] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    getCurrentReaderProfile().then((profile) => {
-      if (active && profile?.first_name) {
-        setReaderName(profile.first_name);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // Android may destroy the activity after the camera closes, which closes the
   // Start Reading sheet. Re-open it when a pending camera result exists.
@@ -313,7 +314,7 @@ export default function Dashboard({
             throw new Error('Please enter a valid current reading.');
           }
 
-          const submitted = await submitReadingByMeterNumber({
+          const submitted = await submitReading.mutateAsync({
             meterNumber: payload.meterNumber,
             sitio: payload.sitio,
             currentReading: current,
@@ -321,8 +322,6 @@ export default function Dashboard({
             photoUri: payload.photoUri,
             photoBase64: payload.photoBase64,
           });
-
-          await refresh();
 
           const residentName = submitted.resident
             ? `${submitted.resident.first_name} ${submitted.resident.last_name}`.trim()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,12 +14,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDialog } from '@/components/ui/AppDialog';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { PasswordStrengthHint } from '@/components/ui/PasswordStrengthHint';
 import { friendlyErrorMessage, isNetworkError } from '@/lib/errors';
 import { getPasswordValidationError } from '@/lib/password';
 import {
   completeAccountSetup,
-  getCurrentProfile,
   isLoginHandleEmail,
   sendRegisteredEmailOtp,
   sendVerificationEmail,
@@ -111,6 +111,8 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  const { profile: cachedProfile, loading: profileLoading } = useCurrentProfile();
+  const setupStarted = useRef(false);
 
 
   const stepIndex = useMemo<Record<SetupStep, number>>(
@@ -123,9 +125,11 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
   const totalSteps = registeredEmail ? 3 : 4;
 
   useEffect(() => {
+    if (profileLoading || setupStarted.current) return;
+    setupStarted.current = true;
     let cancelled = false;
     (async () => {
-      const profile = await getCurrentProfile();
+      const profile = cachedProfile;
       if (cancelled) return;
       if (profile) {
         setFirstName(profile.first_name ?? '');
@@ -153,7 +157,7 @@ export default function AccountSetup({ onSetupComplete }: AccountSetupProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cachedProfile, profileLoading]);
 
   /** Shared error funnel: connectivity failures open the branded retry
    *  modal; everything else shows inline on the current step. */

@@ -18,7 +18,9 @@ import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { TicketTimeline } from '@/components/tickets/TicketTimeline';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { useTicketDetails } from '@/hooks/useTicketDetails';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
 import { friendlyErrorMessage } from '@/lib/errors';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   confirmWorkCompleted,
   rejectWorkCompleted,
@@ -128,6 +130,10 @@ export default function TicketDetailsScreen({
   const { ticket, timeline, loading, error, refresh, searchQuery, setSearchQuery, loadingTimeline } =
     useTicketDetails(ticketId);
   const dialog = useDialog();
+  const ticketWrite = useInvalidatingMutation(
+    (run: () => Promise<unknown>) => run(),
+    [queryKeys.tickets.all]
+  );
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -185,8 +191,7 @@ export default function TicketDetailsScreen({
   const handleConfirm = async () => {
     setConfirmBusy(true);
     try {
-      await confirmWorkCompleted(ticketId);
-      await refresh();
+      await ticketWrite.mutateAsync(() => confirmWorkCompleted(ticketId));
     } catch (err) {
       dialog.alert(
         'Could Not Confirm',
@@ -219,10 +224,9 @@ export default function TicketDetailsScreen({
 
     setConfirmBusy(true);
     try {
-      await rejectWorkCompleted(ticketId, rejectReason);
+      await ticketWrite.mutateAsync(() => rejectWorkCompleted(ticketId, rejectReason));
       setRejectOpen(false);
       setRejectReason('');
-      await refresh();
     } catch (err) {
       dialog.alert(
         'Could Not Update',

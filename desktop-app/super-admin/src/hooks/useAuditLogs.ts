@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from './useAuth';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import type { AuditLogEntry, AuditLogQueryOptions } from '../types';
-import {
-  getAuditLogs,
-  subscribeToAuditLogs,
-} from '../services/auditLogService';
+import { getAuditLogs } from '../services/auditLogService';
 
 interface UseAuditLogsResult {
   logs: AuditLogEntry[];
@@ -13,62 +14,36 @@ interface UseAuditLogsResult {
   refresh: () => Promise<void>;
 }
 
-/** Loads audit logs with the given filters and prepends live entries. */
-export function useAuditLogs(
-  options?: AuditLogQueryOptions
-): UseAuditLogsResult {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** Loads audit logs for the given filters. Live rows arrive through RealtimeSync. */
+export function useAuditLogs(options?: AuditLogQueryOptions): UseAuditLogsResult {
+  const { isAuthenticated } = useAuth();
+  const query = useQuery({
+    queryKey: queryKeys.auditLogs.list(options ?? {}),
+    queryFn: () => getAuditLogs(options ?? {}),
+    enabled: isAuthenticated,
+  });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getAuditLogs(options);
-      setLogs(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load audit logs.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [options]);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options]);
-
-  return { logs, loading, refreshing, error, refresh: () => load(true) };
+  return {
+    logs: query.data ?? [],
+    loading: query.isLoading,
+    refreshing: query.isFetching && !query.isLoading,
+    error: queryErrorMessage(query.error, 'Failed to load audit logs.'),
+    refresh,
+  };
 }
 
-/** Subscribe to new audit log rows (used by the live console). */
+/** Recent audit rows for the live console. Realtime invalidation refreshes the window. */
 export function useAuditLogStream(): { logs: AuditLogEntry[] } {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const { isAuthenticated } = useAuth();
+  const query = useQuery({
+    queryKey: queryKeys.auditLogs.stream(),
+    queryFn: () => getAuditLogs({ limit: 100 }),
+    enabled: isAuthenticated,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    getAuditLogs({ limit: 100 }).then((data) => {
-      if (!cancelled) setLogs(data);
-    }).catch(() => {
-      // Console shows live entries only if the initial load fails.
-    });
-
-    const unsubscribe = subscribeToAuditLogs((_event, row) => {
-      setLogs((prev) => [row, ...prev].slice(0, 200));
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
-
-  return { logs };
+  return { logs: query.data ?? [] };
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   X,
   Gauge,
@@ -11,6 +12,9 @@ import {
 } from 'lucide-react';
 import type { Bill, MeterReading } from '../../types';
 import { METER_READING_STATUS_LABELS } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { queryErrorMessage } from '../../lib/queryError';
+import { queryKeys } from '../../lib/queryKeys';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBills } from '../../services/billService';
 
@@ -107,11 +111,22 @@ const BillOverviewModal: React.FC<{
   /** Tab to open with; defaults to Billing Information. */
   initialTab?: OverviewTab;
 }> = ({ bill, onClose, initialTab = 'billing' }) => {
+  const { isAuthenticated } = useAuth();
   const [tab, setTab] = useState<OverviewTab>(initialTab);
-  const [readings, setReadings] = useState<MeterReading[]>([]);
-  const [accountBills, setAccountBills] = useState<Bill[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
-  const [dataError, setDataError] = useState<string | null>(null);
+  const accountBillsQuery = useQuery({
+    queryKey: queryKeys.bills.list({ accountId: bill.account_id }),
+    queryFn: () => getBills({ accountId: bill.account_id }).catch(() => [bill]),
+    enabled: isAuthenticated,
+  });
+  const readingsQuery = useQuery({
+    queryKey: queryKeys.meterReadings.byAccount(bill.account_id),
+    queryFn: () => getAccountReadings(bill.account_id),
+    enabled: isAuthenticated && !!bill.account_id,
+  });
+  const accountBills = accountBillsQuery.data ?? [];
+  const readings = readingsQuery.data ?? [];
+  const loadingData = accountBillsQuery.isLoading || readingsQuery.isLoading;
+  const dataError = queryErrorMessage(readingsQuery.error, 'Failed to load details.');
 
   const name = residentName(bill);
   const meterNumber = bill.account?.meter?.meter_number ?? null;
@@ -120,48 +135,6 @@ const BillOverviewModal: React.FC<{
   useEffect(() => {
     setTab(initialTab);
   }, [bill.id, initialTab]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingData(true);
-    setDataError(null);
-
-    const tasks: Promise<void>[] = [
-      getBills({ accountId: bill.account_id })
-        .then((rows) => {
-          if (!cancelled) setAccountBills(rows);
-        })
-        .catch(() => {
-          if (!cancelled) setAccountBills([bill]);
-        }),
-    ];
-
-    if (bill.account_id) {
-      tasks.push(
-        getAccountReadings(bill.account_id)
-          .then((rows) => {
-            if (!cancelled) setReadings(rows);
-          })
-          .catch((err: unknown) => {
-            throw err instanceof Error ? err : new Error('Failed to load reading history.');
-          })
-      );
-    }
-
-    Promise.all(tasks)
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setDataError(err instanceof Error ? err.message : 'Failed to load details.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingData(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bill, bill.account_id]);
 
   const outstandingBalance = useMemo(
     () =>

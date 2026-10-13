@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
+import { getTicketById, getTicketTimeline } from '@/services/ticketService';
 import type { Ticket, TicketTimelineEvent } from '@/types/tickets';
-import {
-  getTicketById,
-  getTicketTimeline,
-  subscribeToTicket,
-} from '@/services/ticketService';
 
 interface UseTicketDetailsResult {
   ticket: Ticket | null;
@@ -19,89 +19,40 @@ interface UseTicketDetailsResult {
 }
 
 export function useTicketDetails(ticketId: string | null): UseTicketDetailsResult {
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [timeline, setTimeline] = useState<TicketTimelineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingTimeline, setLoadingTimeline] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const userId = useSessionUserId();
   const [searchQuery, setSearchQuery] = useState('');
+  const enabled = !!userId && !!ticketId;
 
-  const ticketIdRef = useRef(ticketId);
-  ticketIdRef.current = ticketId;
+  const ticketQuery = useQuery({
+    queryKey: queryKeys.tickets.detail(userId ?? '', ticketId ?? ''),
+    queryFn: () => getTicketById(ticketId ?? ''),
+    enabled,
+  });
+  const timelineQuery = useQuery({
+    queryKey: queryKeys.tickets.timeline(userId ?? '', ticketId ?? ''),
+    queryFn: () => getTicketTimeline(ticketId ?? ''),
+    enabled,
+  });
 
-  const loadTicket = useCallback(async () => {
-    const id = ticketIdRef.current;
-    if (!id) return;
-    try {
-      const data = await getTicketById(id);
-      if (ticketIdRef.current !== id) return;
-      if (data) {
-        setTicket(data);
-      } else {
-        setTicket(null);
-        setError('Ticket not found. It may have been removed.');
-      }
-    } catch (err) {
-      if (ticketIdRef.current !== id) return;
-      setError(err instanceof Error ? err.message : 'Failed to load ticket.');
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await Promise.all([ticketQuery.refetch(), timelineQuery.refetch()]);
+  }, [ticketQuery, timelineQuery]);
 
-  const loadTimeline = useCallback(async () => {
-    const id = ticketIdRef.current;
-    if (!id) return;
-
-    setLoadingTimeline(true);
-    try {
-      const events = await getTicketTimeline(id);
-      if (ticketIdRef.current === id) setTimeline(events);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (ticketIdRef.current === id) setLoadingTimeline(false);
-    }
-  }, []);
-
-  const load = useCallback(async () => {
-    const id = ticketIdRef.current;
-    if (!id) {
-      setTicket(null);
-      setTimeline([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    await loadTicket();
-    await loadTimeline();
-    if (ticketIdRef.current === id) setLoading(false);
-  }, [loadTicket, loadTimeline]);
-
-  useEffect(() => {
-    setSearchQuery('');
-    load();
-  }, [ticketId, load]);
-
-  useEffect(() => {
-    const id = ticketId;
-    if (!id) return;
-    const unsubscribe = subscribeToTicket(id, () => {
-      loadTicket();
-      loadTimeline();
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [ticketId, loadTicket, loadTimeline]);
-
-  const refresh = useCallback(() => load(), [load]);
+  const missing =
+    enabled && ticketQuery.isSuccess && !ticketQuery.data
+      ? 'Ticket not found. It may have been removed.'
+      : null;
 
   return {
-    ticket,
-    timeline,
-    loading,
-    loadingTimeline,
-    error,
+    ticket: ticketQuery.data ?? null,
+    timeline: timelineQuery.data ?? [],
+    loading: !!ticketId && ticketQuery.isLoading && !ticketQuery.data,
+    loadingTimeline: !!ticketId && timelineQuery.isFetching && !timelineQuery.data,
+    error:
+      missing ??
+      (ticketQuery.data
+        ? null
+        : queryErrorMessage(ticketQuery.error, 'Failed to load ticket.')),
     refresh,
     searchQuery,
     setSearchQuery,

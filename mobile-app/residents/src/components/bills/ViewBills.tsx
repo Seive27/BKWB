@@ -5,10 +5,10 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import type { BillFilter } from '@/components/bills/BillFilterTabs';
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
+import { useMyBills } from '@/hooks/useMyBills';
 import {
   formatPeriod,
   formatPeso,
-  getMyBills,
   type ResidentBill,
 } from '@/services/billService';
 
@@ -207,34 +207,9 @@ type ViewBillsProps = {
 };
 
 export function ViewBills({ filter = 'all' }: ViewBillsProps) {
-  const [bills, setBills] = useState<ResidentBill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { bills, loading, error } = useMyBills();
   const [monthFilter, setMonthFilter] = useState<string | 'all'>('all');
   const [selected, setSelected] = useState<ResidentBill | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    getMyBills()
-      .then((rows) => {
-        if (!cancelled) {
-          setBills(rows);
-          setError(null);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load your bills.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Reset month when paid/unpaid filter changes so chips stay in sync.
   useEffect(() => {

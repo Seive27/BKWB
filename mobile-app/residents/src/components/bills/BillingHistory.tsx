@@ -1,12 +1,12 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
+import { useMyBills } from '@/hooks/useMyBills';
 import {
   formatBillDate,
   formatPeriod,
   formatPeso,
-  getMyBills,
   type ResidentBill,
 } from '@/services/billService';
 
@@ -68,30 +68,10 @@ function HistoryBillCard({ bill, onPress }: { bill: ResidentBill; onPress: () =>
 }
 
 export function BillingHistory() {
-  const [bills, setBills] = useState<ResidentBill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { bills, loading, error: loadError } = useMyBills();
+  const error = loadError ? 'Failed to load billing history.' : null;
   const [selected, setSelected] = useState<ResidentBill | null>(null);
   const [monthFilter, setMonthFilter] = useState<string | 'all'>('all');
-
-  useEffect(() => {
-    let cancelled = false;
-    getMyBills()
-      .then((rows) => {
-        if (!cancelled) setBills(rows);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load billing history.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const periods = useMemo(
     () => [...new Set(bills.map((b) => b.billing_period))],

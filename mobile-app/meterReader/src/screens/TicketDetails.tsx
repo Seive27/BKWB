@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -14,7 +15,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
+import { useInvalidatingMutation } from '@/hooks/useInvalidatingMutation';
 import { useReaderTickets } from '@/hooks/useReaderTickets';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getReaderTicketTimeline,
   markWorkCompleted,
@@ -173,11 +177,21 @@ export default function TicketDetails({
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
   const { tickets, loading, refreshing, error, refresh } = useReaderTickets();
+  const userId = useSessionUserId();
+  const ticketWrite = useInvalidatingMutation(
+    (run: () => Promise<unknown>) => run(),
+    [queryKeys.tickets.all]
+  );
+  const timelineQuery = useQuery({
+    queryKey: queryKeys.tickets.timeline(userId ?? '', ticketId),
+    queryFn: () => getReaderTicketTimeline(ticketId),
+    enabled: !!userId && !!ticketId,
+  });
+  const timeline = timelineQuery.data ?? [];
+  const timelineLoading = timelineQuery.isLoading && !timelineQuery.data;
   const [busy, setBusy] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [completionText, setCompletionText] = useState('');
-  const [timeline, setTimeline] = useState<ReaderTimelineEvent[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelinePage, setTimelinePage] = useState(1);
   const scrollRef = useRef<ScrollView>(null);
   const contentRef = useRef<View>(null);
@@ -189,24 +203,8 @@ export default function TicketDetails({
   );
 
   useEffect(() => {
-    let cancelled = false;
-    setTimelineLoading(true);
-    getReaderTicketTimeline(ticketId)
-      .then((events) => {
-        if (cancelled) return;
-        setTimeline(events);
-        setTimelinePage(paginateTimeline(events).length || 1);
-      })
-      .catch(() => {
-        if (!cancelled) setTimeline([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTimelineLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ticketId, ticket?.updated_at]);
+    setTimelinePage(paginateTimeline(timeline).length || 1);
+  }, [ticketId, timeline]);
 
   const timelinePages = useMemo(() => paginateTimeline(timeline), [timeline]);
   const timelinePageCount = timelinePages.length;
@@ -242,8 +240,7 @@ export default function TicketDetails({
     if (!ticket) return;
     setBusy(true);
     try {
-      await startTicketWork(ticket.id);
-      await refresh();
+      await ticketWrite.mutateAsync(() => startTicketWork(ticket.id));
     } catch (err) {
       Alert.alert(
         'Could not start work',
@@ -262,10 +259,9 @@ export default function TicketDetails({
     }
     setBusy(true);
     try {
-      await markWorkCompleted(ticket.id, completionText);
+      await ticketWrite.mutateAsync(() => markWorkCompleted(ticket.id, completionText));
       setCompleting(false);
       setCompletionText('');
-      await refresh();
     } catch (err) {
       Alert.alert(
         'Could not update',

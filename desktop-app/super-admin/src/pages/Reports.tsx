@@ -1,4 +1,5 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   Download,
@@ -8,6 +9,10 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
+import { useAuth } from '../hooks/useAuth';
+import { ANALYTICS_STALE_TIME } from '../lib/queryClient';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import {
   REPORT_CATEGORIES,
   exportReportCsv,
@@ -16,7 +21,6 @@ import {
   getReport,
   type ReportCategory,
   type ReportPeriod,
-  type ReportResult,
 } from '../services/reportService';
 
 const PERIOD_KINDS: { id: ReportPeriod['kind']; label: string }[] = [
@@ -40,12 +44,21 @@ const Reports: React.FC = () => {
   const [year, setYear] = useState(currentYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [quarter, setQuarter] = useState(Math.floor(new Date().getMonth() / 3) + 1);
-
-  const [result, setResult] = useState<ReportResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const [submitted, setSubmitted] = useState<{
+    category: ReportCategory;
+    period: ReportPeriod;
+  }>(() => ({
+    category: 'residents',
+    period: {
+      kind: 'monthly',
+      year: currentYear(),
+      month: new Date().getMonth() + 1,
+    },
+  }));
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const activeCategory = useMemo(
     () => REPORT_CATEGORIES.find((c) => c.id === category)!,
@@ -62,27 +75,37 @@ const Reports: React.FC = () => {
     [kind, year, month, quarter]
   );
 
-  const generate = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setResult(await getReport(category, period));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate the report.');
-      setResult(null);
-    } finally {
-      setLoading(false);
+  const reportQuery = useQuery({
+    queryKey: queryKeys.reports.detail(submitted.category, submitted.period),
+    queryFn: () => getReport(submitted.category, submitted.period),
+    enabled: isAuthenticated,
+    staleTime: ANALYTICS_STALE_TIME,
+  });
+  const result = reportQuery.data ?? null;
+  const loading = reportQuery.isFetching;
+  const error =
+    exportError ?? queryErrorMessage(reportQuery.error, 'Failed to generate the report.');
+
+  const generate = () => {
+    setExportError(null);
+    const same =
+      submitted.category === category &&
+      JSON.stringify(submitted.period) === JSON.stringify(period);
+    if (same) {
+      void reportQuery.refetch();
+      return;
     }
-  }, [category, period]);
+    setSubmitted({ category, period });
+  };
 
   const handleExportCsv = async () => {
     if (!result) return;
     setExportingCsv(true);
-    setError(null);
+    setExportError(null);
     try {
       await exportReportCsv(result, category);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export CSV.');
+      setExportError(err instanceof Error ? err.message : 'Failed to export CSV.');
     } finally {
       setExportingCsv(false);
     }
@@ -91,21 +114,15 @@ const Reports: React.FC = () => {
   const handleExportPdf = async () => {
     if (!result) return;
     setExportingPdf(true);
-    setError(null);
+    setExportError(null);
     try {
       await exportReportPdf(result, category);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export PDF.');
+      setExportError(err instanceof Error ? err.message : 'Failed to export PDF.');
     } finally {
       setExportingPdf(false);
     }
   };
-
-  // Initial load.
-  useEffect(() => {
-    generate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const years = useMemo(() => {
     const y = currentYear();

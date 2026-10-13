@@ -1,4 +1,5 @@
 import { getPasswordValidationError } from '@/lib/password';
+import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 
 /** True while Forgot Password OTP → new-password is in progress so the app
@@ -40,6 +41,7 @@ function loginFailure(message: string | undefined): Error {
 /** Drop a session that authenticated but must not stay signed in. */
 async function abandonSession(): Promise<void> {
   try {
+    await clearPersistedQueryCache();
     await supabase.auth.signOut();
   } catch {
     // The login gate still keeps the app on the login screen.
@@ -379,6 +381,7 @@ export async function verifyPasswordResetOtp(
 export async function completePasswordReset(newPassword: string): Promise<void> {
   try {
     await changePassword(newPassword);
+    await clearPersistedQueryCache();
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message || 'Failed to sign out.');
   } finally {
@@ -390,6 +393,7 @@ export async function completePasswordReset(newPassword: string): Promise<void> 
 export async function cancelPasswordReset(): Promise<void> {
   try {
     if (passwordResetPending) {
+      await clearPersistedQueryCache();
       await supabase.auth.signOut();
     }
   } catch {
@@ -411,6 +415,7 @@ export async function changePassword(newPassword: string): Promise<void> {
 
 /** Sign the current user out. The app shell reacts via onAuthStateChange. */
 export async function signOut(): Promise<void> {
+  await clearPersistedQueryCache();
   const { error } = await supabase.auth.signOut();
   if (error) throw new Error(error.message || 'Failed to sign out.');
 }

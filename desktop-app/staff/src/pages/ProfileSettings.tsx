@@ -10,14 +10,18 @@ import {
   Camera,
   X,
 } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ProfileSummaryCard from '../components/ui/ProfileSummaryCard';
 import LogoutModal from '../components/modals/LogoutModal';
 import { useAuth } from '../hooks/useAuth';
+import { queryKeys } from '../lib/queryKeys';
+import { getCurrentProfile } from '../services/authService';
 import {
   updateOwnProfile,
   changeOwnPassword,
+  type ProfileUpdateInput,
 } from '../services/profileService';
-import type { StaffProfile } from '../types';
+import type { Profile, StaffProfile } from '../types';
 
 const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super Administrator',
@@ -27,7 +31,37 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ProfileSettings: React.FC = () => {
-  const { user, profile: authProfile, logout: authLogout } = useAuth();
+  const { user, profile: authProfile, logout: authLogout, applyProfile } = useAuth();
+  const queryClient = useQueryClient();
+
+  useQuery({
+    queryKey: queryKeys.profile.detail(user?.id ?? ''),
+    queryFn: getCurrentProfile,
+    enabled: !!user,
+    initialData: authProfile ?? undefined,
+  });
+
+  const saveProfile = useMutation({
+    mutationFn: (input: ProfileUpdateInput) => updateOwnProfile(input),
+    onSuccess: (_result, input) => {
+      if (!user) return;
+      const patch: Partial<Profile> = {
+        first_name: input.firstName.trim(),
+        middle_name: input.middleName?.trim() || null,
+        last_name: input.lastName.trim(),
+        phone: input.phone?.trim() || undefined,
+        avatar_url: input.avatarUrl?.trim() || null,
+      };
+      applyProfile(patch);
+      queryClient.setQueryData<Profile | null>(queryKeys.profile.detail(user.id), (current) =>
+        current ? { ...current, ...patch } : authProfile ? { ...authProfile, ...patch } : current
+      );
+    },
+  });
+
+  const savePassword = useMutation({
+    mutationFn: (password: string) => changeOwnPassword(password),
+  });
 
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -39,10 +73,10 @@ const ProfileSettings: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const [saving, setSaving] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const saving = saveProfile.isPending;
+  const savingPassword = savePassword.isPending;
 
   // Seed the form from the real logged-in profile.
   useEffect(() => {
@@ -74,10 +108,9 @@ const ProfileSettings: React.FC = () => {
   };
 
   const handleSaveProfile = async () => {
-    setSaving(true);
     setMessage(null);
     try {
-      await updateOwnProfile({
+      await saveProfile.mutateAsync({
         firstName,
         middleName,
         lastName,
@@ -87,8 +120,6 @@ const ProfileSettings: React.FC = () => {
       setMessage({ type: 'success', text: 'Profile updated successfully.' });
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to update profile.' });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -101,17 +132,14 @@ const ProfileSettings: React.FC = () => {
       setMessage({ type: 'error', text: 'New password and confirmation do not match.' });
       return;
     }
-    setSavingPassword(true);
     setMessage(null);
     try {
-      await changeOwnPassword(newPassword);
+      await savePassword.mutateAsync(newPassword);
       setNewPassword('');
       setConfirmPassword('');
       setMessage({ type: 'success', text: 'Password updated successfully.' });
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to update password.' });
-    } finally {
-      setSavingPassword(false);
     }
   };
 

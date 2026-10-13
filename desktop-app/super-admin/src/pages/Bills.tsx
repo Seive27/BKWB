@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Download,
@@ -16,6 +17,10 @@ import {
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import BillOverviewModal from '../components/modals/BillOverviewModal';
 import StyledSelect from '../components/ui/StyledSelect';
+import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import {
   getBills,
   setBillStatus
@@ -74,9 +79,22 @@ function getStatusText(status: BillStatus): string {
 }
 
 const Bills: React.FC = () => {
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const billsQuery = useQuery({
+    queryKey: queryKeys.bills.list(),
+    queryFn: () => getBills(),
+    enabled: isAuthenticated,
+  });
+  const billWrite = useInvalidatingMutation(
+    (input: { billId: string; status: BillStatus }) => setBillStatus(input.billId, input.status),
+    [queryKeys.bills.all]
+  );
+  const bills = billsQuery.data ?? [];
+  const loading = billsQuery.isLoading;
+  const error = queryErrorMessage(billsQuery.error, 'Failed to load bills.');
+  const load = () => {
+    void billsQuery.refetch();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [periodFilter, setPeriodFilter] = useState('');
@@ -130,22 +148,6 @@ const Bills: React.FC = () => {
     if (timers.clear) window.clearTimeout(timers.clear);
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setBills(await getBills());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load bills.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
   // Reset pagination whenever a filter/search changes.
   useEffect(() => {
     setPage(1);
@@ -192,10 +194,8 @@ const Bills: React.FC = () => {
 
   const handleMarkPaid = async (bill: Bill) => {
     setBusyId(bill.id);
-    setError(null);
     try {
-      await setBillStatus(bill.id, 'paid');
-      await load();
+      await billWrite.mutateAsync({ billId: bill.id, status: 'paid' });
       showToast('success', `Bill ${bill.bill_number} marked as paid.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update the bill.');
@@ -206,10 +206,8 @@ const Bills: React.FC = () => {
 
   const handleMarkOverdue = async (bill: Bill) => {
     setBusyId(bill.id);
-    setError(null);
     try {
-      await setBillStatus(bill.id, 'overdue');
-      await load();
+      await billWrite.mutateAsync({ billId: bill.id, status: 'overdue' });
       showToast('success', `Bill ${bill.bill_number} marked as overdue.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update the bill.');

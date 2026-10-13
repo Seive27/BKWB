@@ -14,6 +14,8 @@ import type { SystemSetting } from '../types';
 import { PaymentQRUploader } from '../components/PaymentQRUploader';
 import { SYSTEM_SETTING_CATEGORIES, SYSTEM_SETTING_CATEGORY_LABELS } from '../types';
 import { useSystemSettings } from '../hooks/useSystemSettings';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryKeys } from '../lib/queryKeys';
 import { saveSystemSettings } from '../services/systemSettingsService';
 
 const CATEGORY_ICONS: Record<string, React.FC<{ className?: string }>> = {
@@ -33,10 +35,14 @@ function valueKind(value: unknown): 'text' | 'number' | 'boolean' {
 const SystemSettings: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('general');
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { settings, loading, error } = useSystemSettings();
+  const saveSettings = useInvalidatingMutation(
+    (entries: { key: string; value: unknown }[]) => saveSystemSettings(entries),
+    [queryKeys.systemSettings.all]
+  );
+  const saving = saveSettings.isPending;
 
   // Reset drafts whenever the source settings change (initial load, realtime).
   useEffect(() => {
@@ -74,16 +80,13 @@ const SystemSettings: React.FC = () => {
 
   const handleSave = async () => {
     if (dirtyEntries.length === 0) return;
-    setSaving(true);
     try {
-      await saveSystemSettings(dirtyEntries);
+      await saveSettings.mutateAsync(dirtyEntries);
       setToast({ type: 'success', message: 'Settings saved successfully.' });
       window.setTimeout(() => setToast(null), 3500);
     } catch (err) {
       setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save settings.' });
       window.setTimeout(() => setToast(null), 3500);
-    } finally {
-      setSaving(false);
     }
   };
 

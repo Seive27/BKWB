@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X, Settings2, Plus, Trash2, Droplets, AlertCircle, Loader2 } from 'lucide-react';
 import type { BillingComponent, BillingConfig } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { useInvalidatingMutation } from '../../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../../lib/queryError';
+import { queryKeys } from '../../lib/queryKeys';
 import { getBillingConfig, saveBillingConfig } from '../../services/billingConfigService';
 
 interface ConfigureBillsModalProps {
@@ -17,33 +22,36 @@ function createEmptyComponent(): BillingComponent {
 }
 
 const ConfigureBillsModal: React.FC<ConfigureBillsModalProps> = ({ isOpen, onClose }) => {
+  const { isAuthenticated } = useAuth();
+  const configQuery = useQuery({
+    queryKey: queryKeys.billingConfig.all,
+    queryFn: getBillingConfig,
+    enabled: isOpen && isAuthenticated,
+  });
+  const saveConfig = useInvalidatingMutation(
+    (config: BillingConfig) => saveBillingConfig(config),
+    [queryKeys.billingConfig.all]
+  );
   const [waterRate, setWaterRate] = useState('0');
   const [components, setComponents] = useState<BillingComponent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const loading = isOpen && configQuery.isLoading;
+  const saving = saveConfig.isPending;
+  const visibleError =
+    error ?? (isOpen ? queryErrorMessage(configQuery.error, 'Failed to load billing configuration.') : null);
 
   useEffect(() => {
     if (!isOpen) return;
-
     setError(null);
     setSuccess(null);
-    setSaving(false);
-    setLoading(true);
-
-    getBillingConfig()
-      .then((config: BillingConfig) => {
-        setWaterRate(String(config.waterRate));
-        setComponents(config.components);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load billing configuration.');
-        setWaterRate('0');
-        setComponents([]);
-      })
-      .finally(() => setLoading(false));
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!configQuery.data) return;
+    setWaterRate(String(configQuery.data.waterRate));
+    setComponents(configQuery.data.components);
+  }, [configQuery.data]);
 
   if (!isOpen) return null;
 
@@ -72,11 +80,10 @@ const ConfigureBillsModal: React.FC<ConfigureBillsModalProps> = ({ isOpen, onClo
     e.preventDefault();
     if (!canSave) return;
 
-    setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      await saveBillingConfig({
+      await saveConfig.mutateAsync({
         waterRate: parsedWaterRate,
         components: components.map((c) => ({
           ...c,
@@ -88,8 +95,6 @@ const ConfigureBillsModal: React.FC<ConfigureBillsModalProps> = ({ isOpen, onClo
       setTimeout(() => onClose(), 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save billing configuration.');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -263,10 +268,10 @@ const ConfigureBillsModal: React.FC<ConfigureBillsModalProps> = ({ isOpen, onClo
                   )}
                 </div>
 
-                {error && (
+                {visibleError && (
                   <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-xl border border-red-100">
                     <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-red-800">{error}</p>
+                    <p className="text-sm text-red-800">{visibleError}</p>
                   </div>
                 )}
 

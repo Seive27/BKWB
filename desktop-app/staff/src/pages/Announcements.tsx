@@ -30,6 +30,8 @@ import type {
 } from '../types';
 import { useAnnouncements } from '../hooks/useAnnouncements';
 import { useAuth } from '../hooks/useAuth';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryKeys } from '../lib/queryKeys';
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -170,6 +172,18 @@ const emptyDraft = (): AnnouncementDraft => ({
 
 function AnnouncementFormModal({ initial, onClose, onSaved, onError }: AnnouncementFormModalProps) {
   const { user } = useAuth();
+  const saveAnnouncement = useInvalidatingMutation(
+    async (payload: AnnouncementDraft) => {
+      if (initial) {
+        await updateAnnouncement(initial.id, payload);
+        return 'Announcement updated successfully.';
+      }
+      if (!user?.id) throw new Error('You must be signed in to create an announcement.');
+      await createAnnouncement(payload, user.id);
+      return 'Announcement created successfully.';
+    },
+    [queryKeys.announcements.all]
+  );
   const [draft, setDraft] = useState<AnnouncementDraft>(() =>
     initial
       ? {
@@ -238,14 +252,8 @@ function AnnouncementFormModal({ initial, onClose, onSaved, onError }: Announcem
             ? draft.scheduled_at
             : null,
       };
-      if (initial) {
-        await updateAnnouncement(initial.id, payload);
-        onSaved('Announcement updated successfully.');
-      } else {
-        if (!user?.id) throw new Error('You must be signed in to create an announcement.');
-        await createAnnouncement(payload, user.id);
-        onSaved('Announcement created successfully.');
-      }
+      const message = await saveAnnouncement.mutateAsync(payload);
+      onSaved(message);
       onClose();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to save announcement.');
@@ -453,18 +461,21 @@ interface DeleteModalProps {
 }
 
 function DeleteConfirmationModal({ announcement, onClose, onDeleted, onError }: DeleteModalProps) {
-  const [deleting, setDeleting] = useState(false);
+  const deleteWrite = useInvalidatingMutation(
+    async () => {
+      await deleteAnnouncement(announcement.id);
+    },
+    [queryKeys.announcements.all]
+  );
+  const deleting = deleteWrite.isPending;
 
   const handleDelete = async () => {
-    setDeleting(true);
     try {
-      await deleteAnnouncement(announcement.id);
+      await deleteWrite.mutateAsync();
       onDeleted('Announcement deleted.');
       onClose();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to delete announcement.');
-    } finally {
-      setDeleting(false);
     }
   };
 

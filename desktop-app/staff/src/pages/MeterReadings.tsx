@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -19,6 +20,9 @@ import StyledSelect from '../components/ui/StyledSelect';
 import BillReceiptCard from '../components/ui/BillReceiptCard';
 import { useAuth } from '../hooks/useAuth';
 import { useMeterReadings } from '../hooks/useMeterReadings';
+import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
+import { queryErrorMessage } from '../lib/queryError';
+import { queryKeys } from '../lib/queryKeys';
 import GenerateBillModal from '../components/modals/GenerateBillModal';
 import {
   generateBillForReading,
@@ -33,12 +37,11 @@ import {
   getSitioOptions,
   markReadingBilled,
   rejectReading,
-  type SitioAssignOption,
+  type SitioAssignmentResult,
 } from '../services/meterReadingService';
 import { SITIO_OPTIONS } from '../constants';
 import { sitioKey, sitiosMatch } from '../utils';
 import {
-  MeterReaderOption,
   MeterReading,
   MeterReadingStatus,
   METER_READING_STATUS_LABELS,
@@ -112,8 +115,12 @@ const MeterReadings: React.FC<{
   initialStatusFilter = null,
   onInitialStatusFilterConsumed,
 }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { readings, loading, refreshing, error, refresh } = useMeterReadings();
+  const readingWrite = useInvalidatingMutation(
+    async (run: () => Promise<unknown>) => run(),
+    [queryKeys.meterReadings.all, queryKeys.bills.all]
+  );
 
   // ── Filters / sort / pagination ──
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,9 +134,6 @@ const MeterReadings: React.FC<{
   // ── Selection ──
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [previewReceipt, setPreviewReceipt] = useState<BillReceiptData | null>(null);
-  const [previewReceiptLoading, setPreviewReceiptLoading] = useState(false);
-  const [previewReceiptError, setPreviewReceiptError] = useState<string | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showGenerateBillModal, setShowGenerateBillModal] = useState(false);
   const [billReceipt, setBillReceipt] = useState<BillReceiptData | null>(null);
@@ -140,15 +144,28 @@ const MeterReadings: React.FC<{
 
   // ── Assign modal ──
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [sitios, setSitios] = useState<SitioAssignOption[]>([]);
-  const [meterReaders, setMeterReaders] = useState<MeterReaderOption[]>([]);
   const [selectedSitio, setSelectedSitio] = useState('');
   const [selectedReaderId, setSelectedReaderId] = useState('');
   const [assignmentDate, setAssignmentDate] = useState(todayISO());
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState<string | null>(null);
 
   const [actionBusy, setActionBusy] = useState(false);
+  const readersQuery = useQuery({
+    queryKey: queryKeys.meterReadings.readers(),
+    queryFn: getMeterReaders,
+    enabled: isAuthenticated && showAssignModal,
+  });
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.meterReadings.sitioOptions(assignmentDate),
+    queryFn: () => getSitioOptions(assignmentDate),
+    enabled: isAuthenticated && showAssignModal,
+  });
+  const meterReaders = readersQuery.data ?? [];
+  const sitios = sitiosQuery.data ?? [];
+  const pickerLoading = showAssignModal && (readersQuery.isLoading || sitiosQuery.isLoading);
+  const pickerError = showAssignModal
+    ? queryErrorMessage(readersQuery.error, 'Failed to load meter readers.') ??
+      queryErrorMessage(sitiosQuery.error, 'Failed to load sitios.')
+    : null;
 
   // ── Toasts ──
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -196,6 +213,16 @@ const MeterReadings: React.FC<{
     onInitialStatusFilterConsumed?.();
   }, [initialStatusFilter, onInitialStatusFilterConsumed]);
 
+  useEffect(() => {
+    const sitioOptions = sitiosQuery.data;
+    if (!sitioOptions) return;
+    setSelectedSitio((current) => {
+      if (!current) return current;
+      const match = sitioOptions.find((s) => sitiosMatch(s.name, current));
+      return match && !match.isAssigned ? match.name : '';
+    });
+  }, [sitiosQuery.data]);
+
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     setToast({ type, message });
@@ -203,6 +230,20 @@ const MeterReadings: React.FC<{
   };
 
   const selectedReading = readings.find((r) => r.id === selectedId) ?? null;
+  const previewEnabled =
+    showReviewModal &&
+    !!selectedReading &&
+    (selectedReading.status === 'pending_review' || selectedReading.status === 'approved');
+  const previewQuery = useQuery({
+    queryKey: queryKeys.bills.receiptPreview(selectedReading?.id ?? ''),
+    queryFn: () => previewBillReceiptForReading(selectedReading as MeterReading),
+    enabled: isAuthenticated && previewEnabled,
+  });
+  const previewReceipt = previewEnabled ? (previewQuery.data ?? null) : null;
+  const previewReceiptLoading = previewEnabled && previewQuery.isLoading;
+  const previewReceiptError = previewEnabled
+    ? queryErrorMessage(previewQuery.error, 'Failed to load receipt preview.')
+    : null;
 
   // ── Stats ──
   const stats = useMemo(() => {
@@ -280,46 +321,6 @@ const MeterReadings: React.FC<{
     setPage(1);
   }, [searchQuery, statusFilter, sitioFilter, sortKey]);
 
-  // Load meter readers once when the assign modal opens.
-  useEffect(() => {
-    if (!showAssignModal) return;
-    setPickerError(null);
-    getMeterReaders()
-      .then(setMeterReaders)
-      .catch((err) =>
-        setPickerError(err instanceof Error ? err.message : 'Failed to load meter readers.')
-      );
-  }, [showAssignModal]);
-
-  // Refresh sitio availability whenever the modal opens or the assignment month changes.
-  useEffect(() => {
-    if (!showAssignModal) return;
-    let cancelled = false;
-    setPickerLoading(true);
-    setPickerError(null);
-    getSitioOptions(assignmentDate)
-      .then((sitioOptions) => {
-        if (cancelled) return;
-        setSitios(sitioOptions);
-        // Clear selection if that sitio is already assigned for the selected month.
-        setSelectedSitio((current) => {
-          if (!current) return current;
-          const match = sitioOptions.find((s) => sitiosMatch(s.name, current));
-          return match && !match.isAssigned ? match.name : '';
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setPickerError(err instanceof Error ? err.message : 'Failed to load sitios.');
-      })
-      .finally(() => {
-        if (!cancelled) setPickerLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [showAssignModal, assignmentDate]);
-
   const actorId = user?.id ?? '';
 
   const selectedSitioOption =
@@ -333,15 +334,16 @@ const MeterReadings: React.FC<{
     }
     setActionBusy(true);
     try {
-      const result = await createSitioAssignment(
-        {
-          sitio: selectedSitio,
-          meter_reader_id: selectedReaderId,
-          assignment_date: assignmentDate,
-        },
-        actorId
-      );
-      await refresh();
+      const result = (await readingWrite.mutateAsync(() =>
+        createSitioAssignment(
+          {
+            sitio: selectedSitio,
+            meter_reader_id: selectedReaderId,
+            assignment_date: assignmentDate,
+          },
+          actorId
+        )
+      )) as SitioAssignmentResult;
       setShowAssignModal(false);
       setSelectedSitio('');
       setSelectedReaderId('');
@@ -357,28 +359,6 @@ const MeterReadings: React.FC<{
     }
   };
 
-  const loadPreviewReceipt = async (reading: MeterReading) => {
-    if (reading.status !== 'pending_review' && reading.status !== 'approved') {
-      setPreviewReceipt(null);
-      setPreviewReceiptError(null);
-      setPreviewReceiptLoading(false);
-      return;
-    }
-    setPreviewReceipt(null);
-    setPreviewReceiptError(null);
-    setPreviewReceiptLoading(true);
-    try {
-      const receipt = await previewBillReceiptForReading(reading);
-      setPreviewReceipt(receipt);
-    } catch (err) {
-      setPreviewReceiptError(
-        err instanceof Error ? err.message : 'Failed to load receipt preview.'
-      );
-    } finally {
-      setPreviewReceiptLoading(false);
-    }
-  };
-
   const handleApprove = async () => {
     if (!selectedReading || actionBusy) return;
     if (!actorId) {
@@ -387,8 +367,7 @@ const MeterReadings: React.FC<{
     }
     setActionBusy(true);
     try {
-      await approveReading(selectedReading.id, actorId);
-      await refresh();
+      await readingWrite.mutateAsync(() => approveReading(selectedReading.id, actorId));
       showToast('success', 'Reading approved. Use Issue Bill to create the resident bill.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to approve reading.');
@@ -414,8 +393,9 @@ const MeterReadings: React.FC<{
       setGeneratedBillNumber(result.bill_number ?? null);
 
       // Ensure status becomes Billed even when a duplicate bill already exists.
-      await markReadingBilled(reading.id);
-      await refresh();
+      await readingWrite.mutateAsync(async () => {
+        await markReadingBilled(reading.id);
+      });
 
       if (!billId) {
         setBillReceiptError(
@@ -458,8 +438,9 @@ const MeterReadings: React.FC<{
     }
     setActionBusy(true);
     try {
-      await rejectReading(selectedReading.id, actorId, rejectionReason);
-      await refresh();
+      await readingWrite.mutateAsync(() =>
+        rejectReading(selectedReading.id, actorId, rejectionReason)
+      );
       setShowRejectModal(false);
       setRejectionReason('');
       showToast('success', 'Reading rejected. The meter reader has been notified.');
@@ -474,14 +455,10 @@ const MeterReadings: React.FC<{
     setSelectedId(reading.id);
     setRejectionReason('');
     setShowReviewModal(true);
-    void loadPreviewReceipt(reading);
   };
 
   const closeReviewModal = () => {
     setShowReviewModal(false);
-    setPreviewReceipt(null);
-    setPreviewReceiptError(null);
-    setPreviewReceiptLoading(false);
   };
 
   const getStatusBadge = (status: MeterReadingStatus) => {

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-import {
-  getReadingHistory,
-  subscribeToMeterReadings,
-} from '@/services/meterReadingService';
+import { useSessionUserId } from '@/hooks/useSessionUserId';
+import { queryErrorMessage } from '@/lib/queryError';
+import { queryKeys } from '@/lib/queryKeys';
+import { getReadingHistory } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 
 interface UseReadingHistoryResult {
@@ -16,51 +17,24 @@ interface UseReadingHistoryResult {
   refresh: () => Promise<void>;
 }
 
-/**
- * Loads the reader's submitted readings (history) and keeps them in sync via
- * a realtime channel so approvals/rejections appear instantly. Subscriptions
- * are cleaned up on unmount.
- */
+/** The reader's submitted readings, shared with the dashboard counts. */
 export function useReadingHistory(): UseReadingHistoryResult {
-  const [readings, setReadings] = useState<MeterReading[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const userId = useSessionUserId();
+  const query = useQuery({
+    queryKey: queryKeys.readings.history(userId ?? ''),
+    queryFn: getReadingHistory,
+    enabled: !!userId,
+  });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getReadingHistory();
-      setReadings(data);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load reading history.'
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
-  useEffect(() => {
-    load();
-
-    const unsubscribe = subscribeToMeterReadings(() => {
-      load(true);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [load]);
-
-  const refresh = useCallback(() => load(true), [load]);
-
-  return { readings, loading, refreshing, error, refresh };
+  return {
+    readings: query.data ?? [],
+    loading: query.isLoading && !query.data,
+    refreshing: query.isFetching && !query.isLoading,
+    error: query.data ? null : queryErrorMessage(query.error, 'Failed to load reading history.'),
+    refresh,
+  };
 }
-

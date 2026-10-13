@@ -6,6 +6,7 @@ import React, {
   useEffect,
   type ReactNode,
 } from 'react';
+import { queryClient } from '../lib/queryClient';
 import {
   login as authLogin,
   logout as authLogout,
@@ -21,6 +22,8 @@ export interface AuthContextValue {
   isClosing: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Writes a saved profile back into the signed-in session. */
+  applyProfile: (patch: Partial<Profile>) => void;
   /** Clears the first-login gate after OTP, password, and profile are saved. */
   finishOnboarding: () => void;
 }
@@ -76,6 +79,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     setIsClosing(false);
   }, [allowedRole, portalName]);
 
+  const applyProfile = useCallback((patch: Partial<Profile>) => {
+    setProfile((current) => (current ? { ...current, ...patch } : current));
+    setUser((current) =>
+      current ? { ...current, profile: { ...current.profile, ...patch } } : current
+    );
+  }, []);
+
   const finishOnboarding = useCallback(() => {
     const stamp = new Date().toISOString();
     setProfile((current) => (current ? { ...current, onboarded_at: stamp } : current));
@@ -90,6 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     } catch {
       // Clear local state even on network error
     }
+    queryClient.clear();
     setIsAuthenticated(false);
     setUser(null);
     setProfile(null);
@@ -109,9 +120,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       isClosing,
       login,
       logout,
+      applyProfile,
       finishOnboarding,
     }),
-    [isLoading, isAuthenticated, user, profile, showLogin, isClosing, login, logout, finishOnboarding],
+    [isLoading, isAuthenticated, user, profile, showLogin, isClosing, login, logout, applyProfile, finishOnboarding],
   );
 
   return (

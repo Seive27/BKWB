@@ -31,6 +31,7 @@ import {
   subscribeToPayments,
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
+import { isOutstandingBillStatus } from '../types';
 import type { Bill, BillStatus, PaymentMethod } from '../types';
 import { sitiosMatch } from '../utils';
 import { buildExportFilename, singleSharedScope } from '../utils/exportSpreadsheet';
@@ -64,6 +65,10 @@ function getStatusBadge(status: BillStatus) {
       return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">OVERDUE</span>;
     case 'void':
       return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-500">VOID</span>;
+    case 'partially_paid':
+      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-sky-100 text-sky-700">PARTIALLY PAID</span>;
+    case 'carried_forward':
+      return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-500">CARRIED FORWARD</span>;
     default:
       return <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">UNPAID</span>;
   }
@@ -105,7 +110,6 @@ const Payments: React.FC = () => {
   // Payment processing state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentAmount, setPaymentAmount] = useState<string>('');
-  const [amountReceived, setAmountReceived] = useState<string>('');
   const [referenceNumber, setReferenceNumber] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -196,13 +200,13 @@ const Payments: React.FC = () => {
 
   // Unpaid bills count for the resident
   const unpaidCount = useMemo(() => {
-    return residentBills.filter((b) => b.status === 'pending' || b.status === 'overdue').length;
+    return residentBills.filter((b) => isOutstandingBillStatus(b.status)).length;
   }, [residentBills]);
 
   // Displayed bills based on table filters
   const displayedBills = useMemo(() => {
     return residentBills.filter((b) => {
-      if (statusFilter === 'unpaid' && b.status !== 'pending' && b.status !== 'overdue') return false;
+      if (statusFilter === 'unpaid' && !isOutstandingBillStatus(b.status)) return false;
       if (statusFilter === 'overdue' && b.status !== 'overdue') return false;
       if (statusFilter === 'paid' && b.status !== 'paid') return false;
       if (periodFilter && b.billing_period !== periodFilter) return false;
@@ -214,10 +218,9 @@ const Payments: React.FC = () => {
   useEffect(() => {
     if (selectedResident) {
       const defaultUnpaidIds = residentBills
-        .filter((b) => b.status === 'pending' || b.status === 'overdue')
+        .filter((b) => isOutstandingBillStatus(b.status))
         .map((b) => b.id);
       setSelectedBillIds(defaultUnpaidIds);
-      setAmountReceived('');
       setReferenceNumber('');
       setNotes('');
       setProcessingError(null);
@@ -242,11 +245,17 @@ const Payments: React.FC = () => {
     setPaymentAmount(totalSelectedAmount.toFixed(2));
   }, [selectedBillIds, totalSelectedAmount]);
 
+  // `paymentAmount` holds the Amount Received from the consumer. The Amount
+  // Paying (bill amount) is read-only. For cash, any excess over the bill is
+  // returned as change; for every other method the excess becomes credit (RPC).
   const parsedPaymentAmount = parseFloat(paymentAmount) || 0;
-  const parsedAmountReceived = parseFloat(amountReceived) || 0;
   const remainingAfterPayment = Math.max(0, totalSelectedAmount - parsedPaymentAmount);
   const isPartialPayment = parsedPaymentAmount > 0 && remainingAfterPayment >= 0.01;
-  const changeDue = Math.max(0, parsedAmountReceived - parsedPaymentAmount);
+  const excessPayment = Math.max(0, parsedPaymentAmount - totalSelectedAmount);
+  const isOverpayment = excessPayment >= 0.01;
+  const changeDue = paymentMethod === 'cash' ? excessPayment : 0;
+  const amountToApply =
+    paymentMethod === 'cash' ? Math.min(parsedPaymentAmount, totalSelectedAmount) : parsedPaymentAmount;
 
   // Latest payment date for selected resident
   const lastPaymentDate = useMemo(() => {
@@ -258,7 +267,7 @@ const Payments: React.FC = () => {
 
   // Next due date for selected resident
   const nextDueDate = useMemo(() => {
-    const pendingWithDue = residentBills.filter((b) => (b.status === 'pending' || b.status === 'overdue') && b.due_date);
+    const pendingWithDue = residentBills.filter((b) => (isOutstandingBillStatus(b.status)) && b.due_date);
     if (pendingWithDue.length === 0) return 'No pending due';
     pendingWithDue.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
     return formatDate(pendingWithDue[0].due_date);
@@ -273,7 +282,7 @@ const Payments: React.FC = () => {
 
   // Toggle select all displayed bills
   const handleToggleSelectAll = () => {
-    const selectableIds = displayedBills.filter((b) => b.status === 'pending' || b.status === 'overdue').map((b) => b.id);
+    const selectableIds = displayedBills.filter((b) => isOutstandingBillStatus(b.status)).map((b) => b.id);
     const allSelected = selectableIds.every((id) => selectedBillIds.includes(id));
     if (allSelected) {
       setSelectedBillIds((prev) => prev.filter((id) => !selectableIds.includes(id)));
@@ -283,7 +292,7 @@ const Payments: React.FC = () => {
   };
 
   const isAllSelected = useMemo(() => {
-    const selectableIds = displayedBills.filter((b) => b.status === 'pending' || b.status === 'overdue').map((b) => b.id);
+    const selectableIds = displayedBills.filter((b) => isOutstandingBillStatus(b.status)).map((b) => b.id);
     return selectableIds.length > 0 && selectableIds.every((id) => selectedBillIds.includes(id));
   }, [displayedBills, selectedBillIds]);
 
@@ -298,17 +307,9 @@ const Payments: React.FC = () => {
       setProcessingError('Enter a payment amount greater than zero.');
       return;
     }
-    if (parsedPaymentAmount - totalSelectedAmount > 0.009) {
-      setProcessingError(`Payment amount cannot exceed the selected total (${formatPeso(totalSelectedAmount)}).`);
-      return;
-    }
-    if (paymentMethod === 'cash') {
-      const received = parseFloat(amountReceived);
-      if (isNaN(received) || received < parsedPaymentAmount) {
-        setProcessingError(`Amount received must be at least ${formatPeso(parsedPaymentAmount)}.`);
-        return;
-      }
-    }
+    // Underpayments and overpayments are both allowed: a shortfall remains as
+    // the bill balance, while any excess is credited (non-cash) or returned as
+    // change (cash).
     if ((paymentMethod === 'gcash' || paymentMethod === 'bank') && !referenceNumber.trim()) {
       setProcessingError('Please provide a reference/transaction number.');
       return;
@@ -325,12 +326,12 @@ const Payments: React.FC = () => {
     setIsProcessing(true);
     setProcessingError(null);
     try {
-      const amountToApply = Math.round(parsedPaymentAmount * 100) / 100;
+      const applyAmount = Math.round(amountToApply * 100) / 100;
       const res = await recordMultiBillPayment({
         billIds: selectedBillIds,
         accountId: selectedResident.accountId,
         residentId: selectedResident.id,
-        totalAmount: amountToApply,
+        totalAmount: applyAmount,
         paymentMethod,
         referenceNumber: referenceNumber.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -347,7 +348,7 @@ const Payments: React.FC = () => {
           paymentDate: new Date().toISOString(),
           paymentMethod,
           bills: selectedBills,
-          amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) || amountToApply : undefined,
+          amountReceived: paymentMethod === 'cash' ? parsedPaymentAmount : undefined,
           changeDue: paymentMethod === 'cash' ? changeDue : undefined,
         });
 
@@ -355,7 +356,6 @@ const Payments: React.FC = () => {
         setShowSuccessModal(true);
         setSelectedBillIds([]);
         setPaymentAmount('');
-        setAmountReceived('');
         setReferenceNumber('');
         setNotes('');
         await loadData();
@@ -370,7 +370,6 @@ const Payments: React.FC = () => {
   const handleClearSelection = () => {
     setSelectedBillIds([]);
     setPaymentAmount('');
-    setAmountReceived('');
     setReferenceNumber('');
     setNotes('');
     setProcessingError(null);
@@ -480,7 +479,7 @@ const Payments: React.FC = () => {
                 {filteredResidents.slice(0, 8).map((r) => {
                   const isSelected = selectedResident?.id === r.id;
                   const resUnpaid = bills.filter(
-                    (b) => (b.resident_id === r.id || (r.accountId && b.account_id === r.accountId)) && (b.status === 'pending' || b.status === 'overdue')
+                    (b) => (b.resident_id === r.id || (r.accountId && b.account_id === r.accountId)) && (isOutstandingBillStatus(b.status))
                   ).length;
                   return (
                     <button
@@ -707,7 +706,7 @@ const Payments: React.FC = () => {
                         {displayedBills.length > 0 ? (
                           displayedBills.map((b) => {
                             const isChecked = selectedBillIds.includes(b.id);
-                            const isPayable = b.status === 'pending' || b.status === 'overdue';
+                            const isPayable = isOutstandingBillStatus(b.status);
                             return (
                               <tr
                                 key={b.id}
@@ -860,11 +859,31 @@ const Payments: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Amount Paying (supports partial payments) */}
+                  {/* Amount Paying (read-only bill amount) + Amount Received (editable) */}
                   <div className="mb-5 space-y-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 uppercase mb-1.5">
                         Amount Paying
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 font-semibold">
+                          ₱
+                        </span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={totalSelectedAmount.toFixed(2)}
+                          className="w-full pl-8 pr-4 py-2.5 border border-gray-200 rounded-lg bg-gray-100 font-semibold text-gray-500 cursor-not-allowed"
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        Total bill amount the consumer needs to pay for the selected period(s).
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 uppercase mb-1.5">
+                        Amount Received
                       </label>
                       <div className="relative">
                         <span className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">
@@ -881,7 +900,7 @@ const Payments: React.FC = () => {
                         />
                       </div>
                       <p className="mt-1.5 text-xs text-gray-500">
-                        Enter less than the selected total to record a partial payment. Remaining balance stays on the billing period.
+                        Amount received from the consumer. Enter less than Amount Paying to record a partial payment; the remaining balance stays on the billing period. For cash, any excess is returned as change.
                       </p>
                     </div>
 
@@ -891,31 +910,18 @@ const Payments: React.FC = () => {
                         <span className="text-lg font-bold text-amber-900">{formatPeso(remainingAfterPayment)}</span>
                       </div>
                     )}
+
+                    {isOverpayment && paymentMethod !== 'cash' && (
+                      <div className="flex items-center justify-between py-2.5 px-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                        <span className="text-sm text-emerald-800 font-medium">Excess credited to account</span>
+                        <span className="text-lg font-bold text-emerald-900">{formatPeso(excessPayment)}</span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Cash Inputs: Amount Received & Change Due */}
+                  {/* Cash: Change Due (Amount Received above is the cash tendered) */}
                   {paymentMethod === 'cash' ? (
-                    <div className="mb-5 space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 uppercase mb-1.5">
-                          Amount Received
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">
-                            ₱
-                          </span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder={parsedPaymentAmount > 0 ? parsedPaymentAmount.toFixed(2) : '0.00'}
-                            value={amountReceived}
-                            onChange={(e) => setAmountReceived(e.target.value)}
-                            className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold text-gray-900"
-                          />
-                        </div>
-                      </div>
-
+                    <div className="mb-5">
                       <div className="flex items-center justify-between py-2.5 px-3 bg-gray-50 rounded-lg border border-gray-200">
                         <span className="text-sm text-gray-600 font-medium">Change Due</span>
                         <span className="text-lg font-bold text-gray-900">{formatPeso(changeDue)}</span>
@@ -1000,10 +1006,10 @@ const Payments: React.FC = () => {
           resident={selectedResident}
           selectedBills={selectedBills}
           selectedTotal={totalSelectedAmount}
-          paymentAmount={parsedPaymentAmount}
+          paymentAmount={amountToApply}
           remainingBalance={remainingAfterPayment}
           paymentMethod={paymentMethod}
-          amountReceived={parsedAmountReceived}
+          amountReceived={paymentMethod === 'cash' ? parsedPaymentAmount : 0}
           changeDue={changeDue}
           referenceNumber={referenceNumber}
           isProcessing={isProcessing}
@@ -1109,11 +1115,11 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({
           {/* Payment Method & Total */}
           <div className="pt-3 border-t border-gray-200 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-600">Selected Total</span>
+              <span className="text-sm font-medium text-gray-600">Amount Paying</span>
               <span className="text-base font-semibold text-gray-900">{formatPeso(selectedTotal)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-base font-semibold text-gray-700">Amount Paying</span>
+              <span className="text-base font-semibold text-gray-700">Amount Received</span>
               <span className="text-2xl font-extrabold text-primary-600">{formatPeso(paymentAmount)}</span>
             </div>
             {isPartial && (

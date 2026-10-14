@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import {
+  billStatusLabel,
   formatBillDate,
   formatPeriod,
   formatPeso,
@@ -32,11 +33,19 @@ function HistoryBillCard({ bill, onPress }: { bill: ResidentBill; onPress: () =>
         </Text>
         <View
           className={`rounded-md px-2.5 py-1 ${
-            paid ? 'bg-emerald-500' : bill.status === 'overdue' ? 'bg-red-400' : 'bg-amber-400'
+            paid
+              ? 'bg-emerald-500'
+              : bill.status === 'overdue'
+                ? 'bg-red-400'
+                : bill.status === 'partially_paid'
+                  ? 'bg-sky-400'
+                  : bill.status === 'carried_forward'
+                    ? 'bg-slate-400'
+                    : 'bg-amber-400'
           }`}
         >
           <Text className="text-xs font-bold uppercase text-white">
-            {paid ? 'Paid' : bill.status}
+            {billStatusLabel(bill.status)}
           </Text>
         </View>
       </View>

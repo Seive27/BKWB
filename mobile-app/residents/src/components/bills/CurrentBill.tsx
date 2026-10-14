@@ -4,10 +4,12 @@ import { Pressable, Text, View } from 'react-native';
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
 import {
+  billStatusLabel,
   formatBillDate,
   formatPeriod,
   formatPeso,
   getMyBills,
+  isOutstandingBillStatus,
   subscribeToMyBills,
   type ResidentBill,
 } from '@/services/billService';
@@ -30,7 +32,7 @@ export function CurrentBill() {
     getMyBills()
       .then((bills) => {
         // Prefer newest unpaid bill; otherwise newest bill overall.
-        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
+        const unpaid = bills.find((b) => isOutstandingBillStatus(b.status));
         setBill(unpaid ?? bills[0] ?? null);
       })
       .catch((err: unknown) => {
@@ -80,7 +82,7 @@ export function CurrentBill() {
     );
   }
 
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+  const unpaid = isOutstandingBillStatus(bill.status);
 
   return (
     <View className="gap-4">
@@ -124,7 +126,7 @@ export function CurrentBill() {
                       : 'text-amber-400'
                 }`}
               >
-                {bill.status === 'paid' ? 'Paid' : bill.status}
+                {billStatusLabel(bill.status)}
               </Text>
             </View>
           </View>

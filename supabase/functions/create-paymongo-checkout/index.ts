@@ -95,6 +95,8 @@ function getPublishableKey(): string | undefined {
 interface CreateCheckoutPayload {
   /** Supabase bill UUID to pay. */
   bill_id?: string;
+  /** Optional custom payment amount (supports underpayment, exact, or overpayment). */
+  amount?: number;
   /** Optional custom redirect URL after successful payment. */
   success_url?: string;
   /** Optional custom redirect URL if the resident cancels checkout. */
@@ -229,15 +231,25 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ── 7. Validate Amount & Convert to Centavos ──
-  const amountNumber = Number(bill.amount_due);
+  // BKWB supports underpayments, exact payments, and overpayments.
+  // When an explicit amount is provided by the resident, validate and use it;
+  // otherwise default to the current bill.amount_due.
+  let amountNumber = Number(bill.amount_due);
+  if (body.amount !== undefined && body.amount !== null) {
+    const requestedAmount = Number(body.amount);
+    if (Number.isFinite(requestedAmount) && requestedAmount > 0) {
+      amountNumber = requestedAmount;
+    }
+  }
+
   if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-    return fail(400, "Invalid bill amount. Amount must be greater than zero.");
+    return fail(400, "Invalid payment amount. Amount must be greater than zero.");
   }
 
   // PayMongo amounts are represented in integer centavos (e.g. PHP 520.00 = 52000).
   const amountInCentavos = Math.round(amountNumber * 100);
   if (amountInCentavos < 100) {
-    return fail(400, "Bill amount is below minimum processing threshold.");
+    return fail(400, "Payment amount is below the minimum processing threshold (PHP 1.00).");
   }
 
   // ── 8. Prepare Customer & Line Item Metadata ──
@@ -308,6 +320,7 @@ async function handleRequest(req: Request): Promise<Response> {
           bill_number: bill.bill_number ?? "",
           account_id: bill.account_id,
           resident_id: bill.resident_id,
+          payment_amount: String(amountNumber),
         },
         line_items: [
           {

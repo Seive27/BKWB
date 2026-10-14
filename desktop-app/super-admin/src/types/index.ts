@@ -94,7 +94,16 @@ export const METER_READING_STATUS_LABELS: Record<MeterReadingStatus, string> = {
 };
 
 // Mirrors the Supabase `bills` table.
-export type BillStatus = 'pending' | 'paid' | 'overdue' | 'void';
+// `partially_paid` still has an outstanding balance (treated like unpaid).
+// `carried_forward` is a closed bill whose balance moved to a newer bill;
+// it is neither payable nor outstanding.
+export type BillStatus =
+  | 'pending'
+  | 'partially_paid'
+  | 'paid'
+  | 'overdue'
+  | 'void'
+  | 'carried_forward';
 
 export interface Bill {
   id: string;
@@ -112,6 +121,10 @@ export interface Bill {
   extra_components: { id?: string; category: string; price: number }[] | null;
   /** Original bill total (does not decrease with partial payments). */
   amount: number | null;
+  /** Balance carried forward from previous unpaid periods. */
+  previous_balance?: number | null;
+  /** Overpayment credit applied from the resident's credit balance. */
+  credit_applied?: number | null;
   /** Remaining balance after payments. */
   amount_due: number;
   status: BillStatus;
@@ -136,10 +149,17 @@ export interface Bill {
 
 export const BILL_STATUS_LABELS: Record<BillStatus, string> = {
   pending: 'Pending',
+  partially_paid: 'Partially Paid',
   paid: 'Paid',
   overdue: 'Overdue',
   void: 'Void',
+  carried_forward: 'Carried Forward',
 };
+
+/** Bills that still have an outstanding balance the resident must pay. */
+export function isOutstandingBillStatus(status: BillStatus): boolean {
+  return status === 'pending' || status === 'partially_paid' || status === 'overdue';
+}
 
 /** Extra line item on a bill (e.g. maintenance fee, connection fee). */
 export interface BillingComponent {

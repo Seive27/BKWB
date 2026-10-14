@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { usePayMongoCheckout } from '@/hooks/usePayMongoCheckout';
@@ -30,14 +30,22 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function StatusPill({ status }: { status: ResidentBill['status'] | 'pending_verification' | 'rejected' }) {
   const styles = {
     paid: 'bg-emerald-100 text-emerald-700',
+    partially_paid: 'bg-sky-100 text-sky-700',
     pending: 'bg-amber-100 text-amber-700',
     pending_verification: 'bg-amber-100 text-amber-700',
     rejected: 'bg-red-100 text-red-700',
     overdue: 'bg-red-100 text-red-600',
     void: 'bg-slate-100 text-slate-500',
+    carried_forward: 'bg-slate-100 text-slate-500',
   }[status] || 'bg-slate-100 text-slate-500';
 
-  const label = status === 'paid' ? 'Paid' : status === 'pending_verification' ? 'Verifying' : status === 'pending' ? 'Unpaid' : status === 'rejected' ? 'Rejected' : status;
+  const label =
+    status === 'paid' ? 'Paid' :
+    status === 'partially_paid' ? 'Partially Paid' :
+    status === 'pending_verification' ? 'Verifying' :
+    status === 'pending' ? 'Unpaid' :
+    status === 'rejected' ? 'Rejected' :
+    status === 'carried_forward' ? 'Carried Forward' : status;
   return (
     <View className={"self-start rounded-md px-2.5 py-1 " + styles}>
       <Text className="text-xs font-bold uppercase">{label}</Text>
@@ -131,6 +139,12 @@ function PaidReceiptContent({ payment }: { payment: ResidentPayment | null }) {
           value={payment ? formatPaymentMethod(payment.payment_method) : '—'}
         />
         <InfoRow label="Payment Reference" value={payment?.reference_number ?? '—'} />
+        {payment?.paymongo_payment_id ? (
+          <InfoRow label="PayMongo Payment ID" value={payment.paymongo_payment_id} />
+        ) : null}
+        {payment?.paymongo_checkout_session_id ? (
+          <InfoRow label="PayMongo Checkout ID" value={payment.paymongo_checkout_session_id} />
+        ) : null}
         <InfoRow
           label="Payment Date"
           value={payment ? formatPaymentDateTime(payment.payment_date) : '—'}
@@ -187,9 +201,26 @@ export function PaymentJourney({
   // Fire the parent's confirmation callbacks exactly once per bill.
   const confirmedHandledRef = useRef(false);
 
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+  const unpaid = bill.status === 'pending' || bill.status === 'partially_paid' || bill.status === 'overdue';
   const busy = flow.state === 'creating' || flow.state === 'opening';
   const billAmount = Number(bill.amount_due) || 0;
+  const originalCharges = Number(bill.amount ?? bill.amount_due) || 0;
+  const prevBalance = Number(bill.previous_balance) || 0;
+  const creditApplied = Number(bill.credit_applied) || 0;
+
+  const [customAmountText, setCustomAmountText] = useState(
+    billAmount > 0 ? billAmount.toFixed(2) : ''
+  );
+
+  useEffect(() => {
+    setCustomAmountText(billAmount > 0 ? billAmount.toFixed(2) : '');
+  }, [billAmount]);
+
+  const parsedCustomAmount = parseFloat(customAmountText) || 0;
+  const isPartial = parsedCustomAmount > 0 && parsedCustomAmount < billAmount - 0.009;
+  const isOverpay = parsedCustomAmount > billAmount + 0.009;
+  const remainingAfterPayment = Math.max(0, billAmount - parsedCustomAmount);
+  const excessCredit = Math.max(0, parsedCustomAmount - billAmount);
 
   // Load any existing payment record for this bill so already-paid bills and
   // previously submitted payments show their real status instead of a pay button.
@@ -336,6 +367,12 @@ export function PaymentJourney({
             value={payment ? formatPaymentMethod(payment.payment_method) : '—'}
           />
           <InfoRow label="Payment Reference" value={payment?.reference_number ?? '—'} />
+          {payment?.paymongo_payment_id ? (
+            <InfoRow label="PayMongo Payment ID" value={payment.paymongo_payment_id} />
+          ) : null}
+          {payment?.paymongo_checkout_session_id ? (
+            <InfoRow label="PayMongo Checkout ID" value={payment.paymongo_checkout_session_id} />
+          ) : null}
           <InfoRow label="Bill Number" value={bill.bill_number} />
           <InfoRow
             label="Payment Date"
@@ -407,6 +444,9 @@ export function PaymentJourney({
           <InfoRow label="Amount" value={formatPeso(paymentRecord.amount)} />
           <InfoRow label="Method" value={formatPaymentMethod(paymentRecord.payment_method)} />
           <InfoRow label="Reference No." value={paymentRecord.reference_number || '---'} />
+          {paymentRecord.paymongo_payment_id ? (
+            <InfoRow label="PayMongo Payment ID" value={paymentRecord.paymongo_payment_id} />
+          ) : null}
           <InfoRow label="Date Submitted" value={formatPaymentDateTime(paymentRecord.payment_date)} />
           <InfoRow label="Status" value={isCompleted ? 'Verified' : 'Pending'} />
         </View>
@@ -456,6 +496,13 @@ export function PaymentJourney({
           </Text>
           <Text className="text-3xl font-bold text-brand">{formatPeso(billAmount)}</Text>
           <View className="mt-4 border-t border-slate-100 pt-1">
+            <InfoRow label="Original Charges" value={formatPeso(originalCharges)} />
+            {prevBalance > 0 && (
+              <InfoRow label="Previous Balance Carried" value={`+${formatPeso(prevBalance)}`} />
+            )}
+            {creditApplied > 0 && (
+              <InfoRow label="Previous Overpayment Credit" value={`-${formatPeso(creditApplied)}`} />
+            )}
             <InfoRow label="Bill Number" value={bill.bill_number} />
             <InfoRow label="Account Number" value={bill.account?.account_number ?? '—'} />
             <InfoRow label="Billing Period" value={formatPeriod(bill.billing_period)} />
@@ -466,14 +513,55 @@ export function PaymentJourney({
           </View>
         </View>
 
+        {/* Custom Payment Amount Input (Supports Underpayment & Overpayment) */}
+        <View className="rounded-2xl border border-slate-200 bg-white p-5">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Amount You Want to Pay (PHP)
+          </Text>
+          <View className="flex-row items-center rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5">
+            <Text className="mr-2 text-lg font-bold text-slate-600">₱</Text>
+            <TextInput
+              keyboardType="decimal-pad"
+              value={customAmountText}
+              onChangeText={setCustomAmountText}
+              placeholder={billAmount.toFixed(2)}
+              className="flex-1 text-lg font-bold text-slate-900"
+            />
+          </View>
+          <Text className="mt-1.5 text-xs text-slate-500">
+            BKWB supports partial payments below, exact payments equal to, and advance credits above the bill.
+          </Text>
+
+          {isPartial && (
+            <View className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <Text className="text-xs font-bold text-sky-800 uppercase">Underpayment Notice</Text>
+              <Text className="mt-0.5 text-xs leading-4 text-sky-700">
+                You are paying {formatPeso(parsedCustomAmount)}. The remaining balance of {formatPeso(remainingAfterPayment)} will stay outstanding and carry forward to your next billing cycle.
+              </Text>
+            </View>
+          )}
+
+          {isOverpay && (
+            <View className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <Text className="text-xs font-bold text-emerald-800 uppercase">Advance Credit Notice</Text>
+              <Text className="mt-0.5 text-xs leading-4 text-emerald-700">
+                You are paying {formatPeso(parsedCustomAmount)}. The excess of {formatPeso(excessCredit)} will be credited to your account and deducted from your next bill.
+              </Text>
+            </View>
+          )}
+        </View>
+
         <View>
           <Text className="mb-3 text-base font-bold text-slate-800">
             Choose how you want to pay
           </Text>
           <Pressable
-            onPress={() => { void flow.start(); }}
-            disabled={busy}
-            className={"flex-row items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-4 active:border-brand active:bg-slate-50 " + (busy ? 'opacity-60' : '')}
+            onPress={() => {
+              const payAmt = parsedCustomAmount > 0 ? parsedCustomAmount : billAmount;
+              void flow.start(payAmt);
+            }}
+            disabled={busy || parsedCustomAmount <= 0}
+            className={"flex-row items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-4 active:border-brand active:bg-slate-50 " + (busy || parsedCustomAmount <= 0 ? 'opacity-60' : '')}
             accessibilityRole="button"
             accessibilityLabel="Pay Online"
           >
@@ -488,17 +576,16 @@ export function PaymentJourney({
               </Svg>
             </View>
             <View className="flex-1">
-              <Text className="text-base font-bold text-slate-800">Pay Online</Text>
+              <Text className="text-base font-bold text-slate-800">Pay Online via PayMongo</Text>
               <Text className="mt-0.5 text-sm text-slate-400">
-                Secure payment through PayMongo (GCash, Maya, card, and more).
+                GCash, Maya, cards, and direct online banking.
               </Text>
             </View>
           </Pressable>
         </View>
 
         <Text className="text-center text-xs leading-4 text-slate-400">
-          You'll complete the payment on PayMongo's secure checkout page. Your bill
-          is marked paid automatically once PayMongo confirms the payment.
+          You'll complete payment on PayMongo's secure checkout page. Your payment is verified automatically and reflected on your bill.
         </Text>
       </View>
     );

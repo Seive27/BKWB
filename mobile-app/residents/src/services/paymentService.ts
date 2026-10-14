@@ -36,6 +36,9 @@ export interface ResidentPayment {
   payment_method: string;
   payment_date: string;
   reference_number: string | null;
+  paymongo_payment_id?: string | null;
+  paymongo_checkout_session_id?: string | null;
+  paymongo_external_reference?: string | null;
   notes: string | null;
   recorded_by: string | null;
   status: 'completed' | 'pending' | 'cancelled' | 'refunded' | 'rejected';
@@ -69,15 +72,11 @@ const PAYMENT_SELECT =
 
 /**
  * Create a PayMongo Hosted Checkout session for one bill.
- *
- * The edge function re-reads the amount directly from the database, so the
- * amount shown here is informational only — the gateway always charges the
- * authoritative bill amount. Creating a session is NOT proof of payment:
- * the bill stays unpaid until the paymongo-webhook confirms it.
+ * Supports partial payments, exact payments, and overpayments.
  */
 export async function createCheckoutSession(
   billId: string,
-  options?: { appReturnUrl?: string }
+  options?: { appReturnUrl?: string; amount?: number }
 ): Promise<CheckoutSession> {
   const { data, error: fnError } = await supabase.functions.invoke(
     'create-paymongo-checkout',
@@ -85,6 +84,7 @@ export async function createCheckoutSession(
       body: {
         bill_id: billId,
         ...(options?.appReturnUrl ? { app_return_url: options.appReturnUrl } : {}),
+        ...(options?.amount && options.amount > 0 ? { amount: options.amount } : {}),
       },
     }
   );
@@ -179,6 +179,7 @@ export async function verifyPayMongoPayment(
   const confirmed =
     result.success === true &&
     (result.status === 'paid' ||
+      result.status === 'partially_paid' ||
       result.status === 'already_paid' ||
       result.status === 'already_processed');
 

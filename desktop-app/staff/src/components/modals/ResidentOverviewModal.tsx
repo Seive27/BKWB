@@ -94,6 +94,10 @@ function getBillBadge(status: string): string {
       return 'bg-rose-50 text-rose-700 border border-rose-200';
     case 'void':
       return 'bg-gray-100 text-gray-500 border border-gray-200';
+    case 'partially_paid':
+      return 'bg-sky-50 text-sky-700 border border-sky-200';
+    case 'carried_forward':
+      return 'bg-slate-100 text-slate-500 border border-slate-200';
     default:
       return 'bg-amber-50 text-amber-700 border border-amber-200';
   }
@@ -196,7 +200,7 @@ const ResidentOverviewModal: React.FC<{
   const outstandingBalance = useMemo(
     () =>
       bills
-        .filter((b) => b.status === 'pending' || b.status === 'overdue')
+        .filter((b) => b.status === 'pending' || b.status === 'partially_paid' || b.status === 'overdue')
         .reduce((sum, b) => sum + Number(b.amount_due ?? 0), 0),
     [bills]
   );
@@ -515,7 +519,11 @@ const ResidentOverviewModal: React.FC<{
                           <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.due_date)}</td>
                           <td className="px-3.5 py-2.5">
                             <span className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full ${getBillBadge(b.status)}`}>
-                              {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                              {b.status === 'partially_paid'
+                                ? 'Partially Paid'
+                                : b.status === 'carried_forward'
+                                  ? 'Carried Forward'
+                                  : b.status.charAt(0).toUpperCase() + b.status.slice(1)}
                             </span>
                           </td>
                         </tr>

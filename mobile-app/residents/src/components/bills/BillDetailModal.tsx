@@ -7,10 +7,12 @@ import { DetailModal } from '@/components/ui/DetailModal';
 import { useDialog } from '@/components/ui/AppDialog';
 import { friendlyErrorMessage } from '@/lib/errors';
 import {
+  billStatusLabel,
   downloadBillPdf,
   formatBillDate,
   formatPeriod,
   formatPeso,
+  isOutstandingBillStatus,
   type ResidentBill,
 } from '@/services/billService';
 import {
@@ -33,13 +35,15 @@ function Row({ label, value }: { label: string; value: string }) {
 function StatusPill({ status }: { status: ResidentBill['status'] }) {
   const styles = {
     paid: 'bg-emerald-100 text-emerald-700',
+    partially_paid: 'bg-sky-100 text-sky-700',
     pending: 'bg-amber-100 text-amber-700',
     overdue: 'bg-red-100 text-red-600',
     void: 'bg-slate-100 text-slate-500',
+    carried_forward: 'bg-slate-100 text-slate-500',
   }[status];
   return (
     <View className={`self-start rounded-full px-3 py-1 ${styles}`}>
-      <Text className="text-xs font-bold uppercase">{status === 'pending' ? 'Unpaid' : status}</Text>
+      <Text className="text-xs font-bold uppercase">{billStatusLabel(status)}</Text>
     </View>
   );
 }
@@ -72,7 +76,7 @@ export function BillDetailModal({
   const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
   const [payment, setPayment] = useState<ResidentPayment | null>(null);
 
-  const unpaid = bill?.status === 'pending' || bill?.status === 'overdue';
+  const unpaid = bill ? isOutstandingBillStatus(bill.status) : false;
 
   useEffect(() => {
     let cancelled = false;
@@ -204,7 +208,7 @@ export function BillDetailModal({
           <Row label="Due Date" value={bill.due_date ? formatBillDate(bill.due_date) : '—'} />
           <Row
             label="Payment Status"
-            value={bill.status === 'paid' ? 'Paid' : bill.status === 'void' ? 'Voided' : 'Unpaid'}
+            value={billStatusLabel(bill.status)}
           />
           {bill.paid_at ? <Row label="Paid On" value={formatBillDate(bill.paid_at)} /> : null}
         </View>

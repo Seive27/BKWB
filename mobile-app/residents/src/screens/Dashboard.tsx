@@ -117,7 +117,9 @@ export default function Dashboard({
     if (showSpinner) setBillLoading(true);
     getMyBills()
       .then((bills) => {
-        const unpaid = bills.find((b) => b.status === 'pending' || b.status === 'overdue');
+        const unpaid = bills.find(
+          (b) => b.status === 'pending' || b.status === 'partially_paid' || b.status === 'overdue'
+        );
         setCurrentBill(unpaid ?? bills[0] ?? null);
       })
       .catch(() => {
@@ -293,7 +295,8 @@ function CurrentWaterBillCard({
     );
   }
 
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+  const unpaid =
+    bill.status === 'pending' || bill.status === 'partially_paid' || bill.status === 'overdue';
 
   return (
     <View
@@ -329,7 +332,13 @@ function CurrentWaterBillCard({
                     : 'text-amber-700'
               }`}
             >
-              {bill.status === 'paid' ? 'Paid' : bill.status}
+              {bill.status === 'paid'
+                ? 'Paid'
+                : bill.status === 'partially_paid'
+                  ? 'Partially Paid'
+                  : bill.status === 'carried_forward'
+                    ? 'Carried Forward'
+                    : bill.status}
             </Text>
           </View>
         </View>

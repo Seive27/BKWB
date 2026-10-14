@@ -108,27 +108,32 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }
   }, [bill?.id, loadStoredSession]);
 
-  /** Check the database directly for the bill being paid. */
+  /** Check the database directly for the bill being paid or partially settled. */
   const checkBillStatus = useCallback(async (): Promise<boolean> => {
     const billId = billIdRef.current;
     if (!billId) return false;
 
+    const payment = await getPaymentForBill(billId);
+    if (!payment) return false;
+
     const bills = await getMyBills();
     const current = bills.find((b) => b.id === billId);
-    if (!current || current.status !== 'paid') return false;
+    const isSettledOrPartial = current?.status === 'paid' || current?.status === 'partially_paid';
 
-    const payment = await getPaymentForBill(billId);
-    setConfirmedPayment(payment);
-    setStatusMessage('');
-    setState('confirmed');
-    invalidateDebounced(queryClient, queryKeys.bills.all);
-    invalidateDebounced(queryClient, queryKeys.payments.all);
-    try {
-      await AsyncStorage.removeItem(sessionStorageKey(billId));
-    } catch {
-      // ignore
+    if (payment.status === 'completed' || isSettledOrPartial) {
+      setConfirmedPayment(payment);
+      setStatusMessage('');
+      setState('confirmed');
+      invalidateDebounced(queryClient, queryKeys.bills.all);
+      invalidateDebounced(queryClient, queryKeys.payments.all);
+      try {
+        await AsyncStorage.removeItem(sessionStorageKey(billId));
+      } catch {
+        // ignore
+      }
+      return true;
     }
-    return true;
+    return false;
   }, [queryClient]);
 
   /** Ask PayMongo (via edge function) whether this checkout is paid yet. */
@@ -235,7 +240,7 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (customAmount?: number) => {
     const billId = billIdRef.current;
     if (!billId || busyRef.current) return;
     busyRef.current = true;
@@ -247,7 +252,10 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     try {
       setState('creating');
       const appReturnUrl = appPaymentReturnUrl(billId);
-      const session = await createCheckoutSession(billId, { appReturnUrl });
+      const session = await createCheckoutSession(billId, {
+        appReturnUrl,
+        amount: customAmount && customAmount > 0 ? customAmount : undefined,
+      });
       await rememberSession(billId, session.checkoutSessionId);
       setCheckoutReference(session.referenceNumber);
       setState('opening');

@@ -7,13 +7,15 @@ import type { BillFilter } from '@/components/bills/BillFilterTabs';
 import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import { useMyBills } from '@/hooks/useMyBills';
 import {
+  billStatusLabel,
   formatPeriod,
   formatPeso,
+  isOutstandingBillStatus,
   type ResidentBill,
 } from '@/services/billService';
 
 function isUnpaidStatus(status: ResidentBill['status']): boolean {
-  return status === 'pending' || status === 'overdue';
+  return isOutstandingBillStatus(status);
 }
 
 function PaymentBillCard({
@@ -65,7 +67,7 @@ function PaymentBillCard({
                       : 'text-slate-500'
                 }`}
               >
-                {bill.status === 'paid' ? 'Paid' : unpaid ? 'Unpaid' : bill.status}
+                {billStatusLabel(bill.status)}
               </Text>
             </View>
           </View>

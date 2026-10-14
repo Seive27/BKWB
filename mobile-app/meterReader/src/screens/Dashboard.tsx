@@ -107,11 +107,12 @@ export default function Dashboard({
     };
   }, []);
 
-  const totalAssigned = assignments.length;
+  const pendingReadings = assignments.length;
+  const billedReadings = history.filter((r) => r.status === 'billed').length;
+  const totalAssigned = pendingReadings + billedReadings;
   const readingsCompleted = history.filter(
     (r) => r.status === 'approved' || r.status === 'billed',
   ).length;
-  const billedReadings = history.filter((r) => r.status === 'billed').length;
   const routeProgress =
     sitioRoutes.length > 0
       ? Math.round(
@@ -122,8 +123,8 @@ export default function Dashboard({
             )) *
             100,
         )
-      : totalAssigned + readingsCompleted > 0
-        ? Math.round((readingsCompleted / (totalAssigned + readingsCompleted)) * 100)
+      : totalAssigned > 0
+        ? Math.round((billedReadings / totalAssigned) * 100)
         : 0;
   const assignedSitioLabel =
     sitioRoutes.length > 0
@@ -231,7 +232,9 @@ export default function Dashboard({
           </View>
           <View className="mt-2.5 flex-row items-center gap-2">
             <View className="h-2 w-2 rounded-full bg-brand-500" />
-            <Text className="text-[13px] text-navy-muted">Pending readings, not yet read</Text>
+            <Text className="text-[13px] text-navy-muted">
+              Pending ({pendingReadings}) + Billed ({billedReadings})
+            </Text>
           </View>
         </Pressable>
 
@@ -268,7 +271,7 @@ export default function Dashboard({
               <PendingIcon />
             </View>
             <Text className="text-[36px] font-bold text-pending">
-              {totalAssigned}
+              {pendingReadings}
             </Text>
           </Pressable>
         </View>

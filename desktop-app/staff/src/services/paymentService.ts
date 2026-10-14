@@ -215,7 +215,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<Payment>
 
     if (billFetchError) {
       console.warn('[recordPayment] Could not load bill for balance update:', billFetchError.message);
-    } else if (bill && bill.status !== 'paid' && bill.status !== 'void') {
+    } else if (bill && bill.status !== 'paid' && bill.status !== 'void' && bill.status !== 'carried_forward') {
       const newBalance = roundMoney(Number(bill.amount_due ?? 0) - amount);
       const billUpdate =
         newBalance < 0.01
@@ -227,6 +227,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<Payment>
             }
           : {
               amount_due: Math.max(0, newBalance),
+              status: 'partially_paid' as const,
               updated_at: now,
             };
 
@@ -306,7 +307,7 @@ export async function recordMultiBillPayment(
 
     for (const bill of ordered) {
       if (remaining < 0.01) break;
-      if (bill.status === 'paid' || bill.status === 'void') continue;
+      if (bill.status === 'paid' || bill.status === 'void' || bill.status === 'carried_forward') continue;
 
       const due = roundMoney(Number(bill.amount_due ?? 0));
       if (due < 0.01) continue;
@@ -343,6 +344,7 @@ export async function recordMultiBillPayment(
             }
           : {
               amount_due: Math.max(0, newBalance),
+              status: 'partially_paid' as const,
               updated_at: now,
             };
 

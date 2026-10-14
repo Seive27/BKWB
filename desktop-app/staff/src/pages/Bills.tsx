@@ -27,6 +27,7 @@ import {
   getBills,
   setBillStatus
 } from '../services/billService';
+import { BILL_STATUS_LABELS, isOutstandingBillStatus } from '../types';
 import type { Bill, BillStatus } from '../types';
 import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
@@ -80,13 +81,17 @@ function getStatusColor(status: BillStatus): string {
       return 'bg-red-100 text-red-700';
     case 'void':
       return 'bg-gray-100 text-gray-500';
+    case 'partially_paid':
+      return 'bg-sky-100 text-sky-700';
+    case 'carried_forward':
+      return 'bg-slate-100 text-slate-500';
     default:
       return 'bg-amber-100 text-amber-700';
   }
 }
 
 function getStatusText(status: BillStatus): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return BILL_STATUS_LABELS[status] ?? status;
 }
 
 const Bills: React.FC = () => {
@@ -220,7 +225,7 @@ const Bills: React.FC = () => {
     let overdueCount = 0;
     for (const b of bills) {
       collected += moneyCollected(b);
-      if (b.status === 'pending') pendingCount += 1;
+      if (b.status === 'pending' || b.status === 'partially_paid') pendingCount += 1;
       else if (b.status === 'overdue') overdueCount += 1;
     }
     return { total: bills.length, collected, pendingCount, overdueCount };
@@ -664,7 +669,7 @@ const Bills: React.FC = () => {
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
-                              {(bill.status === 'pending' || bill.status === 'overdue') && (
+                              {isOutstandingBillStatus(bill.status) && (
                                 <button
                                   onClick={() => handleMarkPaid(bill)}
                                   disabled={busyId === bill.id}

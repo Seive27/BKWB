@@ -174,15 +174,13 @@ function timelineTitle(event: TicketTimelineEvent): string {
 
 const TIMELINE_PAGE_SIZE = 5;
 
-/** Pages of 5, aligned so the last page is the latest activity. */
+/** Pages of 5, with Page 1 displaying the newest activity. */
 function paginateTimeline<T>(items: T[], pageSize = TIMELINE_PAGE_SIZE): T[][] {
   if (items.length === 0) return [];
+  const reversed = [...items].reverse();
   const pages: T[][] = [];
-  let end = items.length;
-  while (end > 0) {
-    const start = Math.max(0, end - pageSize);
-    pages.unshift(items.slice(start, end));
-    end = start;
+  for (let i = 0; i < reversed.length; i += pageSize) {
+    pages.push(reversed.slice(i, i + pageSize));
   }
   return pages;
 }
@@ -407,17 +405,38 @@ const Tickets: React.FC<{
     return [...filtered].sort((a, b) => {
       switch (sortKey) {
         case 'oldest':
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return (
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime() ||
+            b.id.localeCompare(a.id)
+          );
         case 'priority': {
           const byPriority = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
           if (byPriority !== 0) return byPriority;
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.updated_at || b.created_at).getTime() -
+              new Date(a.updated_at || a.created_at).getTime() ||
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime() ||
+            b.id.localeCompare(a.id)
+          );
         }
-        case 'status':
-          return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+        case 'status': {
+          const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+          if (byStatus !== 0) return byStatus;
+          return (
+            new Date(b.updated_at || b.created_at).getTime() -
+              new Date(a.updated_at || a.created_at).getTime() ||
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime() ||
+            b.id.localeCompare(a.id)
+          );
+        }
         case 'newest':
         default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.updated_at || b.created_at).getTime() -
+              new Date(a.updated_at || a.created_at).getTime() ||
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime() ||
+            b.id.localeCompare(a.id)
+          );
       }
     });
   }, [tickets, searchQuery, categoryFilter, statusFilter, priorityFilter, sortKey]);

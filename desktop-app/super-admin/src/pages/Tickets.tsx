@@ -172,15 +172,13 @@ function timelineTitle(event: TicketTimelineEvent): string {
 
 const TIMELINE_PAGE_SIZE = 5;
 
-/** Pages of 5, aligned so the last page is the latest activity. */
+/** Pages of 5, with Page 1 displaying the newest activity. */
 function paginateTimeline<T>(items: T[], pageSize = TIMELINE_PAGE_SIZE): T[][] {
   if (items.length === 0) return [];
+  const reversed = [...items].reverse();
   const pages: T[][] = [];
-  let end = items.length;
-  while (end > 0) {
-    const start = Math.max(0, end - pageSize);
-    pages.unshift(items.slice(start, end));
-    end = start;
+  for (let i = 0; i < reversed.length; i += pageSize) {
+    pages.push(reversed.slice(i, i + pageSize));
   }
   return pages;
 }

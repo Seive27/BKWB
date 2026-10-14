@@ -19,9 +19,13 @@ export interface ResidentBill {
   extra_components: { id?: string; category: string; price: number }[] | null;
   /** Original bill total (does not decrease with partial payments). */
   amount: number | null;
+  /** Carried-over balance from previous unpaid billing periods. */
+  previous_balance?: number | null;
+  /** Excess credit applied from previous overpayments. */
+  credit_applied?: number | null;
   /** Remaining balance after payments. */
   amount_due: number;
-  status: 'pending' | 'paid' | 'overdue' | 'void';
+  status: 'pending' | 'partially_paid' | 'paid' | 'overdue' | 'void' | 'carried_forward';
   due_date: string | null;
   paid_at: string | null;
   created_at: string;
@@ -38,6 +42,29 @@ export interface ResidentBill {
     middle_name?: string | null;
     last_name: string;
   } | null;
+}
+
+/** A bill still owes money only while pending / partially_paid / overdue. */
+export function isOutstandingBillStatus(status: ResidentBill['status']): boolean {
+  return status === 'pending' || status === 'partially_paid' || status === 'overdue';
+}
+
+/** Human-facing label for a bill status. */
+export function billStatusLabel(status: ResidentBill['status']): string {
+  switch (status) {
+    case 'paid':
+      return 'Paid';
+    case 'partially_paid':
+      return 'Partially Paid';
+    case 'overdue':
+      return 'Overdue';
+    case 'void':
+      return 'Voided';
+    case 'carried_forward':
+      return 'Carried Forward';
+    default:
+      return 'Unpaid';
+  }
 }
 
 export interface BillReceiptLine {
@@ -194,7 +221,7 @@ export async function getBillReceiptData(bill: ResidentBill): Promise<BillReceip
     .from('bills')
     .select(BILL_SELECT)
     .eq('account_id', bill.account_id)
-    .in('status', ['pending', 'overdue'])
+    .in('status', ['pending', 'partially_paid', 'overdue'])
     .is('deleted_at', null)
     .order('billing_period', { ascending: false });
 

@@ -10,10 +10,12 @@ import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { friendlyErrorMessage } from '@/lib/errors';
 import { queryKeys } from '@/lib/queryKeys';
 import {
+  billStatusLabel,
   downloadBillPdf,
   formatBillDate,
   formatPeriod,
   formatPeso,
+  isOutstandingBillStatus,
   type ResidentBill,
 } from '@/services/billService';
 import {
@@ -21,7 +23,6 @@ import {
   formatPaymentMethod,
   getOfficialReceiptForPayment,
   getPaymentForBill,
-  type ResidentPayment,
 } from '@/services/paymentService';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -36,13 +37,15 @@ function Row({ label, value }: { label: string; value: string }) {
 function StatusPill({ status }: { status: ResidentBill['status'] }) {
   const styles = {
     paid: 'bg-emerald-100 text-emerald-700',
+    partially_paid: 'bg-sky-100 text-sky-700',
     pending: 'bg-amber-100 text-amber-700',
     overdue: 'bg-red-100 text-red-600',
     void: 'bg-slate-100 text-slate-500',
+    carried_forward: 'bg-slate-100 text-slate-500',
   }[status];
   return (
     <View className={`self-start rounded-full px-3 py-1 ${styles}`}>
-      <Text className="text-xs font-bold uppercase">{status === 'pending' ? 'Unpaid' : status}</Text>
+      <Text className="text-xs font-bold uppercase">{billStatusLabel(status)}</Text>
     </View>
   );
 }
@@ -74,7 +77,7 @@ export function BillDetailModal({
   const [showPay, setShowPay] = useState(false);
   const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
   const userId = useSessionUserId();
-  const unpaid = bill?.status === 'pending' || bill?.status === 'overdue';
+  const unpaid = bill ? isOutstandingBillStatus(bill.status) : false;
   const paymentQuery = useQuery({
     queryKey: queryKeys.payments.forBill(userId ?? '', bill?.id ?? ''),
     queryFn: () => getPaymentForBill(bill!.id),
@@ -197,7 +200,7 @@ export function BillDetailModal({
           <Row label="Due Date" value={bill.due_date ? formatBillDate(bill.due_date) : '—'} />
           <Row
             label="Payment Status"
-            value={bill.status === 'paid' ? 'Paid' : bill.status === 'void' ? 'Voided' : 'Unpaid'}
+            value={billStatusLabel(bill.status)}
           />
           {bill.paid_at ? <Row label="Paid On" value={formatBillDate(bill.paid_at)} /> : null}
         </View>

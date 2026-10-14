@@ -48,6 +48,10 @@ function getBillBadge(status: string): string {
       return 'bg-rose-50 text-rose-700 border border-rose-200';
     case 'void':
       return 'bg-gray-100 text-gray-500 border border-gray-200';
+    case 'partially_paid':
+      return 'bg-sky-50 text-sky-700 border border-sky-200';
+    case 'carried_forward':
+      return 'bg-slate-100 text-slate-500 border border-slate-200';
     default:
       return 'bg-amber-50 text-amber-700 border border-amber-200';
   }
@@ -70,6 +74,8 @@ function getReadingBadge(status: MeterReading['status']): string {
 }
 
 function statusLabel(status: string): string {
+  if (status === 'partially_paid') return 'Partially Paid';
+  if (status === 'carried_forward') return 'Carried Forward';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
@@ -139,7 +145,7 @@ const BillOverviewModal: React.FC<{
   const outstandingBalance = useMemo(
     () =>
       accountBills
-        .filter((b) => b.status === 'pending' || b.status === 'overdue')
+        .filter((b) => b.status === 'pending' || b.status === 'partially_paid' || b.status === 'overdue')
         .reduce((sum, b) => sum + Number(b.amount_due ?? 0), 0),
     [accountBills]
   );

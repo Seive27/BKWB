@@ -256,7 +256,8 @@ function CurrentWaterBillCard({
     );
   }
 
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+  const unpaid =
+    bill.status === 'pending' || bill.status === 'partially_paid' || bill.status === 'overdue';
 
   return (
     <View
@@ -292,7 +293,13 @@ function CurrentWaterBillCard({
                     : 'text-amber-700'
               }`}
             >
-              {bill.status === 'paid' ? 'Paid' : bill.status}
+              {bill.status === 'paid'
+                ? 'Paid'
+                : bill.status === 'partially_paid'
+                  ? 'Partially Paid'
+                  : bill.status === 'carried_forward'
+                    ? 'Carried Forward'
+                    : bill.status}
             </Text>
           </View>
         </View>

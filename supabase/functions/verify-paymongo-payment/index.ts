@@ -455,10 +455,15 @@ async function handleRequest(req: Request): Promise<Response> {
     return fail("PayMongo reported paid, but amount was missing. Contact barangay billing.");
   }
 
+  const externalReference =
+    paidPayment?.attributes?.external_reference_number ??
+    null;
+
   const notesJson = JSON.stringify({
     provider: "paymongo",
     checkout_session_id: resolvedCheckoutSessionId || null,
     paymongo_payment_id: paymongoPaymentId,
+    paymongo_external_reference: externalReference,
     raw_payment_method: paymentMethod,
     source: "verify-paymongo-payment",
     used_payment_list_fallback: usedFallback,
@@ -476,6 +481,7 @@ async function handleRequest(req: Request): Promise<Response> {
       p_checkout_session_id: resolvedCheckoutSessionId || paymongoPaymentId,
       p_event_id: `verify_${resolvedCheckoutSessionId || paymongoPaymentId}`,
       p_notes: notesJson,
+      p_external_reference: externalReference,
     }
   );
 

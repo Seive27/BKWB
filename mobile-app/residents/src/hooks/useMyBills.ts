@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { queryErrorMessage } from '@/lib/queryError';
 import { queryKeys } from '@/lib/queryKeys';
-import { getMyBills, type ResidentBill } from '@/services/billService';
+import { getMyBills, isOutstandingBillStatus, type ResidentBill } from '@/services/billService';
 
 export function pickCurrentBill(bills: ResidentBill[]): ResidentBill | null {
-  const unpaid = bills.find((bill) => bill.status === 'pending' || bill.status === 'overdue');
+  const unpaid = bills.find((bill) => isOutstandingBillStatus(bill.status));
   return unpaid ?? bills[0] ?? null;
 }
 

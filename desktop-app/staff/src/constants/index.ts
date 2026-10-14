@@ -45,7 +45,9 @@ export type TicketStatus = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
 export const BILL_STATUS = {
   PAID: 'paid',
   PENDING: 'pending',
+  PARTIALLY_PAID: 'partially_paid',
   OVERDUE: 'overdue',
+  CARRIED_FORWARD: 'carried_forward',
 } as const;
 
 export type BillStatus = (typeof BILL_STATUS)[keyof typeof BILL_STATUS];

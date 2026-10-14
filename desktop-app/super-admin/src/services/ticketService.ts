@@ -99,7 +99,9 @@ export async function getTickets(
     .from('tickets')
     .select(TICKET_SELECT)
     .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
 
   if (options.limit) {
     query = query.limit(options.limit);

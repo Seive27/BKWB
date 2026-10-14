@@ -5,9 +5,11 @@ import { BillDetailModal } from '@/components/bills/BillDetailModal';
 import { PaymentFlowModal } from '@/components/payments/PaymentFlowModal';
 import { pickCurrentBill, useMyBills } from '@/hooks/useMyBills';
 import {
+  billStatusLabel,
   formatBillDate,
   formatPeriod,
   formatPeso,
+  isOutstandingBillStatus,
 } from '@/services/billService';
 
 const PAYMENT_OPTIONS = [
@@ -51,7 +53,7 @@ export function CurrentBill() {
     );
   }
 
-  const unpaid = bill.status === 'pending' || bill.status === 'overdue';
+  const unpaid = isOutstandingBillStatus(bill.status);
 
   return (
     <View className="gap-4">
@@ -95,7 +97,7 @@ export function CurrentBill() {
                       : 'text-amber-400'
                 }`}
               >
-                {bill.status === 'paid' ? 'Paid' : bill.status}
+                {billStatusLabel(bill.status)}
               </Text>
             </View>
           </View>

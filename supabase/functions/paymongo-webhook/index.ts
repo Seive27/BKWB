@@ -442,6 +442,9 @@ async function handleRequest(req: Request): Promise<Response> {
   const paymentsList = checkoutAttr?.payments ?? [];
   const paymentObj = paymentsList[0] ?? checkoutAttr?.payment;
   const paymongoPaymentId = paymentObj?.id ?? checkoutSessionId;
+  const externalReference =
+    paymentObj?.attributes?.external_reference_number ??
+    null;
 
   // Extract paid amount in centavos
   const paidCentavos =
@@ -498,6 +501,7 @@ async function handleRequest(req: Request): Promise<Response> {
     checkout_session_id: checkoutSessionId,
     event_id: eventId,
     paymongo_payment_id: paymongoPaymentId,
+    paymongo_external_reference: externalReference,
     raw_payment_method: rawMethod ?? "unknown",
   });
 
@@ -514,6 +518,7 @@ async function handleRequest(req: Request): Promise<Response> {
       p_checkout_session_id: checkoutSessionId,
       p_event_id: eventId,
       p_notes: notesJson,
+      p_external_reference: externalReference,
     }
   );
 

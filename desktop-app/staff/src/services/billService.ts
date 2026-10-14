@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { getBillingConfig } from './billingConfigService';
+import { isOutstandingBillStatus } from '../types';
 import type { Bill, BillStatus, MeterReading } from '../types';
 
 // ─── Query Options ───
@@ -164,7 +165,7 @@ export async function getUnpaidBillsByAccount(accountId: string): Promise<Bill[]
     .from('bills')
     .select(BILL_SELECT)
     .eq('account_id', accountId)
-    .in('status', ['pending', 'overdue'])
+    .in('status', ['pending', 'partially_paid', 'overdue'])
     .is('deleted_at', null)
     .order('billing_period', { ascending: false });
 
@@ -202,7 +203,7 @@ function previousPeriod(period: string): string | null {
 function receiptStatusLabel(status: BillStatus): BillReceiptLine['status'] {
   if (status === 'paid') return 'Paid';
   if (status === 'void') return 'Void';
-  return 'Unpaid'; // pending + overdue
+  return 'Unpaid'; // pending + partially_paid + overdue
 }
 
 async function getGracePeriodDays(): Promise<number> {
@@ -320,7 +321,7 @@ async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
     });
 
     // Extra components only on unpaid / current open bills (avoid re-listing paid fees).
-    if (b.status === 'pending' || b.status === 'overdue' || b.id === bill.id) {
+    if (isOutstandingBillStatus(b.status) || b.id === bill.id) {
       for (const c of extras) {
         const price = Number(c.price) || 0;
         const due = Math.min(price, remainingDue);
@@ -341,7 +342,7 @@ async function buildBillReceiptData(bill: Bill): Promise<BillReceiptData> {
 
   // Charge total: unpaid only (paid prior months stay on the receipt for readings).
   const totalAmountDue = lineBills
-    .filter((b) => b.status === 'pending' || b.status === 'overdue')
+    .filter((b) => isOutstandingBillStatus(b.status))
     .reduce((sum, b) => sum + (Number(b.amount_due) || 0), 0);
 
   let lastPayment: BillReceiptData['lastPayment'] = null;
@@ -433,7 +434,7 @@ export async function previewBillReceiptForReading(
     .select('id')
     .eq('account_id', reading.account_id)
     .eq('billing_period', dates.period)
-    .in('status', ['pending', 'overdue'])
+    .in('status', ['pending', 'partially_paid', 'overdue'])
     .is('deleted_at', null)
     .maybeSingle();
 

@@ -4,6 +4,7 @@ import {
   Cpu,
   Shield,
   Wallet,
+  Upload,
   CheckCircle,
   AlertTriangle,
   Save,
@@ -17,6 +18,9 @@ import { useSystemSettings } from '../hooks/useSystemSettings';
 import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { queryKeys } from '../lib/queryKeys';
 import { saveSystemSettings } from '../services/systemSettingsService';
+import DataImportPanel from '../components/DataImportPanel';
+
+const IMPORT_TAB = 'import';
 
 const CATEGORY_ICONS: Record<string, React.FC<{ className?: string }>> = {
   general: Building2,
@@ -66,6 +70,7 @@ const SystemSettings: React.FC = () => {
     return map;
   }, [settings]);
 
+  const isImportTab = activeCategory === IMPORT_TAB;
   const activeSettings = settingsByCategory[activeCategory] ?? [];
 
   const dirtyEntries = useMemo(() => {
@@ -151,8 +156,13 @@ const SystemSettings: React.FC = () => {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-1">System Settings</h1>
-            <p className="text-sm text-gray-600">Manage global configuration using a flexible key-value store.</p>
+            <p className="text-sm text-gray-600">
+              {isImportTab
+                ? 'Download the consumer template, fill it in, and import it into profiles, meters, and resident accounts.'
+                : 'Manage global configuration using a flexible key-value store.'}
+            </p>
           </div>
+          {!isImportTab && (
           <div className="flex items-center space-x-3">
             <button
               onClick={handleDiscard}
@@ -171,6 +181,7 @@ const SystemSettings: React.FC = () => {
               <span>{saving ? 'Saving…' : dirtyEntries.length > 0 ? 'Save (' + dirtyEntries.length + ')' : 'Save Configuration'}</span>
             </button>
           </div>
+          )}
         </div>
 
         {/* Category Tabs */}
@@ -196,8 +207,24 @@ const SystemSettings: React.FC = () => {
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setActiveCategory(IMPORT_TAB)}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              isImportTab
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            <span>Import</span>
+          </button>
         </div>
 
+        {isImportTab ? (
+          <DataImportPanel />
+        ) : (
+        <>
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center space-x-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -239,6 +266,8 @@ const SystemSettings: React.FC = () => {
               );
             })}
           </div>
+        )}
+        </>
         )}
       </div>
 

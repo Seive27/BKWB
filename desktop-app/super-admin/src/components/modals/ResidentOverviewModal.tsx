@@ -154,16 +154,9 @@ const ResidentOverviewModal: React.FC<{
     return null;
   }, [resident.currentReading, resident.previousReading]);
 
-  /** Latest bill = newest billing period (list arrives newest first). */
-  const currentBill = bills.length > 0 ? bills[0] : null;
-
-  const outstandingBalance = useMemo(
-    () =>
-      bills
-        .filter((b) => b.status === 'pending' || b.status === 'partially_paid' || b.status === 'overdue')
-        .reduce((sum, b) => sum + Number(b.amount_due ?? 0), 0),
-    [bills]
-  );
+  const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
+  /** Newest period until a row is clicked. */
+  const selectedBill = bills.find((b) => b.id === selectedBillId) ?? bills[0] ?? null;
 
   const statusBadge = getStatusBadge(resident.connectionStatus);
 
@@ -414,12 +407,11 @@ const ResidentOverviewModal: React.FC<{
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
                     <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Current Bill</p>
-                    {currentBill ? (
+                    {selectedBill ? (
                       <>
-                        <p className="text-xl font-bold text-gray-900">{formatPeso(currentBill.amount_due)}</p>
+                        <p className="text-xl font-bold text-gray-900">{formatPeso(selectedBill.amount ?? selectedBill.amount_due)}</p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {formatPeriod(currentBill.billing_period)}
-                          {currentBill.due_date ? ` · Due ${formatDate(currentBill.due_date)}` : ''}
+                          {formatPeriod(selectedBill.billing_period)}
                         </p>
                       </>
                     ) : (
@@ -427,13 +419,11 @@ const ResidentOverviewModal: React.FC<{
                     )}
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Outstanding Balance</p>
-                    {outstandingBalance > 0 ? (
-                      <p className="text-xl font-bold text-rose-600">{formatPeso(outstandingBalance)}</p>
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Total Outstanding Balance</p>
+                    {selectedBill && Number(selectedBill.amount_due) > 0 ? (
+                      <p className="text-xl font-bold text-rose-600">{formatPeso(selectedBill.amount_due)}</p>
                     ) : (
-                      <p className="text-xs font-semibold text-emerald-600 mt-1">
-                        {bills.some((b) => b.status === 'paid') ? 'Fully Settled' : '₱0.00 Outstanding'}
-                      </p>
+                      <p className="text-xl font-bold text-emerald-600">{formatPeso(0)}</p>
                     )}
                   </div>
                 </div>
@@ -459,6 +449,7 @@ const ResidentOverviewModal: React.FC<{
                       <tr>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Billing Period</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Amount</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Due Date</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
@@ -466,7 +457,11 @@ const ResidentOverviewModal: React.FC<{
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-xs">
                       {bills.map((b) => (
-                        <tr key={b.id} className="hover:bg-gray-50">
+                        <tr
+                          key={b.id}
+                          onClick={() => setSelectedBillId(b.id)}
+                          className={`cursor-pointer ${b.id === selectedBill?.id ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
+                        >
                           <td className="px-3.5 py-2.5 text-gray-900 font-medium">
                             {formatPeriod(b.billing_period)}
                             <span className="block text-[10px] text-gray-400 font-mono">{b.bill_number}</span>
@@ -474,7 +469,8 @@ const ResidentOverviewModal: React.FC<{
                           <td className="px-3.5 py-2.5 text-gray-600">
                             {b.consumption != null ? `${b.consumption} m³` : '—'}
                           </td>
-                          <td className="px-3.5 py-2.5 font-bold text-gray-900">{formatPeso(b.amount_due)}</td>
+                          <td className="px-3.5 py-2.5 font-bold text-gray-900">{formatPeso(b.amount ?? b.amount_due)}</td>
+                          <td className="px-3.5 py-2.5 font-semibold text-gray-700">{formatPeso(b.amount_due)}</td>
                           <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.due_date)}</td>
                           <td className="px-3.5 py-2.5">
                             <span className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full ${getBillBadge(b.status)}`}>

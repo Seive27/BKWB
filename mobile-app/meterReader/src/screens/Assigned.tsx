@@ -135,6 +135,7 @@ export default function Assigned({
   ]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSitio, setActiveSitio] = useState<string | null>(null);
+  const [prefillMeterNumber, setPrefillMeterNumber] = useState<string | null>(null);
   const [consumersSitio, setConsumersSitio] = useState<string | null>(null);
   const [consumersSheetTop, setConsumersSheetTop] = useState(0);
 
@@ -284,6 +285,7 @@ export default function Assigned({
               group={group}
               onStartReading={(sitio) => {
                 lastStartedSitio = sitio;
+                setPrefillMeterNumber(null);
                 setActiveSitio(sitio);
               }}
               onViewConsumers={openConsumers}
@@ -297,8 +299,12 @@ export default function Assigned({
       <StartReadingModal
         visible={activeSitio !== null}
         defaultSitio={activeSitio ?? undefined}
+        defaultMeterNumber={prefillMeterNumber ?? undefined}
         lockSitio
-        onClose={() => setActiveSitio(null)}
+        onClose={() => {
+          setActiveSitio(null);
+          setPrefillMeterNumber(null);
+        }}
         onConfirm={async (payload) => {
           const current = Number(payload.currentReading.replace(/,/g, ''));
           if (!Number.isFinite(current)) {
@@ -358,6 +364,20 @@ export default function Assigned({
         sitio={consumersSitio}
         topOffset={consumersSheetTop}
         onClose={() => setConsumersSitio(null)}
+        onSelectPending={(reading) => {
+          const meterNumber = reading.meter?.meter_number?.trim();
+          if (!meterNumber || !consumersSitio) {
+            Alert.alert(
+              'Missing meter number',
+              'This consumer has no meter number on file.',
+            );
+            return;
+          }
+          lastStartedSitio = consumersSitio;
+          setPrefillMeterNumber(meterNumber);
+          setActiveSitio(consumersSitio);
+          setConsumersSitio(null);
+        }}
       />
     </View>
   );

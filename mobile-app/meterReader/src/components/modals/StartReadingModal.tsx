@@ -53,6 +53,8 @@ type StartReadingModalProps = {
   /** Pre-fill (and optionally lock) the sitio from the Assigned card. */
   defaultSitio?: string;
   lockSitio?: boolean;
+  /** Pre-fill the meter number when a pending consumer is selected. */
+  defaultMeterNumber?: string;
   /** Called when the reader confirms a complete reading entry. */
   onConfirm?: (payload: StartReadingPayload) => void | Promise<void>;
 };
@@ -71,6 +73,7 @@ export function StartReadingModal({
   onClose,
   defaultSitio,
   lockSitio = false,
+  defaultMeterNumber,
   onConfirm,
 }: StartReadingModalProps) {
   const [dateOfReading] = useState(() => formatReadingDate(new Date()));
@@ -122,6 +125,7 @@ export function StartReadingModal({
   useLayoutEffect(() => {
     if (visible) {
       setSitio(defaultSitio ?? '');
+      setMeterNumber(defaultMeterNumber ?? '');
       setSitioOpen(false);
       translateY.value = SHEET_MAX_HEIGHT;
       translateY.value = withTiming(0, {
@@ -131,7 +135,7 @@ export function StartReadingModal({
     } else {
       translateY.value = SHEET_MAX_HEIGHT;
     }
-  }, [visible, defaultSitio, translateY]);
+  }, [visible, defaultSitio, defaultMeterNumber, translateY]);
 
   const applyPhotoAsset = useCallback((asset: ImagePicker.ImagePickerAsset) => {
     if (!asset.uri) return;

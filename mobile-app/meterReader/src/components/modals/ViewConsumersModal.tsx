@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SearchBar } from '@/components/assigned/SearchBar';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { cardShadow } from '@/components/ui/cardShadow';
 import { useSessionUserId } from '@/hooks/useSessionUserId';
@@ -39,6 +40,8 @@ type ViewConsumersModalProps = {
   /** Window Y where the sheet top should stop (below Search Assigned Sitios). */
   topOffset: number;
   onClose: () => void;
+  /** Pending cards open Start Reading with this consumer's meter number. */
+  onSelectPending?: (reading: MeterReading) => void;
 };
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -69,7 +72,22 @@ function currentMonthKey(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function ConsumerRow({ reading }: { reading: MeterReading }) {
+function matchesPendingSearch(reading: MeterReading, query: string): boolean {
+  const name = reading.resident
+    ? `${reading.resident.first_name} ${reading.resident.last_name}`.trim().toLowerCase()
+    : '';
+  const account = reading.account?.account_number?.toLowerCase() ?? '';
+  const meter = reading.meter?.meter_number?.toLowerCase() ?? '';
+  return name.includes(query) || account.includes(query) || meter.includes(query);
+}
+
+function ConsumerRow({
+  reading,
+  onPress,
+}: {
+  reading: MeterReading;
+  onPress?: () => void;
+}) {
   const residentName = reading.resident
     ? `${reading.resident.first_name} ${reading.resident.last_name}`.trim()
     : 'Unknown Resident';
@@ -77,9 +95,9 @@ function ConsumerRow({ reading }: { reading: MeterReading }) {
   const meterNumber = reading.meter?.meter_number ?? '—';
   const sitio = reading.account?.sitio?.trim() || 'Unassigned Sitio';
 
-  return (
+  const card = (
     <View
-      className="mb-2.5 overflow-hidden rounded-2xl bg-white border border-slate-200 p-4"
+      className="overflow-hidden rounded-2xl bg-white border border-slate-200 p-4"
       style={cardShadow}
     >
       <View className="flex-row items-start justify-between gap-2 mb-1.5">
@@ -103,6 +121,21 @@ function ConsumerRow({ reading }: { reading: MeterReading }) {
       </View>
     </View>
   );
+
+  if (!onPress) {
+    return <View className="mb-2.5">{card}</View>;
+  }
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="mb-2.5 active:opacity-85"
+      accessibilityRole="button"
+      accessibilityLabel={`Start reading for ${residentName}, meter ${meterNumber}`}
+    >
+      {card}
+    </Pressable>
+  );
 }
 
 export function ViewConsumersModal({
@@ -110,6 +143,7 @@ export function ViewConsumersModal({
   sitio,
   topOffset,
   onClose,
+  onSelectPending,
 }: ViewConsumersModalProps) {
   const insets = useSafeAreaInsets();
   const userId = useSessionUserId();
@@ -127,6 +161,7 @@ export function ViewConsumersModal({
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [monthOpen, setMonthOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [pendingSearch, setPendingSearch] = useState('');
 
   // Full-width bottom sheet that rises up to just below the search bar.
   const safeTop = Math.max(topOffset, 80);
@@ -171,6 +206,7 @@ export function ViewConsumersModal({
     setTab('pending');
     setMonthOpen(false);
     setPage(1);
+    setPendingSearch('');
   }, [visible, sitio]);
 
   useEffect(() => {
@@ -199,7 +235,7 @@ export function ViewConsumersModal({
 
   useEffect(() => {
     setPage(1);
-  }, [tab, selectedMonth]);
+  }, [tab, selectedMonth, pendingSearch]);
 
   const monthFiltered = useMemo(
     () => readings.filter((r) => readingMonthKey(r) === selectedMonth),
@@ -210,12 +246,17 @@ export function ViewConsumersModal({
     () => monthFiltered.filter((r) => r.status === 'assigned'),
     [monthFiltered],
   );
+  const filteredPending = useMemo(() => {
+    const query = pendingSearch.trim().toLowerCase();
+    if (!query) return pending;
+    return pending.filter((reading) => matchesPendingSearch(reading, query));
+  }, [pending, pendingSearch]);
   const completed = useMemo(
     () => monthFiltered.filter((r) => r.status !== 'assigned'),
     [monthFiltered],
   );
 
-  const list = tab === 'pending' ? pending : completed;
+  const list = tab === 'pending' ? filteredPending : completed;
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageItems = useMemo(() => {
@@ -399,6 +440,14 @@ export function ViewConsumersModal({
             Reading for the month of {monthLabel}
           </Text>
 
+          {tab === 'pending' ? (
+            <SearchBar
+              value={pendingSearch}
+              onChangeText={setPendingSearch}
+              placeholder="Search name, account, or meter"
+            />
+          ) : null}
+
           {loading ? (
             <View className="flex-1 items-center justify-center py-10">
               <ActivityIndicator size="large" color="#186252" />
@@ -416,7 +465,17 @@ export function ViewConsumersModal({
               <FlatList
                 data={pageItems}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => <ConsumerRow reading={item} />}
+                renderItem={({ item }) => (
+                  <ConsumerRow
+                    reading={item}
+                    onPress={
+                      tab === 'pending' && onSelectPending
+                        ? () => onSelectPending(item)
+                        : undefined
+                    }
+                  />
+                )}
+                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 style={styles.list}
                 contentContainerStyle={{ paddingBottom: 8, flexGrow: 1 }}
@@ -424,7 +483,9 @@ export function ViewConsumersModal({
                   <View className="items-center px-4 py-10">
                     <Text className="text-center text-[15px] text-navy-muted">
                       {tab === 'pending'
-                        ? `No pending consumers for ${monthLabel}.`
+                        ? pendingSearch.trim()
+                          ? 'No pending consumers match your search.'
+                          : `No pending consumers for ${monthLabel}.`
                         : `No completed readings for ${monthLabel}.`}
                     </Text>
                   </View>

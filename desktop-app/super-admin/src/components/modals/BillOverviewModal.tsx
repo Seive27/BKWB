@@ -119,6 +119,7 @@ const BillOverviewModal: React.FC<{
 }> = ({ bill, onClose, initialTab = 'billing' }) => {
   const { isAuthenticated } = useAuth();
   const [tab, setTab] = useState<OverviewTab>(initialTab);
+  const [selectedHistoryId, setSelectedHistoryId] = useState(bill.id);
   const accountBillsQuery = useQuery({
     queryKey: queryKeys.bills.list({ accountId: bill.account_id }),
     queryFn: () => getBills({ accountId: bill.account_id }).catch(() => [bill]),
@@ -140,6 +141,7 @@ const BillOverviewModal: React.FC<{
 
   useEffect(() => {
     setTab(initialTab);
+    setSelectedHistoryId(bill.id);
   }, [bill.id, initialTab]);
 
   const outstandingBalance = useMemo(
@@ -155,6 +157,7 @@ const BillOverviewModal: React.FC<{
       [...accountBills].sort((a, b) => b.billing_period.localeCompare(a.billing_period)),
     [accountBills]
   );
+  const selectedHistoryBill = historyBills.find((b) => b.id === selectedHistoryId) ?? historyBills[0] ?? null;
 
   const latestReading = readings[0] ?? null;
 
@@ -219,8 +222,8 @@ const BillOverviewModal: React.FC<{
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
-                  <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Amount Due</p>
-                  <p className="text-xl font-bold text-gray-900">{formatPeso(bill.amount_due)}</p>
+                  <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Bill Amount</p>
+                  <p className="text-xl font-bold text-gray-900">{formatPeso(bill.amount ?? bill.amount_due)}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {formatPeriod(bill.billing_period)}
                     {bill.due_date ? ` · Due ${formatDate(bill.due_date)}` : ''}
@@ -299,6 +302,10 @@ const BillOverviewModal: React.FC<{
                       <span className="text-gray-900 font-medium">{formatPeso(c.price)}</span>
                     </div>
                   ))}
+                  <div className="flex justify-between py-2.5 text-sm">
+                    <span className="text-gray-500">Bill Amount</span>
+                    <span className="text-gray-900 font-medium">{formatPeso(bill.amount ?? bill.amount_due)}</span>
+                  </div>
                   <div className="flex justify-between py-3 bg-primary-50 -mx-4 px-4 rounded-b-lg mt-1">
                     <span className="text-sm font-semibold text-primary-800">Amount Due</span>
                     <span className="text-base font-bold text-primary-800">{formatPeso(bill.amount_due)}</span>
@@ -313,21 +320,18 @@ const BillOverviewModal: React.FC<{
               {!loadingData && historyBills.length > 0 && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Selected Bill</p>
-                    <p className="text-xl font-bold text-gray-900">{formatPeso(bill.amount_due)}</p>
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Current Bill</p>
+                    <p className="text-xl font-bold text-gray-900">{formatPeso((selectedHistoryBill ?? historyBills[0]).amount ?? (selectedHistoryBill ?? historyBills[0]).amount_due)}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {formatPeriod(bill.billing_period)}
-                      {bill.due_date ? ` · Due ${formatDate(bill.due_date)}` : ''}
+                      {formatPeriod((selectedHistoryBill ?? historyBills[0]).billing_period)}
                     </p>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Outstanding Balance</p>
-                    {outstandingBalance > 0 ? (
-                      <p className="text-xl font-bold text-rose-600">{formatPeso(outstandingBalance)}</p>
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Total Outstanding Balance</p>
+                    {Number((selectedHistoryBill ?? historyBills[0]).amount_due) > 0 ? (
+                      <p className="text-xl font-bold text-rose-600">{formatPeso((selectedHistoryBill ?? historyBills[0]).amount_due)}</p>
                     ) : (
-                      <p className="text-xs font-semibold text-emerald-600 mt-1">
-                        {historyBills.some((b) => b.status === 'paid') ? 'Fully Settled' : '₱0.00 Outstanding'}
-                      </p>
+                      <p className="text-xl font-bold text-emerald-600">{formatPeso(0)}</p>
                     )}
                   </div>
                 </div>
@@ -363,7 +367,8 @@ const BillOverviewModal: React.FC<{
                       {historyBills.map((b) => (
                         <tr
                           key={b.id}
-                          className={`hover:bg-gray-50 ${b.id === bill.id ? 'bg-primary-50/50' : ''}`}
+                          onClick={() => setSelectedHistoryId(b.id)}
+                          className={`cursor-pointer ${b.id === (selectedHistoryBill?.id ?? bill.id) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
                         >
                           <td className="px-3.5 py-2.5 text-gray-900 font-medium">
                             {formatPeriod(b.billing_period)}

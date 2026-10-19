@@ -158,7 +158,7 @@ const SystemSettings: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900 mb-1">System Settings</h1>
             <p className="text-sm text-gray-600">
               {isImportTab
-                ? 'Download the consumer template, fill it in, and import it into profiles, meters, and resident accounts.'
+                ? 'Import consumers first, then download bill history for one sitio and one month. Only accounts still missing that month are filled in.'
                 : 'Manage global configuration using a flexible key-value store.'}
             </p>
           </div>

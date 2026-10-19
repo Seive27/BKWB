@@ -923,9 +923,14 @@ DECLARE
 BEGIN
   -- Refresh previous when assigning, submitting, or approving.
   -- Meter readers cannot set this column themselves; the DB owns it.
-  IF TG_OP = 'INSERT'
-     OR NEW.status IN ('assigned', 'pending_review')
-     OR (NEW.status = 'approved' AND OLD.status IS DISTINCT FROM NEW.status)
+  -- Imported history keeps the sheet's previous reading. A normal insert
+  -- still takes the previous reading from the latest billed reading.
+  IF COALESCE(NEW.remarks, '') <> 'Imported bill history'
+     AND (
+       TG_OP = 'INSERT'
+       OR NEW.status IN ('assigned', 'pending_review')
+       OR (NEW.status = 'approved' AND OLD.status IS DISTINCT FROM NEW.status)
+     )
   THEN
     SELECT mr.current_reading
     INTO v_resolved

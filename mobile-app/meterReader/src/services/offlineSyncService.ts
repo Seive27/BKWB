@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  submitReading,
+  submitCorrectedReading,
   submitReadingByMeterNumber,
 } from '@/services/meterReadingService';
 
@@ -13,6 +13,8 @@ type PendingReadingById = {
   reading_id: string;
   current_reading: number;
   notes?: string;
+  photo_uri?: string | null;
+  photo_base64?: string | null;
 };
 
 type PendingReadingByMeter = {
@@ -94,7 +96,13 @@ export async function syncPendingReadings(): Promise<void> {
       const item = queue[index];
       try {
         if ('reading_id' in item) {
-          await submitReading(item.reading_id, item.current_reading, item.notes);
+          await submitCorrectedReading({
+            id: item.reading_id,
+            currentReading: item.current_reading,
+            remarks: item.notes,
+            photoUri: item.photo_uri,
+            photoBase64: item.photo_base64,
+          });
         } else {
           await submitReadingByMeterNumber({
             meterNumber: item.meter_number,

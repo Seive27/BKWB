@@ -492,6 +492,66 @@ export async function getPendingPayments(): Promise<Payment[]> {
   return data as any[];
 }
 
+/** Online methods written by PayMongo webhook / hosted checkout. */
+const ONLINE_PAYMENT_METHODS = ['card', 'paymaya', 'grab_pay', 'online'] as const;
+
+/**
+ * Recent completed online / PayMongo payments for the admin Payments feed.
+ * These are auto-confirmed by the webhook (no staff approve step).
+ */
+export async function getRecentOnlinePayments(limit = 20): Promise<Payment[]> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*, bills(bill_number, billing_period), profiles:resident_id(first_name, last_name)')
+    .eq('status', 'completed')
+    .in('payment_method', [...ONLINE_PAYMENT_METHODS])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as any[];
+}
+
+/** Quote a PostgREST filter value so reserved characters stay inside the match. */
+function quoteFilterValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Find completed payments by PayMongo id, checkout session, wallet reference, or stored reference.
+ * Matches a substring so a GCash receipt number or a `pay_` / `cs_` id both resolve.
+ */
+export async function searchPaymentsByReference(query: string, limit = 25): Promise<Payment[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  const literal = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const pattern = quoteFilterValue(`%${literal}%`);
+  const orFilter = [
+    'reference_number',
+    'paymongo_payment_id',
+    'paymongo_checkout_session_id',
+    'paymongo_external_reference',
+  ]
+    .map((column) => `${column}.ilike.${pattern}`)
+    .join(',');
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*, bills(bill_number, billing_period), profiles:resident_id(first_name, last_name)')
+    .eq('status', 'completed')
+    .or(orFilter)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as any[];
+}
+
 export async function verifyPendingPaymentRPC(paymentId: string, action: 'approve' | 'reject', rejectionReason?: string): Promise<void> {
   const { error } = await supabase.rpc('verify_online_payment', {
     p_payment_id: paymentId,

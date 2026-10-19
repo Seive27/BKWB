@@ -59,9 +59,9 @@ function residentFullName(bill: ResidentBill): string {
 /**
  * Expanded bill view opened by tapping any bill card. Shows only the data
  * that actually exists in Supabase for this bill — nothing invented.
- * Download PDF uses the barangay printed-receipt layout. Paid bills also
- * show the payment receipt; after staff sends an official receipt, a
- * View Official Receipt button opens the staff-style OR card.
+ * Download PDF uses the barangay printed-receipt layout. Paid and partially
+ * paid bills show the payment receipt; after staff sends an official receipt,
+ * View Official Receipt opens the staff-style OR card.
  */
 export function BillDetailModal({
   visible,
@@ -81,9 +81,14 @@ export function BillDetailModal({
   const paymentQuery = useQuery({
     queryKey: queryKeys.payments.forBill(userId ?? '', bill?.id ?? ''),
     queryFn: () => getPaymentForBill(bill!.id),
-    enabled: visible && !!bill && !unpaid && !!userId,
+    enabled: visible && !!bill && !!userId,
   });
   const payment = paymentQuery.data ?? null;
+  const showPaymentReceipt =
+    !!bill &&
+    (bill.status === 'paid' ||
+      bill.status === 'partially_paid' ||
+      payment?.status === 'completed');
 
   useEffect(() => {
     if (!visible || !bill) setShowOfficialReceipt(false);
@@ -205,14 +210,18 @@ export function BillDetailModal({
           {bill.paid_at ? <Row label="Paid On" value={formatBillDate(bill.paid_at)} /> : null}
         </View>
 
-        {/* Payment receipt (paid bills only) */}
-        {!unpaid ? (
+        {showPaymentReceipt ? (
           <View className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-2">
-            <Text className="py-2 text-sm font-bold text-emerald-800">Payment Receipt</Text>
+            <Text className="py-2 text-sm font-bold text-emerald-800">
+              {bill.status === 'partially_paid' ? 'Partial Payment Receipt' : 'Payment Receipt'}
+            </Text>
             <Row
               label="Amount Paid"
-              value={formatPeso((payment?.amount ?? Number(bill.amount_due)) || 0)}
+              value={payment ? formatPeso(payment.amount) : '—'}
             />
+            {bill.status === 'partially_paid' ? (
+              <Row label="Remaining Balance" value={formatPeso(bill.amount_due)} />
+            ) : null}
             <Row
               label="Payment Method"
               value={payment ? formatPaymentMethod(payment.payment_method) : '—'}

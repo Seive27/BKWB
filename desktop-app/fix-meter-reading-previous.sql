@@ -70,6 +70,29 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Readers may only submit an assignment, or send a rejected reading
+  -- back to pending review.
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (OLD.status = 'assigned' AND NEW.status = 'pending_review')
+      OR (OLD.status = 'rejected' AND NEW.status = 'pending_review')
+    ) THEN
+      RAISE EXCEPTION 'Meter readers cannot set the reading to that status.';
+    END IF;
+  END IF;
+
+  -- A corrected rejection is a fresh pending review.
+  IF OLD.status = 'rejected' AND NEW.status = 'pending_review' THEN
+    NEW.reviewed_by := NULL;
+    NEW.reviewed_at := NULL;
+    NEW.rejection_reason := NULL;
+  ELSIF (
+    NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
+    OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
+  ) THEN
+    RAISE EXCEPTION 'Meter readers cannot change assignment-level fields.';
+  END IF;
+
   -- previous_reading is owned by calculate_consumption and may change
   -- on submit even though the client does not send it.
   IF (
@@ -80,8 +103,6 @@ BEGIN
     OR NEW.account_id IS DISTINCT FROM OLD.account_id
     OR NEW.meter_id IS DISTINCT FROM OLD.meter_id
     OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
-    OR NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
-    OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
   ) THEN
     RAISE EXCEPTION 'Meter readers cannot change assignment-level fields.';
   END IF;

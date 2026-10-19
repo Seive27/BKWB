@@ -188,6 +188,27 @@ export interface Payment {
   payment_method: PaymentMethod;
   payment_date: string;
   reference_number?: string | null;
+  paymongo_payment_id?: string | null;
+  paymongo_checkout_session_id?: string | null;
+  paymongo_external_reference?: string | null;
+  /** Official receipt saved when staff sends the receipt to the resident. */
+  receipt_snapshot?: {
+    totalPaid: number;
+    residentName: string;
+    accountNumber: string;
+    referenceNumber: string;
+    paymentDate: string;
+    paymentMethod: string;
+    bills: Array<{
+      id: string;
+      billing_period: string;
+      bill_number: string;
+      amount: number;
+    }>;
+    amountReceived?: number | null;
+    changeDue?: number | null;
+  } | null;
+  receipt_sent_at?: string | null;
   notes?: string | null;
   recorded_by?: string | null;
   status: PaymentStatus;

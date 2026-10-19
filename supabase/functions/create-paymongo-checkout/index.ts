@@ -95,7 +95,7 @@ function getPublishableKey(): string | undefined {
 interface CreateCheckoutPayload {
   /** Supabase bill UUID to pay. */
   bill_id?: string;
-  /** Optional custom payment amount (supports underpayment, exact, or overpayment). */
+  /** Ignored. Online checkout always charges the bill's full amount due. */
   amount?: number;
   /** Optional custom redirect URL after successful payment. */
   success_url?: string;
@@ -231,14 +231,16 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ── 7. Validate Amount & Convert to Centavos ──
-  // BKWB supports underpayments, exact payments, and overpayments.
-  // When an explicit amount is provided by the resident, validate and use it;
-  // otherwise default to the current bill.amount_due.
-  let amountNumber = Number(bill.amount_due);
+  // Online checkout always charges the full amount due. A client-supplied
+  // amount is never used.
+  const amountNumber = Number(bill.amount_due);
   if (body.amount !== undefined && body.amount !== null) {
     const requestedAmount = Number(body.amount);
-    if (Number.isFinite(requestedAmount) && requestedAmount > 0) {
-      amountNumber = requestedAmount;
+    if (
+      Number.isFinite(requestedAmount) &&
+      Math.abs(requestedAmount - amountNumber) > 0.009
+    ) {
+      return fail(400, "Online payment requires the full amount due.");
     }
   }
 

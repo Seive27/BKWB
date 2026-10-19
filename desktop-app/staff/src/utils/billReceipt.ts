@@ -211,7 +211,7 @@ export function buildBillReceiptHtml(receipt: BillReceiptData): string {
             <th>Curr. Reading</th>
             <th>Consumption</th>
             <th>Bill Amount</th>
-            <th>Amount</th>
+            <th>Amount Due</th>
           </tr>
         </thead>
         <tbody>

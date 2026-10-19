@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   X,
@@ -10,13 +10,15 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import type { MeterReading } from '../../types';
+import type { Bill, MeterReading } from '../../types';
 import { METER_READING_STATUS_LABELS } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { queryErrorMessage } from '../../lib/queryError';
 import { queryKeys } from '../../lib/queryKeys';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBillsByResident } from '../../services/billService';
+import { getPaymentsByResident } from '../../services/paymentService';
+import PaymentReceiptModal from './PaymentReceiptModal';
 import type { ResidentRecord } from '../../services/residentService';
 
 type OverviewTab = 'information' | 'meter' | 'billing' | 'payments';
@@ -127,6 +129,7 @@ const ResidentOverviewModal: React.FC<{
 }> = ({ resident, onClose }) => {
   const { isAuthenticated } = useAuth();
   const [tab, setTab] = useState<OverviewTab>('information');
+  const [receiptBill, setReceiptBill] = useState<Bill | null>(null);
   const readingsQuery = useQuery({
     queryKey: queryKeys.meterReadings.byAccount(resident.accountId ?? ''),
     queryFn: () => getAccountReadings(resident.accountId ?? ''),
@@ -136,6 +139,11 @@ const ResidentOverviewModal: React.FC<{
     queryKey: queryKeys.bills.byResident(resident.id),
     queryFn: () => getBillsByResident(resident.id).catch(() => []),
     enabled: isAuthenticated,
+  });
+  const paymentsQuery = useQuery({
+    queryKey: [...queryKeys.payments.all, 'resident', resident.id] as const,
+    queryFn: () => getPaymentsByResident(resident.id).catch(() => []),
+    enabled: isAuthenticated && tab === 'payments',
   });
   const readings = readingsQuery.data ?? [];
   const bills = billsQuery.data ?? [];
@@ -155,12 +163,25 @@ const ResidentOverviewModal: React.FC<{
   }, [resident.currentReading, resident.previousReading]);
 
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
+  const paymentHistory = useMemo(
+    () =>
+      (paymentsQuery.data ?? []).filter((payment) => {
+        const status = String(payment.status);
+        return status !== 'cancelled' && status !== 'rejected' && status !== 'refunded';
+      }),
+    [paymentsQuery.data]
+  );
   /** Newest period until a row is clicked. */
   const selectedBill = bills.find((b) => b.id === selectedBillId) ?? bills[0] ?? null;
 
   const statusBadge = getStatusBadge(resident.connectionStatus);
 
+  useEffect(() => {
+    setReceiptBill(null);
+  }, [resident.id]);
+
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl border border-gray-200 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
         {/* Header */}
@@ -492,46 +513,74 @@ const ResidentOverviewModal: React.FC<{
 
           {tab === 'payments' && (
             <div className="space-y-4">
-              {bills.length > 0 && bills.some((b) => b.paid_at) ? (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+              {billsQuery.isLoading || paymentsQuery.isLoading ? (
+                <div className="flex items-center justify-center space-x-2 text-gray-400 py-12">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="text-xs font-medium">Loading payment history…</span>
+                </div>
+              ) : paymentHistory.length > 0 ? (
+                <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                  <p className="px-3.5 py-2 text-[11px] text-gray-500 bg-white border-b border-gray-100">
+                    Click a payment to view the stored receipt. Partial payments stay listed while a balance remains.
+                  </p>
                   <table className="w-full text-left">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Payment Date</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Period</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
-                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Amount</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Paid</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-xs">
-                      {bills
-                        .filter((b) => b.paid_at)
-                        .map((b) => (
-                          <tr key={b.id} className="hover:bg-gray-50">
-                            <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.paid_at)}</td>
+                      {paymentHistory.map((payment) => {
+                        const linked = bills.find((b) => b.id === payment.bill_id);
+                        const period = linked?.billing_period ?? payment.bill?.billing_period ?? '';
+                        const billNumber = linked?.bill_number ?? payment.bill?.bill_number ?? '';
+                        const billStatus = linked?.status ?? payment.bill?.status;
+                        const partial = billStatus === 'partially_paid';
+                        const amountDue = Number(linked?.amount_due ?? payment.bill?.amount_due ?? 0);
+                        return (
+                          <tr
+                            key={payment.id}
+                            className={`hover:bg-emerald-50/60 ${linked ? 'cursor-pointer' : ''}`}
+                            onClick={() => {
+                              if (linked) setReceiptBill(linked);
+                            }}
+                          >
+                            <td className="px-3.5 py-2.5 text-gray-600">{formatDate(payment.payment_date)}</td>
                             <td className="px-3.5 py-2.5 text-gray-900 font-medium">
-                              {formatPeriod(b.billing_period)}
-                              <span className="block text-[10px] text-gray-400 font-mono">{b.bill_number}</span>
+                              {period ? formatPeriod(period) : '—'}
+                              {billNumber ? (
+                                <span className="block text-[10px] text-gray-400 font-mono">{billNumber}</span>
+                              ) : null}
                             </td>
                             <td className="px-3.5 py-2.5 text-gray-600">
-                              {b.consumption != null ? `${b.consumption} m³` : '—'}
+                              {linked?.consumption != null ? `${linked.consumption} m³` : '—'}
                             </td>
                             <td className="px-3.5 py-2.5 font-bold text-gray-900">
-                              {formatPeso(b.amount ?? b.amount_due)}
+                              {formatPeso(Number(payment.amount) || 0)}
                             </td>
                             <td className="px-3.5 py-2.5 font-semibold text-gray-700">
-                              {formatPeso(b.amount_due)}
+                              {formatPeso(amountDue)}
                             </td>
                             <td className="px-3.5 py-2.5">
-                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>Paid</span>
+                              <span
+                                className={`inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-semibold rounded-full border ${
+                                  partial
+                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}
+                              >
+                                {!partial ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
+                                <span>{partial ? 'Partially Paid' : 'Paid'}</span>
                               </span>
                             </td>
                           </tr>
-                        ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -559,6 +608,17 @@ const ResidentOverviewModal: React.FC<{
         </div>
       </div>
     </div>
+    {receiptBill && (
+      <PaymentReceiptModal
+        bill={receiptBill}
+        payments={paymentsQuery.data ?? []}
+        loading={paymentsQuery.isFetching && paymentsQuery.data === undefined}
+        residentName={resident.fullName}
+        accountNumber={resident.accountNumber ?? ''}
+        onClose={() => setReceiptBill(null)}
+      />
+    )}
+    </>
   );
 };
 

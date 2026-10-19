@@ -12,6 +12,8 @@ import { Navbar, type NavTab } from '@/components/NavBar/Navbar';
 import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useReadingHistory } from '@/hooks/useReadingHistory';
+import RecordReading from '@/screens/RecordReading';
+import type { MeterReading } from '@/types/readings';
 
 type HistoryProps = {
   activeTab?: NavTab;
@@ -40,6 +42,7 @@ export default function History({
   const { readings, loading, refreshing, error, refresh } = useReadingHistory();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<ReadingFilter>(initialFilter);
+  const [editing, setEditing] = useState<MeterReading | null>(null);
 
   useEffect(() => {
     setFilter(initialFilter);
@@ -63,6 +66,21 @@ export default function History({
       );
     });
   }, [filter, readings, searchQuery]);
+
+  if (editing) {
+    return (
+      <RecordReading
+        reading={editing}
+        activeTab={activeTab}
+        onTabPress={onTabPress}
+        onBack={() => setEditing(null)}
+        onSubmitted={() => {
+          setEditing(null);
+          void refresh();
+        }}
+      />
+    );
+  }
 
   return (
     <View className="flex-1 bg-surface">
@@ -138,7 +156,13 @@ export default function History({
           </View>
         ) : (
           filteredReadings.map((reading) => (
-            <HistoryReadingCard key={reading.id} reading={reading} />
+            <HistoryReadingCard
+              key={reading.id}
+              reading={reading}
+              onPress={
+                reading.status === 'rejected' ? () => setEditing(reading) : undefined
+              }
+            />
           ))
         )}
       </ScrollView>

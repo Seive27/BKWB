@@ -353,13 +353,8 @@ const Tickets: React.FC<{
   const timelineLoading = !!selectedId && detailQuery.isFetching && !detailQuery.data;
 
   useEffect(() => {
-    if (!selectedId) {
-      setTimelinePage(1);
-      return;
-    }
-    if (!detailQuery.data) return;
-    setTimelinePage(paginateTimeline(detailQuery.data.timeline ?? []).length || 1);
-  }, [selectedId, detailQuery.data]);
+    setTimelinePage(1);
+  }, [selectedId]);
 
   // Keep the notes draft in sync with the selected ticket.
   useEffect(() => {
@@ -372,7 +367,7 @@ const Tickets: React.FC<{
     timelinePageCount === 0 ? 1 : Math.min(timelinePage, timelinePageCount);
   const visibleTimeline = timelinePages[activeTimelinePage - 1] ?? [];
 
-  // Opening a ticket lands on its activity timeline (latest page).
+  // Opening a ticket lands on its activity timeline (page 1, the latest activity).
   useEffect(() => {
     if (!selectedTicket) return;
     const handle = window.setTimeout(() => {
@@ -1071,7 +1066,7 @@ const Tickets: React.FC<{
               <div className="flex items-center space-x-2 mb-5">
                 <Clock className="w-4 h-4 text-gray-500" />
                 <h3 className="text-sm font-semibold text-gray-700">Activity Timeline</h3>
-                {timelinePageCount > 1 && activeTimelinePage === timelinePageCount && (
+                {timelinePageCount > 1 && activeTimelinePage === 1 && (
                   <span className="text-[11px] font-medium text-primary-600">Latest</span>
                 )}
                 {timelineLoading && <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />}

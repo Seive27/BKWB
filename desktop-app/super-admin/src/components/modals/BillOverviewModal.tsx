@@ -17,6 +17,8 @@ import { queryErrorMessage } from '../../lib/queryError';
 import { queryKeys } from '../../lib/queryKeys';
 import { getAccountReadings } from '../../services/meterReadingService';
 import { getBills } from '../../services/billService';
+import { getPaymentsByAccount } from '../../services/paymentService';
+import PaymentReceiptModal from './PaymentReceiptModal';
 
 type OverviewTab = 'billing' | 'history' | 'meter' | 'payments';
 
@@ -120,6 +122,7 @@ const BillOverviewModal: React.FC<{
   const { isAuthenticated } = useAuth();
   const [tab, setTab] = useState<OverviewTab>(initialTab);
   const [selectedHistoryId, setSelectedHistoryId] = useState(bill.id);
+  const [receiptBill, setReceiptBill] = useState<Bill | null>(null);
   const accountBillsQuery = useQuery({
     queryKey: queryKeys.bills.list({ accountId: bill.account_id }),
     queryFn: () => getBills({ accountId: bill.account_id }).catch(() => [bill]),
@@ -129,6 +132,11 @@ const BillOverviewModal: React.FC<{
     queryKey: queryKeys.meterReadings.byAccount(bill.account_id),
     queryFn: () => getAccountReadings(bill.account_id),
     enabled: isAuthenticated && !!bill.account_id,
+  });
+  const paymentsQuery = useQuery({
+    queryKey: [...queryKeys.payments.all, 'account', bill.account_id] as const,
+    queryFn: () => getPaymentsByAccount(bill.account_id).catch(() => []),
+    enabled: isAuthenticated && tab === 'payments' && !!bill.account_id,
   });
   const accountBills = accountBillsQuery.data ?? [];
   const readings = readingsQuery.data ?? [];
@@ -142,6 +150,7 @@ const BillOverviewModal: React.FC<{
   useEffect(() => {
     setTab(initialTab);
     setSelectedHistoryId(bill.id);
+    setReceiptBill(null);
   }, [bill.id, initialTab]);
 
   const outstandingBalance = useMemo(
@@ -160,8 +169,17 @@ const BillOverviewModal: React.FC<{
   const selectedHistoryBill = historyBills.find((b) => b.id === selectedHistoryId) ?? historyBills[0] ?? null;
 
   const latestReading = readings[0] ?? null;
+  const paymentHistory = useMemo(
+    () =>
+      (paymentsQuery.data ?? []).filter((payment) => {
+        const status = String(payment.status);
+        return status !== 'cancelled' && status !== 'rejected' && status !== 'refunded';
+      }),
+    [paymentsQuery.data]
+  );
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl border border-gray-200 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
         {/* Header */}
@@ -501,51 +519,73 @@ const BillOverviewModal: React.FC<{
 
           {tab === 'payments' && (
             <div className="space-y-4">
-              {loadingData ? (
+              {loadingData || paymentsQuery.isLoading ? (
                 <div className="flex items-center justify-center space-x-2 text-gray-400 py-12">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span className="text-xs font-medium">Loading payment history…</span>
                 </div>
-              ) : accountBills.some((b) => b.paid_at) ? (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+              ) : paymentHistory.length > 0 ? (
+                <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                  <p className="px-3.5 py-2 text-[11px] text-gray-500 bg-white border-b border-gray-100">
+                    Click a payment to view the stored receipt. Partial payments stay listed while a balance remains.
+                  </p>
                   <table className="w-full text-left">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Payment Date</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Period</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Consumption</th>
-                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Bill Amount</th>
+                        <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Paid</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Amount Due</th>
                         <th className="px-3.5 py-2 text-xs font-semibold text-gray-600 uppercase">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-xs">
-                      {accountBills
-                        .filter((b) => b.paid_at)
-                        .map((b) => (
-                          <tr key={b.id} className="hover:bg-gray-50">
-                            <td className="px-3.5 py-2.5 text-gray-600">{formatDate(b.paid_at)}</td>
+                      {paymentHistory.map((payment) => {
+                        const linked = accountBills.find((b) => b.id === payment.bill_id);
+                        const period = linked?.billing_period ?? payment.bill?.billing_period ?? '';
+                        const billNumber = linked?.bill_number ?? payment.bill?.bill_number ?? '';
+                        const billStatus = linked?.status ?? payment.bill?.status;
+                        const partial = billStatus === 'partially_paid';
+                        return (
+                          <tr
+                            key={payment.id}
+                            className={`hover:bg-emerald-50/60 ${linked ? 'cursor-pointer' : ''}`}
+                            onClick={() => {
+                              if (linked) setReceiptBill(linked);
+                            }}
+                          >
+                            <td className="px-3.5 py-2.5 text-gray-600">{formatDate(payment.payment_date)}</td>
                             <td className="px-3.5 py-2.5 text-gray-900 font-medium">
-                              {formatPeriod(b.billing_period)}
-                              <span className="block text-[10px] text-gray-400 font-mono">{b.bill_number}</span>
+                              {period ? formatPeriod(period) : '—'}
+                              {billNumber ? (
+                                <span className="block text-[10px] text-gray-400 font-mono">{billNumber}</span>
+                              ) : null}
                             </td>
                             <td className="px-3.5 py-2.5 text-gray-600">
-                              {b.consumption != null ? `${b.consumption} m³` : '—'}
+                              {linked?.consumption != null ? `${linked.consumption} m³` : '—'}
                             </td>
                             <td className="px-3.5 py-2.5 font-bold text-gray-900">
-                              {formatPeso(b.amount ?? b.amount_due)}
+                              {formatPeso(payment.amount)}
                             </td>
                             <td className="px-3.5 py-2.5 font-semibold text-gray-700">
-                              {formatPeso(b.amount_due)}
+                              {formatPeso(linked?.amount_due ?? payment.bill?.amount_due)}
                             </td>
                             <td className="px-3.5 py-2.5">
-                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>Paid</span>
+                              <span
+                                className={`inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-semibold rounded-full border ${
+                                  partial
+                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}
+                              >
+                                {!partial ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
+                                <span>{partial ? 'Partially Paid' : 'Paid'}</span>
                               </span>
                             </td>
                           </tr>
-                        ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -573,6 +613,17 @@ const BillOverviewModal: React.FC<{
         </div>
       </div>
     </div>
+    {receiptBill && (
+      <PaymentReceiptModal
+        bill={receiptBill}
+        payments={paymentsQuery.data ?? []}
+        loading={paymentsQuery.isFetching && paymentsQuery.data === undefined}
+        residentName={name}
+        accountNumber={bill.account?.account_number ?? ''}
+        onClose={() => setReceiptBill(null)}
+      />
+    )}
+    </>
   );
 };
 

@@ -4,11 +4,13 @@ import { Pressable, Text } from 'react-native';
 type CaptureImageButtonProps = {
   onPress?: () => void;
   label?: string;
+  previewUri?: string | null;
 };
 
 export function CaptureImageButton({
   onPress,
   label = 'Capture Meter Image',
+  previewUri,
 }: CaptureImageButtonProps) {
   return (
     <Pressable
@@ -17,11 +19,19 @@ export function CaptureImageButton({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Image
-        source={require('../../../assets/icons/camera.png')}
-        style={{ width: 28, height: 28, marginBottom: 6 }}
-        contentFit="contain"
-      />
+      {previewUri ? (
+        <Image
+          source={{ uri: previewUri }}
+          style={{ width: '100%', height: 160, borderRadius: 12, marginBottom: 10 }}
+          contentFit="cover"
+        />
+      ) : (
+        <Image
+          source={require('../../../assets/icons/camera.png')}
+          style={{ width: 28, height: 28, marginBottom: 6 }}
+          contentFit="contain"
+        />
+      )}
       <Text className="text-[15px] font-semibold text-navy">{label}</Text>
     </Pressable>
   );

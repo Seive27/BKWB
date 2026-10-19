@@ -79,7 +79,7 @@ const BillReceiptCard: React.FC<BillReceiptCardProps> = ({ receipt }) => {
                 <th className="text-right py-2 px-2 font-bold">Curr Reading</th>
                 <th className="text-right py-2 px-2 font-bold">Consumption</th>
                 <th className="text-right py-2 px-2 font-bold">Bill Amount</th>
-                <th className="text-right py-2 pl-2 font-bold">Amount</th>
+                <th className="text-right py-2 pl-2 font-bold">Amount Due</th>
               </tr>
             </thead>
             <tbody>

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,7 +13,7 @@ import { CloudStatusIcon } from '@/components/ui/CloudStatusIcon';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { cardShadow } from '@/components/ui/cardShadow';
-import { submitReading } from '@/services/meterReadingService';
+import { submitCorrectedReading } from '@/services/meterReadingService';
 import type { MeterReading } from '@/types/readings';
 import NetInfo from '@react-native-community/netinfo';
 import { enqueueReading } from '@/services/offlineSyncService';
@@ -34,6 +35,11 @@ function parseReading(value: string): number | null {
   return numeric;
 }
 
+function editableReading(value: number | null): string {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return String(Number(value));
+}
+
 export default function RecordReading({
   reading,
   activeTab = 'assigned',
@@ -43,9 +49,14 @@ export default function RecordReading({
 }: RecordReadingProps) {
   const insets = useSafeAreaInsets();
   const navbarHeight = 72 + Math.max(insets.bottom, 8);
+  const isCorrection = reading.status === 'rejected';
 
-  const [currentReading, setCurrentReading] = useState('');
-  const [notes, setNotes] = useState('');
+  const [currentReading, setCurrentReading] = useState(() =>
+    isCorrection ? editableReading(reading.current_reading) : ''
+  );
+  const [notes, setNotes] = useState(() => (isCorrection ? reading.remarks ?? '' : ''));
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const previousReading = reading.previous_reading ?? 0;
@@ -71,21 +82,80 @@ export default function RecordReading({
 
   const current = parseReading(currentReading);
   const canSubmit = current !== null && current >= previousReading && !submitting;
+  const previewUri = photoUri ?? (isCorrection ? reading.photo_url : null);
+
+  const applyPhotoAsset = useCallback((asset: ImagePicker.ImagePickerAsset) => {
+    if (!asset.uri) return;
+    setPhotoUri(asset.uri);
+    setPhotoBase64(asset.base64 ?? null);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void ImagePicker.getPendingResultAsync().then((pending) => {
+      if (!active || !pending || !('assets' in pending)) return;
+      const asset = pending.assets?.[0];
+      if (asset) applyPhotoAsset(asset);
+    });
+    return () => {
+      active = false;
+    };
+  }, [applyPhotoAsset]);
+
+  async function takeMeterPhoto() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        'Permission Required',
+        'Please allow camera access to take a photo of the meter.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.7,
+      base64: true,
+      cameraType: ImagePicker.CameraType.back,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      applyPhotoAsset(result.assets[0]);
+    }
+  }
 
   async function handleSubmit() {
     if (!canSubmit || current === null) return;
     setSubmitting(true);
+    const queued = {
+      reading_id: reading.id,
+      current_reading: current,
+      notes,
+      photo_uri: photoUri,
+      photo_base64: photoBase64,
+    };
+    const successTitle = isCorrection ? 'Resubmitted' : 'Submitted';
+    const successMessage = isCorrection
+      ? 'Your corrected reading is back in pending review.'
+      : 'Your reading has been submitted for review.';
     try {
       const state = await NetInfo.fetch();
       if (state.isConnected && state.isInternetReachable !== false) {
         try {
-          await submitReading(reading.id, current, notes);
-          Alert.alert('Submitted', 'Your reading has been submitted for review.', [
+          await submitCorrectedReading({
+            id: reading.id,
+            currentReading: current,
+            remarks: notes,
+            photoUri,
+            photoBase64,
+          });
+          Alert.alert(successTitle, successMessage, [
             { text: 'OK', onPress: () => onSubmitted?.() },
           ]);
         } catch (err) {
           if (err instanceof Error && (err.message.includes('network') || err.message.includes('Network') || err.message.includes('fetch'))) {
-            await enqueueReading({ reading_id: reading.id, current_reading: current, notes });
+            await enqueueReading(queued);
             Alert.alert('Offline Mode', 'Your reading was saved locally and will sync when connection is restored.', [
               { text: 'OK', onPress: () => onSubmitted?.() },
             ]);
@@ -94,7 +164,7 @@ export default function RecordReading({
           }
         }
       } else {
-        await enqueueReading({ reading_id: reading.id, current_reading: current, notes });
+        await enqueueReading(queued);
         Alert.alert('Offline', 'Your reading was saved locally and will sync when connection is restored.', [
           { text: 'OK', onPress: () => onSubmitted?.() },
         ]);
@@ -122,7 +192,7 @@ export default function RecordReading({
         showsVerticalScrollIndicator={false}
       >
         <ScreenHeader
-          title="Record Reading"
+          title={isCorrection ? 'Correct Reading' : 'Record Reading'}
           left={
             <Pressable
               onPress={onBack}
@@ -142,8 +212,23 @@ export default function RecordReading({
 
         <ResidentInfoCard reading={reading} />
 
+        {isCorrection && reading.rejection_reason ? (
+          <View className="mb-4 rounded-2xl bg-alert-soft px-4 py-3">
+            <Text className="text-[12px] font-semibold text-alert">Rejection reason</Text>
+            <Text className="mt-0.5 text-[13px] leading-5 text-alert-muted">
+              {reading.rejection_reason}
+            </Text>
+          </View>
+        ) : null}
+
         <View className="mb-4 rounded-[18px] bg-white p-4" style={cardShadow}>
-          <CaptureImageButton />
+          <CaptureImageButton
+            onPress={() => {
+              void takeMeterPhoto();
+            }}
+            previewUri={previewUri}
+            label={previewUri ? 'Retake Photo' : 'Capture Meter Image'}
+          />
 
           <MeterReadingInput
             value={currentReading}
@@ -187,7 +272,13 @@ export default function RecordReading({
         </View>
 
         <PrimaryButton
-          label={submitting ? 'Submitting…' : 'Submit Reading'}
+          label={
+            submitting
+              ? 'Submitting…'
+              : isCorrection
+                ? 'Resubmit Reading'
+                : 'Submit Reading'
+          }
           onPress={handleSubmit}
           disabled={!canSubmit}
         />

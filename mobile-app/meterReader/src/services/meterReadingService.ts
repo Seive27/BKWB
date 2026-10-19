@@ -299,10 +299,14 @@ export async function submitReading(
       ...(photoUrl ? { photo_url: photoUrl } : {}),
     })
     .eq('id', id)
+    .in('status', ['assigned', 'rejected'])
     .select(READING_SELECT)
     .single();
 
   if (error) {
+    if (error.code === 'PGRST116') {
+      throw new Error('This reading can no longer be edited.');
+    }
     throw new Error(getMeterReadingErrorMessage(error));
   }
 
@@ -472,6 +476,29 @@ export async function submitReadingByMeterNumber(input: {
   }
 
   return submitReading(match.id, input.currentReading, input.remarks, photoUrl);
+}
+
+/**
+ * Correct a rejected reading (or finish an assigned one) and return it to
+ * pending review. A new meter photo replaces the previous one when provided.
+ */
+export async function submitCorrectedReading(input: {
+  id: string;
+  currentReading: number;
+  remarks?: string;
+  photoUri?: string | null;
+  photoBase64?: string | null;
+}): Promise<MeterReading> {
+  let photoUrl: string | undefined;
+  if (input.photoUri || input.photoBase64) {
+    photoUrl = await uploadMeterPhoto(
+      input.photoUri ?? `meter.${Date.now()}.jpg`,
+      input.id,
+      input.photoBase64
+    );
+  }
+
+  return submitReading(input.id, input.currentReading, input.remarks, photoUrl);
 }
 
 // ── Realtime ──

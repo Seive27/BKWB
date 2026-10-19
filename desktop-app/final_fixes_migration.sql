@@ -124,6 +124,27 @@ BEGIN
       ELSIF NEW.status = 'work_completed' THEN
         v_type := 'ticket_status';
         v_title := 'Please confirm: is the work on ticket ' || NEW.ticket_number || ' completed?';
+
+        -- Meter reader finished the work. Staff and super admins are notified
+        -- here; the resident still receives the confirmation prompt below.
+        INSERT INTO public.notifications (user_id, type, title, message, reference_type, reference_id)
+        SELECT DISTINCT
+          p.id,
+          'ticket_status',
+          'Work completed: ' || NEW.ticket_number,
+          CASE
+            WHEN NEW.resolution IS NOT NULL AND btrim(NEW.resolution) <> '' THEN
+              'A meter reader marked this ticket as work completed: ' || left(btrim(NEW.resolution), 300)
+            ELSE
+              'A meter reader marked ticket ' || NEW.ticket_number || ' as work completed.'
+          END,
+          'ticket',
+          NEW.id
+        FROM public.profiles p
+        JOIN public.roles r ON r.id = p.role_id
+        WHERE p.is_active = TRUE
+          AND r.name IN ('staff', 'super_admin')
+          AND p.id IS DISTINCT FROM auth.uid();
       ELSE
         v_type := 'ticket_status';
         v_title := 'Ticket ' || NEW.ticket_number || ' is now ' || replace(NEW.status, '_', ' ');

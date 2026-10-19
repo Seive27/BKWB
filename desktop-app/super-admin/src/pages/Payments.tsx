@@ -22,7 +22,6 @@ import {
   Send,
 } from 'lucide-react';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
-import { getPendingPayments, verifyPendingPaymentRPC } from '../services/paymentService';
 import { useToast } from '../components/ui/ToastProvider';
 import { useAuth } from '../hooks/useAuth';
 import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
@@ -32,8 +31,12 @@ import { queryKeys } from '../lib/queryKeys';
 import StyledSelect from '../components/ui/StyledSelect';
 import { getBills } from '../services/billService';
 import {
+  getPendingPayments,
+  getRecentOnlinePayments,
   recordMultiBillPayment,
+  searchPaymentsByReference,
   sendOfficialReceiptToResident,
+  verifyPendingPaymentRPC,
   type OfficialReceiptSnapshot,
 } from '../services/paymentService';
 import { isOutstandingBillStatus } from '../types';
@@ -79,6 +82,11 @@ function getStatusBadge(status: BillStatus) {
   }
 }
 
+type OnlinePaymentRow = Payment & {
+  profiles?: { first_name?: string | null; last_name?: string | null } | null;
+  bills?: { bill_number?: string | null } | null;
+};
+
 interface CompletedPaymentData {
   totalPaid: number;
   residentId: string;
@@ -115,6 +123,14 @@ const Payments: React.FC = () => {
     queryFn: () => getPendingPayments().catch(() => [] as Payment[]),
     enabled: isAuthenticated,
   });
+  const recentQuery = useQuery({
+    queryKey: [...queryKeys.payments.all, 'recent-online'] as const,
+    queryFn: () =>
+      getRecentOnlinePayments()
+        .then((rows) => rows as OnlinePaymentRow[])
+        .catch(() => [] as OnlinePaymentRow[]),
+    enabled: isAuthenticated,
+  });
   const paymentWrite = useInvalidatingMutation(
     async (run: () => Promise<void>) => {
       await run();
@@ -125,6 +141,7 @@ const Payments: React.FC = () => {
   const bills = billsQuery.data ?? [];
   const sitios = sitiosQuery.data ?? [];
   const pendingOnlinePayments = pendingQuery.data ?? [];
+  const recentOnlinePayments = recentQuery.data ?? [];
   const loading = residentsQuery.isLoading;
   const error = queryErrorMessage(residentsQuery.error, 'Failed to load billing and resident data.');
   const loadData = () => {
@@ -132,10 +149,14 @@ const Payments: React.FC = () => {
     void billsQuery.refetch();
     void sitiosQuery.refetch();
     void pendingQuery.refetch();
+    void recentQuery.refetch();
+    if (debouncedReference.length >= 2) void referenceSearchQuery.refetch();
   };
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [referenceQuery, setReferenceQuery] = useState('');
+  const [debouncedReference, setDebouncedReference] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unpaid' | 'overdue' | 'paid'>('unpaid');
   const [sitioFilter, setSitioFilter] = useState('');
   const [periodFilter, setPeriodFilter] = useState('');
@@ -171,6 +192,23 @@ const Payments: React.FC = () => {
       }
     });
   }, [showToast]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedReference(referenceQuery.trim()), 300);
+    return () => window.clearTimeout(handle);
+  }, [referenceQuery]);
+
+  const referenceSearchQuery = useQuery({
+    queryKey: [...queryKeys.payments.all, 'reference-search', debouncedReference] as const,
+    queryFn: () =>
+      searchPaymentsByReference(debouncedReference)
+        .then((rows) => rows as OnlinePaymentRow[])
+        .catch(() => [] as OnlinePaymentRow[]),
+    enabled: isAuthenticated && debouncedReference.length >= 2,
+  });
+
+  const searchingReference = debouncedReference.length >= 2;
+  const onlinePaymentRows = searchingReference ? (referenceSearchQuery.data ?? []) : recentOnlinePayments;
 
   // Distinct billing periods
   const billingPeriods = useMemo(() => {
@@ -431,6 +469,118 @@ const Payments: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* Recent PayMongo / online payments (auto-confirmed by webhook) */}
+          <div className="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden mb-6">
+            <div className="bg-emerald-50 p-4 border-b border-emerald-200">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    {searchingReference
+                      ? referenceSearchQuery.isFetching && referenceSearchQuery.data === undefined
+                        ? 'Searching references…'
+                        : `Reference matches (${onlinePaymentRows.length})`
+                      : `Recent Online Payments (${recentOnlinePayments.length})`}
+                  </h3>
+                  <p className="text-sm text-emerald-700 mt-1">
+                    {searchingReference
+                      ? 'Matches PayMongo payment id, checkout session, GCash/Maya reference, or stored reference number.'
+                      : 'Confirmed via PayMongo. Amount and bill status update automatically — no staff approval needed.'}
+                  </p>
+                </div>
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-700/70" />
+                  <input
+                    type="text"
+                    value={referenceQuery}
+                    onChange={(e) => setReferenceQuery(e.target.value)}
+                    placeholder="Search PayMongo or GCash reference"
+                    className="w-full pl-9 pr-8 py-2 border border-emerald-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                  {referenceQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setReferenceQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label="Clear reference search"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {searchingReference && referenceSearchQuery.isFetching && referenceSearchQuery.data === undefined ? (
+              <div className="px-4 py-6 text-sm text-emerald-800 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Searching references…
+              </div>
+            ) : onlinePaymentRows.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-gray-500">
+                {searchingReference
+                  ? 'No payments match that reference.'
+                  : 'No recent online payments yet. Search a PayMongo or GCash reference above.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-emerald-50/50 border-b border-emerald-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Resident</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Bill</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Method</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">PayMongo reference</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">External reference</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Amount Paid</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold text-emerald-900">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-100">
+                    {onlinePaymentRows.map((p) => {
+                      const name = [p.profiles?.first_name, p.profiles?.last_name].filter(Boolean).join(' ') || 'Resident';
+                      return (
+                        <tr
+                          key={p.id}
+                          className="hover:bg-emerald-50/40 cursor-pointer"
+                          onClick={() => {
+                            if (p.resident_id) {
+                              setSelectedResidentId(p.resident_id);
+                              setStatusFilter('paid');
+                            }
+                          }}
+                        >
+                          <td className="px-4 py-3 font-medium text-gray-900">{name}</td>
+                          <td className="px-4 py-3 text-gray-600">{p.bills?.bill_number || '—'}</td>
+                          <td className="px-4 py-3 text-gray-700 uppercase text-xs font-semibold">
+                            {(p.payment_method || 'online').replace('_', ' ')}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                            {p.paymongo_payment_id || p.reference_number || '—'}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                            {p.paymongo_external_reference || '—'}
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-emerald-700">
+                            {formatPeso(Number(p.amount) || 0)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                              PAID
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {formatDate(p.payment_date || p.created_at)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Search & Filter Bar */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">

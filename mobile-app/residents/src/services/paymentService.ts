@@ -72,11 +72,11 @@ const PAYMENT_SELECT =
 
 /**
  * Create a PayMongo Hosted Checkout session for one bill.
- * Supports partial payments, exact payments, and overpayments.
+ * Online checkout always charges the bill's full amount due.
  */
 export async function createCheckoutSession(
   billId: string,
-  options?: { appReturnUrl?: string; amount?: number }
+  options?: { appReturnUrl?: string }
 ): Promise<CheckoutSession> {
   const { data, error: fnError } = await supabase.functions.invoke(
     'create-paymongo-checkout',
@@ -84,7 +84,6 @@ export async function createCheckoutSession(
       body: {
         bill_id: billId,
         ...(options?.appReturnUrl ? { app_return_url: options.appReturnUrl } : {}),
-        ...(options?.amount && options.amount > 0 ? { amount: options.amount } : {}),
       },
     }
   );

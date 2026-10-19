@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { OfficialReceiptModal } from '@/components/bills/OfficialReceiptModal';
 import { usePayMongoCheckout } from '@/hooks/usePayMongoCheckout';
 import { useSessionUserId } from '@/hooks/useSessionUserId';
 import { queryKeys } from '@/lib/queryKeys';
@@ -15,6 +16,7 @@ import {
 import {
   formatPaymentDateTime,
   formatPaymentMethod,
+  getOfficialReceiptForPayment,
   getPaymentForBill,
   type ResidentPayment,
 } from '@/services/paymentService';
@@ -208,6 +210,7 @@ export function PaymentJourney({
   const paymentRecord = payAgain ? null : (paymentQuery.data ?? null);
   const loading = paymentQuery.isLoading && paymentQuery.data === undefined;
   const [step, setStep] = useState<'options' | 'receipt' | 'rejected'>('options');
+  const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
 
   // Fire the parent's confirmation callbacks exactly once per bill.
   const confirmedHandledRef = useRef(false);
@@ -218,20 +221,23 @@ export function PaymentJourney({
   const originalCharges = Number(bill.amount ?? bill.amount_due) || 0;
   const prevBalance = Number(bill.previous_balance) || 0;
   const creditApplied = Number(bill.credit_applied) || 0;
-
-  const [customAmountText, setCustomAmountText] = useState(
-    billAmount > 0 ? billAmount.toFixed(2) : ''
-  );
-
-  useEffect(() => {
-    setCustomAmountText(billAmount > 0 ? billAmount.toFixed(2) : '');
-  }, [billAmount]);
-
-  const parsedCustomAmount = parseFloat(customAmountText) || 0;
-  const isPartial = parsedCustomAmount > 0 && parsedCustomAmount < billAmount - 0.009;
-  const isOverpay = parsedCustomAmount > billAmount + 0.009;
-  const remainingAfterPayment = Math.max(0, billAmount - parsedCustomAmount);
-  const excessCredit = Math.max(0, parsedCustomAmount - billAmount);
+  const recordedPayment =
+    paymentQuery.data?.status === 'completed' ? paymentQuery.data : null;
+  const officialReceipt = useMemo(() => {
+    if (!recordedPayment) return null;
+    const resident = bill.resident;
+    const residentName = resident
+      ? [resident.first_name, resident.middle_name, resident.last_name].filter(Boolean).join(' ')
+      : '—';
+    return getOfficialReceiptForPayment(recordedPayment, {
+      residentName: residentName || '—',
+      accountNumber: bill.account?.account_number ?? '—',
+      billId: bill.id,
+      billNumber: bill.bill_number,
+      billingPeriod: bill.billing_period,
+      amountDue: billAmount,
+    });
+  }, [bill, billAmount, recordedPayment]);
 
   // Load any existing payment record for this bill so already-paid bills and
   // previously submitted payments show their real status instead of a pay button.
@@ -511,43 +517,36 @@ export function PaymentJourney({
           </View>
         </View>
 
-        {/* Custom Payment Amount Input (Supports Underpayment & Overpayment) */}
-        <View className="rounded-2xl border border-slate-200 bg-white p-5">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Amount You Want to Pay (PHP)
-          </Text>
-          <View className="flex-row items-center rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5">
-            <Text className="mr-2 text-lg font-bold text-slate-600">₱</Text>
-            <TextInput
-              keyboardType="decimal-pad"
-              value={customAmountText}
-              onChangeText={setCustomAmountText}
-              placeholder={billAmount.toFixed(2)}
-              className="flex-1 text-lg font-bold text-slate-900"
+        {unpaid && recordedPayment ? (
+          <View className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2">
+            <Text className="py-2 text-sm font-bold text-emerald-800">Partial Payment Receipt</Text>
+            <InfoRow label="Amount Paid" value={formatPeso(recordedPayment.amount)} />
+            <InfoRow label="Remaining Balance" value={formatPeso(billAmount)} />
+            <InfoRow
+              label="Payment Method"
+              value={formatPaymentMethod(recordedPayment.payment_method)}
             />
+            <InfoRow label="Payment Reference" value={recordedPayment.reference_number || '—'} />
+            <InfoRow
+              label="Payment Date"
+              value={formatPaymentDateTime(recordedPayment.payment_date)}
+            />
+            {officialReceipt ? (
+              <Pressable
+                onPress={() => setShowOfficialReceipt(true)}
+                className="mb-2 mt-2 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
+                accessibilityRole="button"
+                accessibilityLabel="View official receipt"
+              >
+                <Text className="text-sm font-bold text-white">View Official Receipt</Text>
+              </Pressable>
+            ) : (
+              <Text className="mb-2 mt-1 text-xs leading-5 text-emerald-800">
+                The official receipt appears here after barangay staff sends it from the Payments desk.
+              </Text>
+            )}
           </View>
-          <Text className="mt-1.5 text-xs text-slate-500">
-            BKWB supports partial payments below, exact payments equal to, and advance credits above the bill.
-          </Text>
-
-          {isPartial && (
-            <View className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
-              <Text className="text-xs font-bold text-sky-800 uppercase">Underpayment Notice</Text>
-              <Text className="mt-0.5 text-xs leading-4 text-sky-700">
-                You are paying {formatPeso(parsedCustomAmount)}. The remaining balance of {formatPeso(remainingAfterPayment)} will stay outstanding and carry forward to your next billing cycle.
-              </Text>
-            </View>
-          )}
-
-          {isOverpay && (
-            <View className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <Text className="text-xs font-bold text-emerald-800 uppercase">Advance Credit Notice</Text>
-              <Text className="mt-0.5 text-xs leading-4 text-emerald-700">
-                You are paying {formatPeso(parsedCustomAmount)}. The excess of {formatPeso(excessCredit)} will be credited to your account and deducted from your next bill.
-              </Text>
-            </View>
-          )}
-        </View>
+        ) : null}
 
         <View>
           <Text className="mb-3 text-base font-bold text-slate-800">
@@ -555,11 +554,10 @@ export function PaymentJourney({
           </Text>
           <Pressable
             onPress={() => {
-              const payAmt = parsedCustomAmount > 0 ? parsedCustomAmount : billAmount;
-              void flow.start(payAmt);
+              void flow.start();
             }}
-            disabled={busy || parsedCustomAmount <= 0}
-            className={"flex-row items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-4 active:border-brand active:bg-slate-50 " + (busy || parsedCustomAmount <= 0 ? 'opacity-60' : '')}
+            disabled={busy || billAmount <= 0}
+            className={"flex-row items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-4 active:border-brand active:bg-slate-50 " + (busy || billAmount <= 0 ? 'opacity-60' : '')}
             accessibilityRole="button"
             accessibilityLabel="Pay Online"
           >
@@ -583,19 +581,26 @@ export function PaymentJourney({
         </View>
 
         <Text className="text-center text-xs leading-4 text-slate-400">
-          You'll complete payment on PayMongo's secure checkout page. Your payment is verified automatically and reflected on your bill.
+          Online payment requires the full amount due ({formatPeso(billAmount)}). You'll complete payment on PayMongo's secure checkout page, and the payment is verified automatically.
         </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingBottom: 8 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {content}
-    </ScrollView>
+    <>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 8 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {content}
+      </ScrollView>
+      <OfficialReceiptModal
+        visible={showOfficialReceipt}
+        onClose={() => setShowOfficialReceipt(false)}
+        receipt={officialReceipt}
+      />
+    </>
   );
 }

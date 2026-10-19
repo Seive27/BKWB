@@ -1075,9 +1075,10 @@ CREATE POLICY "Meter readers can read own readings"
   TO authenticated
   USING (meter_reader_id = (SELECT auth.uid()) AND deleted_at IS NULL);
 
--- Meter readers can submit only their own currently-assigned readings.
--- The target status is locked to 'pending_review' so a reader can never
--- self-approve or mark their own reading billed/rejected.
+-- Meter readers can submit their own assigned readings, and can correct
+-- a reading after staff rejects it. The target status is locked to
+-- 'pending_review' so a reader can never self-approve or mark their own
+-- reading billed/rejected.
 DROP POLICY IF EXISTS "Meter readers can submit own assigned readings" ON public.meter_readings;
 CREATE POLICY "Meter readers can submit own assigned readings"
   ON public.meter_readings
@@ -1085,7 +1086,7 @@ CREATE POLICY "Meter readers can submit own assigned readings"
   TO authenticated
   USING (
     meter_reader_id = (SELECT auth.uid())
-    AND status = 'assigned'
+    AND status IN ('assigned', 'rejected')
     AND deleted_at IS NULL
   )
   WITH CHECK (
@@ -1176,6 +1177,29 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Readers may only submit an assignment, or send a rejected reading
+  -- back to pending review.
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (OLD.status = 'assigned' AND NEW.status = 'pending_review')
+      OR (OLD.status = 'rejected' AND NEW.status = 'pending_review')
+    ) THEN
+      RAISE EXCEPTION 'Meter readers cannot set the reading to that status.';
+    END IF;
+  END IF;
+
+  -- A corrected rejection is a fresh pending review.
+  IF OLD.status = 'rejected' AND NEW.status = 'pending_review' THEN
+    NEW.reviewed_by := NULL;
+    NEW.reviewed_at := NULL;
+    NEW.rejection_reason := NULL;
+  ELSIF (
+    NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
+    OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
+  ) THEN
+    RAISE EXCEPTION 'Meter readers cannot change assignment-level fields.';
+  END IF;
+
   -- Meter readers must not alter assignment-level fields.
   -- previous_reading is owned by calculate_consumption and may change on submit.
   IF (
@@ -1186,8 +1210,6 @@ BEGIN
     OR NEW.account_id IS DISTINCT FROM OLD.account_id
     OR NEW.meter_id IS DISTINCT FROM OLD.meter_id
     OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
-    OR NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
-    OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
   ) THEN
     RAISE EXCEPTION 'Meter readers cannot change assignment-level fields.';
   END IF;

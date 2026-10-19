@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { cardShadow } from '@/components/ui/cardShadow';
@@ -6,6 +6,7 @@ import type { MeterReading } from '@/types/readings';
 
 type HistoryReadingCardProps = {
   reading: MeterReading;
+  onPress?: () => void;
 };
 
 function formatCubicMeters(value: number | null) {
@@ -40,14 +41,23 @@ function MetricColumn({
   );
 }
 
-export function HistoryReadingCard({ reading }: HistoryReadingCardProps) {
+export function HistoryReadingCard({ reading, onPress }: HistoryReadingCardProps) {
   const residentName = reading.resident
     ? `${reading.resident.first_name} ${reading.resident.last_name}`.trim()
     : 'Unknown Resident';
   const isRejected = reading.status === 'rejected';
 
   return (
-    <View className="mb-3 overflow-hidden rounded-[18px] bg-white" style={cardShadow}>
+    <Pressable
+      onPress={onPress}
+      disabled={!isRejected}
+      accessibilityRole={isRejected ? 'button' : undefined}
+      accessibilityLabel={
+        isRejected ? `Edit rejected reading for ${residentName}` : undefined
+      }
+      className="mb-3 overflow-hidden rounded-[18px] bg-white active:opacity-90"
+      style={cardShadow}
+    >
       <View
         className={`absolute bottom-0 left-0 top-0 w-1 ${
           isRejected ? 'bg-alert' : 'bg-brand-100'
@@ -95,7 +105,13 @@ export function HistoryReadingCard({ reading }: HistoryReadingCardProps) {
             </Text>
           </View>
         ) : null}
+
+        {isRejected ? (
+          <Text className="mt-3 text-[13px] font-semibold text-brand">
+            Tap to edit and resubmit
+          </Text>
+        ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }

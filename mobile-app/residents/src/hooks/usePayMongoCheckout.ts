@@ -240,7 +240,7 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }
   }, []);
 
-  const start = useCallback(async (customAmount?: number) => {
+  const start = useCallback(async () => {
     const billId = billIdRef.current;
     if (!billId || busyRef.current) return;
     busyRef.current = true;
@@ -252,10 +252,7 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     try {
       setState('creating');
       const appReturnUrl = appPaymentReturnUrl(billId);
-      const session = await createCheckoutSession(billId, {
-        appReturnUrl,
-        amount: customAmount && customAmount > 0 ? customAmount : undefined,
-      });
+      const session = await createCheckoutSession(billId, { appReturnUrl });
       await rememberSession(billId, session.checkoutSessionId);
       setCheckoutReference(session.referenceNumber);
       setState('opening');

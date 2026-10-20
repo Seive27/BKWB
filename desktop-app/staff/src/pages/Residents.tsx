@@ -100,6 +100,7 @@ interface AddResidentForm {
   serviceAddress: string;
   sitio: string;
   meterNumber: string;
+  accountNumber: string;
   previousReading: string;
   currentReading: string;
   previousReadingDate: string;
@@ -115,6 +116,7 @@ const EMPTY_FORM: AddResidentForm = {
   serviceAddress: '',
   sitio: '',
   meterNumber: '',
+  accountNumber: '',
   previousReading: '',
   currentReading: '',
   previousReadingDate: '',
@@ -181,6 +183,13 @@ const AddResidentModal: React.FC<{
     if (phoneError) errors.phone = phoneError;
     // Staff type the meter serial from the physical meter; it is never generated.
     if (!form.meterNumber.trim()) errors.meterNumber = 'Meter serial number is required.';
+    if (!form.accountNumber.trim()) {
+      errors.accountNumber = 'Account number is required.';
+    } else if (/\s/.test(form.accountNumber.trim())) {
+      errors.accountNumber = 'Account number cannot contain spaces.';
+    } else if (form.accountNumber.trim().length > 32) {
+      errors.accountNumber = 'Account number must be 32 characters or fewer.';
+    }
     if (!form.sitio.trim()) errors.sitio = 'Sitio is required.';
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -197,6 +206,7 @@ const AddResidentModal: React.FC<{
         serviceAddress: form.serviceAddress,
         sitio: form.sitio || undefined,
         meterNumber: form.meterNumber,
+        accountNumber: form.accountNumber,
       });
       // Show the credentials once so staff can record them before closing.
       setCreated({
@@ -380,14 +390,22 @@ const AddResidentModal: React.FC<{
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number</label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number *</label>
                 <input
                   type="text"
-                  placeholder="Auto-generated (ACC-####)"
-                  disabled
-                  className={`${inputClass} bg-gray-50 text-gray-500`}
+                  placeholder="e.g. ACC-0001 or 2024-0006697"
+                  value={form.accountNumber}
+                  onChange={(e) => set('accountNumber', e.target.value)}
+                  maxLength={32}
+                  className={`${inputClass} ${fieldErrors.accountNumber ? 'border-red-400' : ''}`}
                 />
-                <p className="mt-1 text-xs text-gray-400">Auto-generated when the resident is saved.</p>
+                {fieldErrors.accountNumber ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.accountNumber}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Typed by staff — this is the number the resident uses to sign in.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Sitio *</label>
@@ -560,6 +578,8 @@ const EditResidentModal: React.FC<{
     serviceAddress: resident.serviceAddress ?? '',
     sitio: resident.sitio ?? '',
     meterNumber: resident.meterNumber ?? '',
+    // Read-only in Edit Resident; kept so the shared form type stays complete.
+    accountNumber: resident.accountNumber ?? '',
     previousReading: resident.previousReading !== null ? String(resident.previousReading) : '',
     currentReading: resident.currentReading !== null ? String(resident.currentReading) : '',
     previousReadingDate: (resident.previousReadingDate ?? '').slice(0, 10),

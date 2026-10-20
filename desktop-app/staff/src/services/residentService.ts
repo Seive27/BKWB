@@ -43,6 +43,8 @@ export interface ResidentCreateInput {
   serviceAddress?: string;
   sitio?: string;
   meterNumber?: string;
+  /** Staff-entered consumer/account number (the UI no longer auto-generates it). */
+  accountNumber?: string;
 }
 
 export interface ResidentUpdateInput {
@@ -369,7 +371,8 @@ export async function getCreateUserErrorMessage(
 /**
  * Create a resident through the `create-user` edge function: auth user +
  * profile (role=resident) + resident_account (+ meter) + credential email.
- * The account number is auto-generated server-side (ACC-####).
+ * The account number is typed by staff; the edge function only falls back to
+ * its generated ACC-#### value when the caller omits it.
  */
 export async function createResident(
   input: ResidentCreateInput
@@ -391,6 +394,7 @@ export async function createResident(
       service_address: input.serviceAddress ?? null,
       sitio: input.sitio ?? null,
       meter_number: input.meterNumber ?? null,
+      account_number: input.accountNumber?.trim() || null,
     },
   });
 

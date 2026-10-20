@@ -456,6 +456,21 @@ async function handleRequest(req: Request): Promise<Response> {
 
     const provided = (body.account_number ?? '').trim();
     if (provided) {
+      // Staff now type the consumer number, so catch duplicates here instead
+      // of surfacing the raw unique-constraint error from the insert below.
+      const { data: accountOwner, error: accountLookupError } = await adminClient
+        .from('resident_accounts')
+        .select('id')
+        .eq('account_number', provided)
+        .maybeSingle();
+      if (accountLookupError) {
+        await rollback();
+        return fail(500, accountLookupError.message);
+      }
+      if (accountOwner) {
+        await rollback();
+        return fail(409, 'This account number is already used by another consumer.');
+      }
       accountNumber = provided;
     } else {
       const { data: generated, error: genError } = await adminClient

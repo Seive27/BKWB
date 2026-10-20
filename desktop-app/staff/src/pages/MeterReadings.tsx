@@ -49,6 +49,7 @@ import {
 
 type StatusFilter = 'all' | MeterReadingStatus | 'pending';
 type SitioFilter = 'all' | string;
+type SourceFilter = 'all' | 'meter_reader' | 'resident';
 type SortKey = 'newest' | 'oldest' | 'status' | 'alpha-asc' | 'alpha-desc';
 
 const PAGE_SIZE = 10;
@@ -128,6 +129,7 @@ const MeterReadings: React.FC<{
     (initialStatusFilter as StatusFilter) || 'all'
   );
   const [sitioFilter, setSitioFilter] = useState<SitioFilter>('all');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('newest');
   const [page, setPage] = useState(1);
 
@@ -284,7 +286,9 @@ const MeterReadings: React.FC<{
       const matchesStatus = matchesReadingStatus(r.status, statusFilter);
       const matchesSitio =
         sitioFilter === 'all' || sitiosMatch(r.account?.sitio, sitioFilter);
-      return matchesSearch && matchesStatus && matchesSitio;
+      const matchesSource =
+        sourceFilter === 'all' || (r.source ?? 'meter_reader') === sourceFilter;
+      return matchesSearch && matchesStatus && matchesSitio && matchesSource;
     });
 
     return [...filtered].sort((a, b) => {
@@ -311,7 +315,7 @@ const MeterReadings: React.FC<{
           return new Date(b.assignment_date).getTime() - new Date(a.assignment_date).getTime();
       }
     });
-  }, [readings, searchQuery, statusFilter, sitioFilter, sortKey]);
+  }, [readings, searchQuery, statusFilter, sitioFilter, sourceFilter, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filteredReadings.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -319,7 +323,7 @@ const MeterReadings: React.FC<{
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, statusFilter, sitioFilter, sortKey]);
+  }, [searchQuery, statusFilter, sitioFilter, sourceFilter, sortKey]);
 
   const actorId = user?.id ?? '';
 
@@ -610,6 +614,16 @@ const MeterReadings: React.FC<{
                     ))}
                   </StyledSelect>
                   <StyledSelect
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
+                    className={filterFieldStyles}
+                    aria-label="Filter by submission source"
+                  >
+                    <option value="all">All Sources</option>
+                    <option value="meter_reader">Meter Readers</option>
+                    <option value="resident">Resident Submissions</option>
+                  </StyledSelect>
+                  <StyledSelect
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                     className={filterFieldStyles}
@@ -753,6 +767,11 @@ const MeterReadings: React.FC<{
                             <span className="text-sm font-medium text-gray-900">
                               {fullName(reading.resident) || 'Unknown resident'}
                             </span>
+                            {(reading.source ?? 'meter_reader') === 'resident' && (
+                              <span className="ml-2 inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                Resident
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -765,9 +784,12 @@ const MeterReadings: React.FC<{
                           {reading.meter?.meter_number ?? '—'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {fullName(reading.meter_reader) || (
-                            <span className="text-gray-400 italic">Unassigned</span>
-                          )}
+                          {fullName(reading.meter_reader) ||
+                            ((reading.source ?? 'meter_reader') === 'resident' ? (
+                              <span className="text-violet-700">Resident (self-submitted)</span>
+                            ) : (
+                              <span className="text-gray-400 italic">Unassigned</span>
+                            ))}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {formatDate(reading.assignment_date)}
@@ -1023,6 +1045,9 @@ const MeterReadings: React.FC<{
                   <p className="text-sm text-gray-500 mt-0.5">
                     {fullName(selectedReading.resident) || 'Resident'} ·{' '}
                     {selectedReading.account?.account_number ?? '—'}
+                    {(selectedReading.source ?? 'meter_reader') === 'resident'
+                      ? ' · Resident submission'
+                      : ''}
                   </p>
                 </div>
               </div>
@@ -1105,9 +1130,12 @@ const MeterReadings: React.FC<{
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-[11px] text-gray-500 font-medium">Meter Reader</span>
+                  <span className="text-[11px] text-gray-500 font-medium">Submitted by</span>
                   <p className="text-sm font-semibold text-gray-900 mt-0.5">
-                    {fullName(selectedReading.meter_reader) || '—'}
+                    {fullName(selectedReading.meter_reader) ||
+                      ((selectedReading.source ?? 'meter_reader') === 'resident'
+                        ? 'Resident (self-submitted)'
+                        : '—')}
                   </p>
                 </div>
                 <div>

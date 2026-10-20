@@ -6,6 +6,8 @@ type QuickActionsProps = {
   onViewBills?: () => void;
   onWaterSchedule?: () => void;
   onTickets?: () => void;
+  /** Open the self-service meter reading form. */
+  onSubmitReading?: () => void;
 };
 
 function ActionCard({
@@ -43,29 +45,37 @@ export function QuickActions({
   onViewBills,
   onWaterSchedule,
   onTickets,
+  onSubmitReading,
 }: QuickActionsProps) {
   return (
     <View>
       <Text className="mb-2 text-base font-bold text-slate-800">Quick Services</Text>
 
-      <View className="flex-row gap-2.5">
-        <ActionCard label="Bills" onPress={onViewBills} className="flex-1">
+      <View className="flex-row flex-wrap gap-2.5">
+        <ActionCard label="Bills" onPress={onViewBills} className="w-[48%]">
           <Image
             source={require('../../../assets/QuickActionsIcon/ViewBills.svg')}
             style={{ width: 24, height: 24 }}
             contentFit="contain"
           />
         </ActionCard>
-        <ActionCard label="Schedule" onPress={onWaterSchedule} className="flex-1">
+        <ActionCard label="Schedule" onPress={onWaterSchedule} className="w-[48%]">
           <Image
             source={require('../../../assets/QuickActionsIcon/WaterSchedule.svg')}
             style={{ width: 24, height: 24 }}
             contentFit="contain"
           />
         </ActionCard>
-        <ActionCard label="Reports" onPress={onTickets} className="flex-1">
+        <ActionCard label="Reports" onPress={onTickets} className="w-[48%]">
           <Image
             source={require('../../../assets/QuickActionsIcon/Tickets.svg')}
+            style={{ width: 24, height: 24 }}
+            contentFit="contain"
+          />
+        </ActionCard>
+        <ActionCard label="Send Reading" onPress={onSubmitReading} className="w-[48%]">
+          <Image
+            source={require('../../../assets/icons/Gallery_ic.svg')}
             style={{ width: 24, height: 24 }}
             contentFit="contain"
           />

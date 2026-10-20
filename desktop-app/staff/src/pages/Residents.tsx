@@ -179,6 +179,8 @@ const AddResidentModal: React.FC<{
     if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
     const phoneError = validatePhone(form.phone);
     if (phoneError) errors.phone = phoneError;
+    // Staff type the meter serial from the physical meter; it is never generated.
+    if (!form.meterNumber.trim()) errors.meterNumber = 'Meter serial number is required.';
     if (!form.sitio.trim()) errors.sitio = 'Sitio is required.';
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -361,14 +363,21 @@ const AddResidentModal: React.FC<{
             <h3 className="text-base font-semibold text-gray-900 mb-4">Service Account</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Meter Serial Number</label>
+                <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Meter Serial Number *</label>
                 <input
                   type="text"
-                  placeholder="MTR-0001"
+                  placeholder="Enter the serial printed on the meter"
                   value={form.meterNumber}
                   onChange={(e) => set('meterNumber', e.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} ${fieldErrors.meterNumber ? 'border-red-400' : ''}`}
                 />
+                {fieldErrors.meterNumber ? (
+                  <p className="mt-1 text-xs text-red-500">{fieldErrors.meterNumber}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Typed by staff from the physical meter — never auto-generated.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number</label>

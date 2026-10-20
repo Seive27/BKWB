@@ -58,6 +58,8 @@ export interface MeterReading {
   current_reading: number | null;
   consumption: number | null;
   status: MeterReadingStatus;
+  /** Who produced the reading: a scheduled meter reader or the resident. */
+  source?: 'meter_reader' | 'resident';
   remarks: string | null;
   photo_url: string | null;
   reviewed_by: string | null;

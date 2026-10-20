@@ -222,6 +222,9 @@ export async function getSitioOptions(assignmentDate: string): Promise<SitioAssi
       .select(
         'meter_reader_id, account:resident_accounts!meter_readings_account_id_fkey(sitio), meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)'
       )
+      // Only meter-reader routes block a sitio; a resident's self-submitted
+      // reading must not stop staff from scheduling the sitio.
+      .eq('source', 'meter_reader')
       .in('status', ['assigned', 'pending_review'])
       .gte('assignment_date', start)
       .lt('assignment_date', endExclusive)
@@ -459,6 +462,8 @@ export async function createSitioAssignment(
     .from('meter_readings')
     .select('account_id, meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)')
     .in('account_id', accountIds)
+    // Resident self-submissions do not count as an open meter-reader route.
+    .eq('source', 'meter_reader')
     .in('status', ['assigned', 'pending_review'])
     .gte('assignment_date', start)
     .lt('assignment_date', endExclusive)

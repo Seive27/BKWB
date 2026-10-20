@@ -20,6 +20,7 @@ import {
 } from '@/services/billService';
 import NotificationsScreen from '@/screens/Notifications';
 import PaymentsScreen from '@/screens/Payments';
+import SubmitReadingScreen from '@/screens/SubmitReading';
 import TicketsScreen from '@/screens/Tickets';
 import ViewBillsScreen from '@/screens/ViewBills';
 import WaterScheduleScreen from '@/screens/WaterSchedule';
@@ -47,6 +48,7 @@ type QuickActionScreen =
   | 'tickets'
   | 'createTicket'
   | 'notifications'
+  | 'submitReading'
   | null;
 
 export default function Dashboard({
@@ -165,6 +167,19 @@ export default function Dashboard({
     );
   }
 
+  if (quickActionScreen === 'submitReading') {
+    return (
+      <SubmitReadingScreen
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setQuickActionScreen(null);
+          onTabPress?.(tab);
+        }}
+        onBack={() => setQuickActionScreen(null)}
+      />
+    );
+  }
+
   if (quickActionScreen === 'notifications') {
     return (
       <NotificationsScreen
@@ -208,6 +223,7 @@ export default function Dashboard({
             onViewBills={() => setQuickActionScreen('viewBills')}
             onWaterSchedule={() => setQuickActionScreen('waterSchedule')}
             onTickets={() => setQuickActionScreen('tickets')}
+            onSubmitReading={() => setQuickActionScreen('submitReading')}
           />
 
           <AnnouncementsPreview onViewAll={() => onTabPress?.('announcements')} />

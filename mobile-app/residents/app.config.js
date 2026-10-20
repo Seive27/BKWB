@@ -10,6 +10,8 @@ export default {
     scheme: 'residents',
     userInterfaceStyle: 'automatic',
     android: {
+      package: 'com.bkwb.residents',
+      versionCode: 1,
       adaptiveIcon: {
         backgroundColor: '#EEF7F4',
         foregroundImage: './assets/images/android-icon-foreground.png',
@@ -32,6 +34,14 @@ export default {
           imageWidth: 76,
         },
       ],
+      [
+        'expo-image-picker',
+        {
+          photosPermission: 'Allow Residents to access your photos to update your profile picture.',
+          cameraPermission: 'Allow Residents to use your camera to take a profile selfie.',
+          microphonePermission: false,
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
@@ -40,6 +50,9 @@ export default {
     extra: {
       SUPABASE_URL: process.env.VITE_SUPABASE_URL || '',
       SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || '',
+      eas: {
+        projectId: '3dd64929-f6b2-42cc-8200-8a981b369a92',
+      },
     },
   },
 };

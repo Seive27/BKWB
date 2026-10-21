@@ -225,8 +225,8 @@ export async function getResidents(): Promise<ResidentRecord[]> {
 }
 
 /**
- * Sitio options are loaded from the database (distinct resident_accounts.sitio)
- * so newly added sitios appear automatically without redeploying constants.
+ * Canonical sitio list plus any extras already stored on accounts.
+ * Missing official sitios stay in every dropdown even when no residents use them yet.
  */
 export async function getSitioOptions(): Promise<string[]> {
   const { data, error } = await supabase
@@ -241,7 +241,7 @@ export async function getSitioOptions(): Promise<string[]> {
   const dbSitios = (data ?? [])
     .map((d) => ((d as { sitio: string | null }).sitio ?? '').trim())
     .filter(Boolean);
-  return dedupeSitios(dbSitios, SITIO_OPTIONS);
+  return dedupeSitios([...SITIO_OPTIONS, ...dbSitios], SITIO_OPTIONS);
 }
 
 /** Aggregate resident + account stats (resident role only). */

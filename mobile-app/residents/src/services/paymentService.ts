@@ -221,44 +221,79 @@ export async function getMyPayments(): Promise<ResidentPayment[]> {
   }));
 }
 
+function normalizePaymentRow(row: ResidentPayment): ResidentPayment {
+  return {
+    ...row,
+    bill: row.bill ?? null,
+    receipt_snapshot: row.receipt_snapshot ?? null,
+    receipt_sent_at: row.receipt_sent_at ?? null,
+  };
+}
+
 /**
- * The most recent payment recorded for one bill (webhook-confirmed rows only
- * unless nothing completed exists). Returns null when the bill has no
- * payment record yet — callers must never invent one.
+ * All payment rows for one bill (newest first). Used so partial + later
+ * payments each keep their own receipt on the resident side.
  */
-export async function getPaymentForBill(billId: string): Promise<ResidentPayment | null> {
+export async function getPaymentsForBill(billId: string): Promise<ResidentPayment[]> {
   const { data, error } = await supabase
     .from('payments')
     .select(PAYMENT_SELECT)
     .eq('bill_id', billId)
     .is('deleted_at', null)
     .order('payment_date', { ascending: false })
-    .limit(5);
+    .limit(50);
 
   if (error) {
     const msg = error.message.toLowerCase();
     if (msg.includes('does not exist') || msg.includes('relation')) {
       console.warn('[payments] table not available:', error.message);
-      return null;
+      return [];
     }
-    console.warn('[payments] failed to load payment for bill:', error.message);
-    return null;
+    console.warn('[payments] failed to load payments for bill:', error.message);
+    return [];
   }
 
-  const rows = (data ?? []) as unknown as ResidentPayment[];
-  const payment =
-    rows.find((p) => p.status === 'completed') ??
-    rows[0] ??
-    null;
+  return ((data ?? []) as unknown as ResidentPayment[]).map(normalizePaymentRow);
+}
 
-  if (!payment) return null;
+/**
+ * The most recent payment recorded for one bill (webhook-confirmed rows only
+ * unless nothing completed exists). Returns null when the bill has no
+ * payment record yet — callers must never invent one.
+ */
+export async function getPaymentForBill(billId: string): Promise<ResidentPayment | null> {
+  const rows = await getPaymentsForBill(billId);
+  return rows.find((p) => p.status === 'completed') ?? rows[0] ?? null;
+}
 
-  return {
-    ...payment,
-    bill: payment.bill ?? null,
-    receipt_snapshot: payment.receipt_snapshot ?? null,
-    receipt_sent_at: payment.receipt_sent_at ?? null,
-  };
+/**
+ * Completed payment tied to a specific PayMongo checkout session for this bill.
+ * Used so a prior partial payment is never mistaken for the current online pay.
+ */
+export async function getPaymentForCheckoutSession(
+  billId: string,
+  checkoutSessionId: string
+): Promise<ResidentPayment | null> {
+  const sessionId = checkoutSessionId.trim();
+  if (!sessionId) return null;
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select(PAYMENT_SELECT)
+    .eq('bill_id', billId)
+    .eq('paymongo_checkout_session_id', sessionId)
+    .eq('status', 'completed')
+    .is('deleted_at', null)
+    .order('payment_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[payments] failed to load checkout payment:', error.message);
+    return null;
+  }
+  if (!data) return null;
+  return normalizePaymentRow(data as unknown as ResidentPayment);
 }
 
 /**

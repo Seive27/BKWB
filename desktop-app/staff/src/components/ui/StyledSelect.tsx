@@ -110,7 +110,13 @@ const StyledSelect: React.FC<StyledSelectProps> = ({
     [menuItems]
   );
   const selectedValue = value === undefined || value === null ? '' : String(value);
-  const selected = options.find((option) => option.value === selectedValue);
+  const selected =
+    options.find((option) => option.value === selectedValue) ??
+    options.find(
+      (option) =>
+        option.value !== '' &&
+        option.value.toLowerCase() === selectedValue.toLowerCase()
+    );
   const displayLabel = selected?.label ?? '\u00A0';
   const closedPlaceholder =
     nodeText(options.find((option) => option.value === '')?.label) || 'Select…';
@@ -312,7 +318,11 @@ const StyledSelect: React.FC<StyledSelectProps> = ({
               );
             }
 
-            const isSelected = item.value === selectedValue;
+            const isSelected =
+              item.value === selectedValue ||
+              (item.value !== '' &&
+                selectedValue !== '' &&
+                item.value.toLowerCase() === selectedValue.toLowerCase());
             return (
               <button
                 key={`${item.value}-${index}`}

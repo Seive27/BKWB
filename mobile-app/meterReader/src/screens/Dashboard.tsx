@@ -310,6 +310,7 @@ export default function Dashboard({
 
       <StartReadingModal
         visible={showStartReading}
+        assignedReadings={assignments}
         onClose={() => setShowStartReading(false)}
         onConfirm={async (payload) => {
           const current = Number(payload.currentReading.replace(/,/g, ''));

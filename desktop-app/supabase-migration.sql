@@ -916,6 +916,7 @@ CREATE INDEX IF NOT EXISTS idx_meter_readings_account_prev
 CREATE OR REPLACE FUNCTION public.calculate_consumption()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
@@ -1265,8 +1266,8 @@ SELECT
     'Unit 3',
     'Unit 4',
     'Unit 5',
-    'Upper Awiha',
-    'Upper Camprang',
+    'Upper Awihaw',
+    'Upper Camparang',
     'Upper Kalunasan',
     'Valle Estrella'
   ])[ (rr.rn % 20) + 1 ] || ', Barangay Kalunasan',
@@ -1287,8 +1288,8 @@ SELECT
     'Unit 3',
     'Unit 4',
     'Unit 5',
-    'Upper Awiha',
-    'Upper Camprang',
+    'Upper Awihaw',
+    'Upper Camparang',
     'Upper Kalunasan',
     'Valle Estrella'
   ])[ (rr.rn % 20) + 1 ],
@@ -1325,8 +1326,8 @@ JOIN (
     (13, 'Unit 3'),
     (14, 'Unit 4'),
     (15, 'Unit 5'),
-    (16, 'Upper Awiha'),
-    (17, 'Upper Camprang'),
+    (16, 'Upper Awihaw'),
+    (17, 'Upper Camparang'),
     (18, 'Upper Kalunasan'),
     (19, 'Valle Estrella')
 ) AS s(idx, name) ON s.idx = mapped.idx

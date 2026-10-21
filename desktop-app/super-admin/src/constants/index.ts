@@ -113,8 +113,8 @@ export const SITIO_OPTIONS = [
   'Unit 3',
   'Unit 4',
   'Unit 5',
-  'Upper Awiha',
-  'Upper Camprang',
+  'Upper Awihaw',
+  'Upper Camparang',
   'Upper Kalunasan',
   'Valle Estrella',
 ] as const;

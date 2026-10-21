@@ -601,9 +601,11 @@ const MeterReadings: React.FC<{
 
                 <div className="flex items-center space-x-3">
                   <StyledSelect
+                    searchable
+                    searchPlaceholder="Search sitios…"
                     value={sitioFilter}
                     onChange={(e) => setSitioFilter(e.target.value)}
-                    className={filterFieldStyles}
+                    className={`min-w-[12rem] px-3 ${filterFieldStyles}`}
                     aria-label="Filter by sitio"
                   >
                     <option value="all">All Sitios</option>

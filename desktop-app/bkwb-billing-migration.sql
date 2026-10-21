@@ -1026,20 +1026,43 @@ CREATE POLICY "Residents can read own accounts"
   TO authenticated
   USING (resident_id = auth.uid());
 
+-- SECURITY DEFINER helper: do not SELECT meter_readings from this policy
+-- under invoker RLS (causes infinite recursion with calculate_consumption).
+CREATE OR REPLACE FUNCTION public.meter_reader_can_read_account(
+  p_account_id uuid,
+  p_sitio text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT
+    EXISTS (
+      SELECT 1
+      FROM public.sitio_assignments sa
+      WHERE sa.meter_reader_id = (SELECT auth.uid())
+        AND sa.sitio = p_sitio
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM public.meter_readings mr
+      WHERE mr.account_id = p_account_id
+        AND mr.meter_reader_id = (SELECT auth.uid())
+        AND mr.deleted_at IS NULL
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.meter_reader_can_read_account(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.meter_reader_can_read_account(uuid, text) TO authenticated;
+
 DROP POLICY IF EXISTS "Meter readers can read accounts in their sitio" ON public.resident_accounts;
 CREATE POLICY "Meter readers can read accounts in their sitio"
   ON public.resident_accounts
   FOR SELECT
   TO authenticated
-  USING (
-    sitio IN (
-      SELECT sa.sitio FROM public.sitio_assignments sa WHERE sa.meter_reader_id = auth.uid()
-    )
-    OR id IN (
-      SELECT mr.account_id FROM public.meter_readings mr
-      WHERE mr.meter_reader_id = auth.uid() AND mr.deleted_at IS NULL
-    )
-  );
+  USING (public.meter_reader_can_read_account(id, sitio));
 
 NOTIFY pgrst, 'reload schema';
 

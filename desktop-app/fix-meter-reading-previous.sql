@@ -10,6 +10,7 @@
 CREATE OR REPLACE FUNCTION public.calculate_consumption()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE

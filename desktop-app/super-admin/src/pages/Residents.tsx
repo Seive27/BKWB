@@ -371,9 +371,11 @@ const AddResidentModal: React.FC<{
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Sitio *</label>
                 <StyledSelect
+                  searchable
+                  searchPlaceholder="Search sitios…"
                   value={form.sitio}
                   onChange={(e) => set('sitio', e.target.value)}
-                  className={`w-full py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white text-gray-900 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white text-gray-900 ${fieldErrors.sitio ? 'border-red-400' : ''}`}
                   wrapperClassName="w-full"
                 >
                   <option value="">Select a sitio</option>
@@ -604,7 +606,8 @@ const Residents: React.FC = () => {
           (r.meterNumber ?? '').toLowerCase().includes(q) ||
           (r.sitio ?? '').toLowerCase().includes(q) ||
           (r.email ?? '').toLowerCase().includes(q);
-        const matchesSitio = sitioFilter === '' || sitiosMatch(r.sitio, sitioFilter);
+        const matchesSitio =
+          sitioFilter === '' || sitioFilter === 'all' || sitiosMatch(r.sitio, sitioFilter);
         const displayStatus = getDisplayStatus(r);
         const matchesStatus = statusFilter === '' || displayStatus === statusFilter;
         return matchesSearch && matchesSitio && matchesStatus;
@@ -750,12 +753,16 @@ const Residents: React.FC = () => {
                     />
                   </div>
                   <StyledSelect
-                    value={sitioFilter}
-                    onChange={(e) => setSitioFilter(e.target.value)}
-                    className="py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    searchable
+                    searchPlaceholder="Search sitios…"
+                    value={sitioFilter || 'all'}
+                    onChange={(e) =>
+                      setSitioFilter(e.target.value === 'all' ? '' : e.target.value)
+                    }
+                    className="min-w-[12rem] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     title="Filter by sitio"
                   >
-                    <option value="">All Sitios</option>
+                    <option value="all">All Sitios</option>
                     {(sitioOptions.length > 0 ? sitioOptions : SITIO_OPTIONS).map((sitio) => (
                       <option key={sitio} value={sitio}>{sitio}</option>
                     ))}

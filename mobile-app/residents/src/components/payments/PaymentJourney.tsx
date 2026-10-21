@@ -17,7 +17,8 @@ import {
   formatPaymentDateTime,
   formatPaymentMethod,
   getOfficialReceiptForPayment,
-  getPaymentForBill,
+  getPaymentsForBill,
+  type OfficialReceiptSnapshot,
   type ResidentPayment,
 } from '@/services/paymentService';
 
@@ -114,8 +115,11 @@ function BusyStep({
   );
 }
 
-/** Paid bill → show the recorded payment receipt (never invented data). */
-function PaidReceiptContent({ payment }: { payment: ResidentPayment | null }) {
+/** Paid bill → show every recorded payment receipt (never invented data). */
+function PaidReceiptContent({ payments }: { payments: ResidentPayment[] }) {
+  const completed = payments.filter((p) => p.status === 'completed');
+  const latest = completed[0] ?? payments[0] ?? null;
+
   return (
     <View className="gap-4">
       <View className="items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-6">
@@ -133,39 +137,43 @@ function PaidReceiptContent({ payment }: { payment: ResidentPayment | null }) {
         <Text className="mt-3 text-lg font-bold text-slate-900">Bill Already Paid</Text>
         <Text className="mt-1 text-center text-sm leading-5 text-slate-500">
           This bill was settled on{' '}
-          {payment ? formatPaymentDateTime(payment.payment_date) : 'a previous payment date'}.
+          {latest ? formatPaymentDateTime(latest.payment_date) : 'a previous payment date'}.
         </Text>
       </View>
 
-      <View className="rounded-2xl border border-slate-200 bg-white px-4 py-2">
-        <InfoRow label="Amount Paid" value={payment ? formatPeso(payment.amount) : '—'} />
-        <InfoRow
-          label="Payment Method"
-          value={payment ? formatPaymentMethod(payment.payment_method) : '—'}
-        />
-        <InfoRow label="Payment Reference" value={payment?.reference_number ?? '—'} />
-        {payment?.paymongo_payment_id ? (
-          <InfoRow label="PayMongo Payment ID" value={payment.paymongo_payment_id} />
-        ) : null}
-        {payment?.paymongo_checkout_session_id ? (
-          <InfoRow label="PayMongo Checkout ID" value={payment.paymongo_checkout_session_id} />
-        ) : null}
-        <InfoRow
-          label="Payment Date"
-          value={payment ? formatPaymentDateTime(payment.payment_date) : '—'}
-        />
-        <InfoRow
-          label="Status"
-          value={payment?.status === 'completed' ? 'Completed' : (payment?.status ?? '—')}
-        />
-      </View>
-
-      {!payment ? (
+      {completed.length === 0 ? (
         <Text className="text-center text-xs leading-4 text-slate-400">
           No payment record was found for this bill yet — the payment history will
           appear here once the barangay records it.
         </Text>
-      ) : null}
+      ) : (
+        completed.map((payment, index) => (
+          <View key={payment.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-2">
+            {completed.length > 1 ? (
+              <Text className="py-2 text-sm font-bold text-slate-700">
+                Receipt {completed.length - index}
+              </Text>
+            ) : null}
+            <InfoRow label="Amount Paid" value={formatPeso(payment.amount)} />
+            <InfoRow
+              label="Payment Method"
+              value={formatPaymentMethod(payment.payment_method)}
+            />
+            <InfoRow label="Payment Reference" value={payment.reference_number ?? '—'} />
+            {payment.paymongo_payment_id ? (
+              <InfoRow label="PayMongo Payment ID" value={payment.paymongo_payment_id} />
+            ) : null}
+            {payment.paymongo_checkout_session_id ? (
+              <InfoRow label="PayMongo Checkout ID" value={payment.paymongo_checkout_session_id} />
+            ) : null}
+            <InfoRow
+              label="Payment Date"
+              value={formatPaymentDateTime(payment.payment_date)}
+            />
+            <InfoRow label="Status" value="Completed" />
+          </View>
+        ))
+      )}
     </View>
   );
 }
@@ -201,16 +209,23 @@ export function PaymentJourney({
   const flow = usePayMongoCheckout(bill);
   const userId = useSessionUserId();
   const queryClient = useQueryClient();
-  const paymentQuery = useQuery({
+  const paymentsQuery = useQuery({
     queryKey: queryKeys.payments.forBill(userId ?? '', bill.id),
-    queryFn: () => getPaymentForBill(bill.id),
+    queryFn: () => getPaymentsForBill(bill.id),
     enabled: !!userId,
   });
   const [payAgain, setPayAgain] = useState(false);
-  const paymentRecord = payAgain ? null : (paymentQuery.data ?? null);
-  const loading = paymentQuery.isLoading && paymentQuery.data === undefined;
+  const payments = Array.isArray(paymentsQuery.data) ? paymentsQuery.data : [];
+  const completedPayments = useMemo(
+    () => payments.filter((p) => p.status === 'completed'),
+    [payments]
+  );
+  const latestPayment = payments[0] ?? null;
+  const paymentRecord = payAgain ? null : latestPayment;
+  const loading = paymentsQuery.isLoading && paymentsQuery.data === undefined;
   const [step, setStep] = useState<'options' | 'receipt' | 'rejected'>('options');
-  const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
+  const [activeOfficialReceipt, setActiveOfficialReceipt] =
+    useState<OfficialReceiptSnapshot | null>(null);
 
   // Fire the parent's confirmation callbacks exactly once per bill.
   const confirmedHandledRef = useRef(false);
@@ -221,29 +236,27 @@ export function PaymentJourney({
   const originalCharges = Number(bill.amount ?? bill.amount_due) || 0;
   const prevBalance = Number(bill.previous_balance) || 0;
   const creditApplied = Number(bill.credit_applied) || 0;
-  const recordedPayment =
-    paymentQuery.data?.status === 'completed' ? paymentQuery.data : null;
-  const officialReceipt = useMemo(() => {
-    if (!recordedPayment) return null;
+  const receiptFallback = useMemo(() => {
     const resident = bill.resident;
     const residentName = resident
       ? [resident.first_name, resident.middle_name, resident.last_name].filter(Boolean).join(' ')
       : '—';
-    return getOfficialReceiptForPayment(recordedPayment, {
+    return {
       residentName: residentName || '—',
       accountNumber: bill.account?.account_number ?? '—',
       billId: bill.id,
       billNumber: bill.bill_number,
       billingPeriod: bill.billing_period,
       amountDue: billAmount,
-    });
-  }, [bill, billAmount, recordedPayment]);
+    };
+  }, [bill, billAmount]);
 
   // Load any existing payment record for this bill so already-paid bills and
   // previously submitted payments show their real status instead of a pay button.
+  // Completed partials stay on the options step so the resident can pay the rest.
   useEffect(() => {
-    if (payAgain || paymentQuery.isLoading) return;
-    const p = paymentQuery.data ?? null;
+    if (payAgain || paymentsQuery.isLoading) return;
+    const p = latestPayment;
     if (!unpaid) {
       setStep('receipt');
     } else if (p && (p.status === 'rejected' || p.status === 'cancelled')) {
@@ -253,7 +266,7 @@ export function PaymentJourney({
     } else {
       setStep('options');
     }
-  }, [payAgain, paymentQuery.data, paymentQuery.isLoading, unpaid]);
+  }, [payAgain, latestPayment, paymentsQuery.isLoading, unpaid]);
 
   // Surface the webhook/database confirmation to the parent (refresh bill card,
   // etc.) — once per bill.
@@ -357,7 +370,8 @@ export function PaymentJourney({
           </View>
           <Text className="mt-3 text-lg font-bold text-slate-900">Payment Confirmed</Text>
           <Text className="mt-1 text-center text-sm leading-5 text-slate-500">
-            Your {formatPeriod(bill.billing_period)} bill has been paid. Thank you!
+            Your online payment for the {formatPeriod(bill.billing_period)} bill was recorded.
+            Thank you!
           </Text>
         </View>
 
@@ -483,7 +497,7 @@ export function PaymentJourney({
       </View>
     );
   } else if (!unpaid) {
-    content = <PaidReceiptContent payment={paymentRecord} />;
+    content = <PaidReceiptContent payments={payments} />;
   } else {
     // Options step — online payment through PayMongo.
     content = (
@@ -517,34 +531,60 @@ export function PaymentJourney({
           </View>
         </View>
 
-        {unpaid && recordedPayment ? (
-          <View className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2">
-            <Text className="py-2 text-sm font-bold text-emerald-800">Partial Payment Receipt</Text>
-            <InfoRow label="Amount Paid" value={formatPeso(recordedPayment.amount)} />
-            <InfoRow label="Remaining Balance" value={formatPeso(billAmount)} />
-            <InfoRow
-              label="Payment Method"
-              value={formatPaymentMethod(recordedPayment.payment_method)}
-            />
-            <InfoRow label="Payment Reference" value={recordedPayment.reference_number || '—'} />
-            <InfoRow
-              label="Payment Date"
-              value={formatPaymentDateTime(recordedPayment.payment_date)}
-            />
-            {officialReceipt ? (
-              <Pressable
-                onPress={() => setShowOfficialReceipt(true)}
-                className="mb-2 mt-2 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
-                accessibilityRole="button"
-                accessibilityLabel="View official receipt"
-              >
-                <Text className="text-sm font-bold text-white">View Official Receipt</Text>
-              </Pressable>
-            ) : (
-              <Text className="mb-2 mt-1 text-xs leading-5 text-emerald-800">
-                The official receipt appears here after barangay staff sends it from the Payments desk.
-              </Text>
-            )}
+        {unpaid && completedPayments.length > 0 ? (
+          <View className="gap-3">
+            <Text className="text-sm font-bold text-emerald-800">
+              {completedPayments.length > 1
+                ? `Previous Payment Receipts (${completedPayments.length})`
+                : 'Partial Payment Receipt'}
+            </Text>
+            <View className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2">
+              <InfoRow label="Remaining Balance" value={formatPeso(billAmount)} />
+            </View>
+            {completedPayments.map((payment, index) => {
+              const official = getOfficialReceiptForPayment(payment, receiptFallback);
+              return (
+                <View
+                  key={payment.id}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2"
+                >
+                  {completedPayments.length > 1 ? (
+                    <Text className="py-2 text-sm font-bold text-emerald-800">
+                      Receipt {completedPayments.length - index}
+                    </Text>
+                  ) : (
+                    <Text className="py-2 text-sm font-bold text-emerald-800">
+                      Partial Payment Receipt
+                    </Text>
+                  )}
+                  <InfoRow label="Amount Paid" value={formatPeso(payment.amount)} />
+                  <InfoRow
+                    label="Payment Method"
+                    value={formatPaymentMethod(payment.payment_method)}
+                  />
+                  <InfoRow label="Payment Reference" value={payment.reference_number || '—'} />
+                  <InfoRow
+                    label="Payment Date"
+                    value={formatPaymentDateTime(payment.payment_date)}
+                  />
+                  {official ? (
+                    <Pressable
+                      onPress={() => setActiveOfficialReceipt(official)}
+                      className="mb-2 mt-2 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
+                      accessibilityRole="button"
+                      accessibilityLabel={`View official receipt ${index + 1}`}
+                    >
+                      <Text className="text-sm font-bold text-white">View Official Receipt</Text>
+                    </Pressable>
+                  ) : (
+                    <Text className="mb-2 mt-1 text-xs leading-5 text-emerald-800">
+                      The official receipt appears here after barangay staff sends it from the
+                      Payments desk.
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
           </View>
         ) : null}
 
@@ -597,9 +637,9 @@ export function PaymentJourney({
         {content}
       </ScrollView>
       <OfficialReceiptModal
-        visible={showOfficialReceipt}
-        onClose={() => setShowOfficialReceipt(false)}
-        receipt={officialReceipt}
+        visible={!!activeOfficialReceipt}
+        onClose={() => setActiveOfficialReceipt(null)}
+        receipt={activeOfficialReceipt}
       />
     </>
   );

@@ -16,6 +16,8 @@ import {
 import {
   createCheckoutSession,
   getPaymentForBill,
+  getPaymentForCheckoutSession,
+  getPaymentsForBill,
   verifyPayMongoPayment,
   type ResidentPayment,
 } from '@/services/paymentService';
@@ -48,6 +50,8 @@ function appPaymentReturnUrl(billId?: string | null): string {
  *
  * Confirmation is NEVER based on the browser return alone. The DB is the
  * source of truth (webhook and/or verify-paymongo-payment → RPC).
+ *
+ * A prior partial payment must never count as success for a new checkout.
  */
 export type PayMongoFlowState =
   | 'idle'
@@ -69,6 +73,10 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
   const busyRef = useRef(false);
   const billIdRef = useRef<string | null>(bill?.id ?? null);
   const checkoutSessionIdRef = useRef<string | null>(null);
+  /** Remaining balance when the current checkout attempt started. */
+  const baselineAmountDueRef = useRef<number | null>(null);
+  /** Epoch ms when the current checkout attempt started. */
+  const checkoutStartedAtRef = useRef<number | null>(null);
   const stateRef = useRef<PayMongoFlowState>('idle');
   const stopWatcherRef = useRef<(() => void) | null>(null);
   stateRef.current = state;
@@ -92,9 +100,27 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }
   }, []);
 
+  const markConfirmed = useCallback(
+    async (payment: ResidentPayment | null, billId: string) => {
+      setConfirmedPayment(payment);
+      setStatusMessage('');
+      setState('confirmed');
+      invalidateDebounced(queryClient, queryKeys.bills.all);
+      invalidateDebounced(queryClient, queryKeys.payments.all);
+      try {
+        await AsyncStorage.removeItem(sessionStorageKey(billId));
+      } catch {
+        // ignore
+      }
+    },
+    [queryClient]
+  );
+
   useEffect(() => {
     billIdRef.current = bill?.id ?? null;
     checkoutSessionIdRef.current = null;
+    baselineAmountDueRef.current = null;
+    checkoutStartedAtRef.current = null;
     setState('idle');
     setConfirmedPayment(null);
     setErrorMessage('');
@@ -108,33 +134,68 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     }
   }, [bill?.id, loadStoredSession]);
 
-  /** Check the database directly for the bill being paid or partially settled. */
+  /**
+   * Confirm only when THIS checkout attempt settled — never because an older
+   * partial payment already exists or the bill is still partially_paid.
+   */
   const checkBillStatus = useCallback(async (): Promise<boolean> => {
     const billId = billIdRef.current;
     if (!billId) return false;
 
-    const payment = await getPaymentForBill(billId);
-    if (!payment) return false;
+    const sessionId = (checkoutSessionIdRef.current ?? '').trim();
+    const baselineDue = baselineAmountDueRef.current;
+    const startedAt = checkoutStartedAtRef.current;
+
+    // Prefer the payment row tied to this exact PayMongo checkout session.
+    if (sessionId) {
+      const sessionPayment = await getPaymentForCheckoutSession(billId, sessionId);
+      if (sessionPayment?.status === 'completed') {
+        await markConfirmed(sessionPayment, billId);
+        return true;
+      }
+    }
+
+    // Without a baseline we cannot tell a new settlement from a prior partial.
+    if (baselineDue == null) return false;
 
     const bills = await getMyBills();
     const current = bills.find((b) => b.id === billId);
-    const isSettledOrPartial = current?.status === 'paid' || current?.status === 'partially_paid';
+    if (!current) return false;
 
-    if (payment.status === 'completed' || isSettledOrPartial) {
-      setConfirmedPayment(payment);
-      setStatusMessage('');
-      setState('confirmed');
-      invalidateDebounced(queryClient, queryKeys.bills.all);
-      invalidateDebounced(queryClient, queryKeys.payments.all);
-      try {
-        await AsyncStorage.removeItem(sessionStorageKey(billId));
-      } catch {
-        // ignore
-      }
-      return true;
+    const currentDue = Number(current.amount_due) || 0;
+    const fullyPaid = current.status === 'paid' && currentDue < 0.01;
+    const dueReduced = currentDue < baselineDue - 0.009;
+
+    if (!fullyPaid && !dueReduced) return false;
+
+    const payments = await getPaymentsForBill(billId);
+    const completed = payments.filter((p) => p.status === 'completed');
+
+    let payment: ResidentPayment | null = null;
+    if (sessionId) {
+      payment =
+        completed.find((p) => (p.paymongo_checkout_session_id ?? '').trim() === sessionId) ??
+        null;
     }
-    return false;
-  }, [queryClient]);
+
+    if (!payment && startedAt != null) {
+      // Newest completed payment recorded at/after this checkout started.
+      payment =
+        completed.find((p) => {
+          const paidAt = new Date(p.payment_date || p.created_at).getTime();
+          return !Number.isNaN(paidAt) && paidAt >= startedAt - 15_000;
+        }) ?? null;
+    }
+
+    if (!payment && fullyPaid) {
+      payment = completed[0] ?? (await getPaymentForBill(billId));
+    }
+
+    if (!payment && !fullyPaid) return false;
+
+    await markConfirmed(payment, billId);
+    return true;
+  }, [markConfirmed]);
 
   /** Ask PayMongo (via edge function) whether this checkout is paid yet. */
   const reconcileWithPayMongo = useCallback(async (): Promise<{
@@ -168,9 +229,14 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
         };
       }
       const ok = await checkBillStatus();
+      if (ok) {
+        return { confirmed: true, status: result.status };
+      }
+      // Verify said success but bill/payment not visible yet — keep polling.
       return {
-        confirmed: ok,
-        error: ok ? undefined : 'PayMongo confirmed payment, but the bill has not updated yet. Try again.',
+        confirmed: false,
+        status: result.status,
+        error: 'PayMongo confirmed payment, but the bill has not updated yet. Try again.',
       };
     } catch (err) {
       console.warn('[paymongo-flow] verify-paymongo-payment failed:', err);
@@ -249,6 +315,8 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     setStatusMessage('');
     setConfirmedPayment(null);
     checkoutSessionIdRef.current = null;
+    baselineAmountDueRef.current = Number(bill?.amount_due) || 0;
+    checkoutStartedAtRef.current = Date.now();
     try {
       setState('creating');
       const appReturnUrl = appPaymentReturnUrl(billId);
@@ -275,7 +343,7 @@ export function usePayMongoCheckout(bill: ResidentBill | null) {
     } finally {
       busyRef.current = false;
     }
-  }, [openCheckout, reconcileWithPayMongo, rememberSession, startVerification]);
+  }, [bill?.amount_due, openCheckout, reconcileWithPayMongo, rememberSession, startVerification]);
 
   /** Manual re-check from the verifying screen. Always shows feedback. */
   const checkAgain = useCallback(async () => {

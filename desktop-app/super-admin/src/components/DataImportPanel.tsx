@@ -403,6 +403,8 @@ const BillHistoryFilterModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
           <label className="block">
             <span className="block text-sm font-medium text-gray-700 mb-1">Sitio</span>
             <StyledSelect
+              searchable
+              searchPlaceholder="Search sitios…"
               value={sitioChoice}
               disabled={optionsLoading || downloading}
               onChange={(event) => setSitioChoice(event.target.value)}

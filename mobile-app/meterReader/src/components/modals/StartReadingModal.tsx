@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -30,6 +30,15 @@ import { NotesInput } from '@/components/recordReading/NotesInput';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
 import { SITIO_OPTIONS } from '@/constants/sitios';
+import type { MeterReading } from '@/types/readings';
+
+function normalizeMeterNumber(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function sitioLabel(reading: MeterReading): string {
+  return (reading.account?.sitio ?? '').trim() || 'Unassigned Sitio';
+}
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.92;
@@ -55,6 +64,11 @@ type StartReadingModalProps = {
   lockSitio?: boolean;
   /** Pre-fill the meter number when a pending consumer is selected. */
   defaultMeterNumber?: string;
+  /**
+   * Open assignments used to auto-fill previous reading when the typed
+   * meter number matches a resident in the selected sitio.
+   */
+  assignedReadings?: MeterReading[];
   /** Called when the reader confirms a complete reading entry. */
   onConfirm?: (payload: StartReadingPayload) => void | Promise<void>;
 };
@@ -74,6 +88,7 @@ export function StartReadingModal({
   defaultSitio,
   lockSitio = false,
   defaultMeterNumber,
+  assignedReadings = [],
   onConfirm,
 }: StartReadingModalProps) {
   const [dateOfReading] = useState(() => formatReadingDate(new Date()));
@@ -88,6 +103,24 @@ export function StartReadingModal({
 
   const translateY = useSharedValue(SHEET_MAX_HEIGHT);
   const dragStartY = useSharedValue(0);
+
+  const matchedAssignment = useMemo(() => {
+    const normalizedMeter = normalizeMeterNumber(meterNumber);
+    const selectedSitio = sitio.trim();
+    if (!normalizedMeter || !selectedSitio) return null;
+
+    return (
+      assignedReadings.find((reading) => {
+        if (sitioLabel(reading) !== selectedSitio) return false;
+        return (
+          normalizeMeterNumber(reading.meter?.meter_number ?? '') ===
+          normalizedMeter
+        );
+      }) ?? null
+    );
+  }, [assignedReadings, meterNumber, sitio]);
+
+  const previousReading = matchedAssignment?.previous_reading ?? null;
 
   const resetForm = useCallback(() => {
     setMeterNumber('');
@@ -200,6 +233,19 @@ export function StartReadingModal({
     }
     if (!trimmedReading) {
       Alert.alert('Missing reading', 'Please enter the current reading or consumption.');
+      return;
+    }
+
+    const currentValue = Number(trimmedReading.replace(/,/g, ''));
+    if (!Number.isFinite(currentValue)) {
+      Alert.alert('Invalid reading', 'Please enter a valid current reading.');
+      return;
+    }
+    if (previousReading != null && currentValue < previousReading) {
+      Alert.alert(
+        'Invalid reading',
+        `Current reading must be at least the previous reading (${previousReading.toLocaleString()} m³).`,
+      );
       return;
     }
 
@@ -412,6 +458,23 @@ export function StartReadingModal({
 
               <View className="mb-4">
                 <Text className="mb-2 text-[13px] font-semibold text-navy-muted">
+                  Previous Reading
+                </Text>
+                <View className="flex-row items-center rounded-2xl border border-slate-200 bg-surface px-4 py-3.5">
+                  <Text
+                    className={`flex-1 text-[15px] font-semibold ${
+                      previousReading != null ? 'text-navy' : 'text-navy-soft'
+                    }`}
+                  >
+                    {previousReading != null
+                      ? `${previousReading.toLocaleString()} m³`
+                      : 'Enter meter number to auto-fill'}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="mb-4">
+                <Text className="mb-2 text-[13px] font-semibold text-navy-muted">
                   Meter Photo
                 </Text>
                 <Pressable
@@ -448,7 +511,7 @@ export function StartReadingModal({
 
               <View className="mb-4">
                 <Text className="mb-2 text-[13px] font-semibold text-navy-muted">
-                  Current Reading / Consumption
+                  Current Reading
                 </Text>
                 <View className="flex-row items-center rounded-2xl border border-slate-200 bg-surface px-4 py-3">
                   <TextInput

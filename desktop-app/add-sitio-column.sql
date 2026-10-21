@@ -34,8 +34,8 @@ JOIN (
     (13, 'Unit 3'),
     (14, 'Unit 4'),
     (15, 'Unit 5'),
-    (16, 'Upper Awiha'),
-    (17, 'Upper Camprang'),
+    (16, 'Upper Awihaw'),
+    (17, 'Upper Camparang'),
     (18, 'Upper Kalunasan'),
     (19, 'Valle Estrella')
 ) AS s(idx, name) ON s.idx = mapped.idx

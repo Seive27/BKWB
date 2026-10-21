@@ -28,6 +28,7 @@ import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { subscribePaymentEvents } from '../lib/paymentEvents';
 import { queryErrorMessage } from '../lib/queryError';
 import { queryKeys } from '../lib/queryKeys';
+import { SITIO_OPTIONS } from '../constants';
 import StyledSelect from '../components/ui/StyledSelect';
 import { getBills } from '../services/billService';
 import {
@@ -139,7 +140,10 @@ const Payments: React.FC = () => {
   );
   const residents = residentsQuery.data ?? [];
   const bills = billsQuery.data ?? [];
-  const sitios = sitiosQuery.data ?? [];
+  const sitios =
+    sitiosQuery.data && sitiosQuery.data.length > 0
+      ? sitiosQuery.data
+      : (SITIO_OPTIONS as unknown as string[]);
   const pendingOnlinePayments = pendingQuery.data ?? [];
   const recentOnlinePayments = recentQuery.data ?? [];
   const loading = residentsQuery.isLoading;
@@ -607,13 +611,17 @@ const Payments: React.FC = () => {
 
               {/* Sitio Filter */}
               <StyledSelect
-                value={sitioFilter}
-                onChange={(e) => setSitioFilter(e.target.value)}
-                className="w-full pl-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                searchable
+                searchPlaceholder="Search sitios…"
+                value={sitioFilter || 'all'}
+                onChange={(e) =>
+                  setSitioFilter(e.target.value === 'all' ? '' : e.target.value)
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 wrapperClassName="w-full"
                 title="Filter by Sitio"
               >
-                <option value="">All Sitios</option>
+                <option value="all">All Sitios</option>
                 {sitios.map((s) => (
                   <option key={s} value={s}>
                     {s}

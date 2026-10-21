@@ -41,7 +41,9 @@ export const queryKeys = {
   },
   payments: {
     all: ['payments'] as const,
-    forBill: (userId: string, billId: string) => ['payments', 'bill', userId, billId] as const,
+    /** All payment rows for one bill (array). */
+    forBill: (userId: string, billId: string) =>
+      ['payments', 'bill', 'list', userId, billId] as const,
   },
   profile: {
     all: ['profile'] as const,

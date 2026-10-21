@@ -21,6 +21,7 @@ import {
   Send,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
+import { SITIO_OPTIONS } from '../constants';
 import { getResidents, getSitioOptions, type ResidentRecord } from '../services/residentService';
 import { useToast } from '../components/ui/ToastProvider';
 import { useAuth } from '../hooks/useAuth';
@@ -138,7 +139,10 @@ const Payments: React.FC = () => {
   );
   const residents = residentsQuery.data ?? [];
   const bills = billsQuery.data ?? [];
-  const sitios = sitiosQuery.data ?? [];
+  const sitios =
+    sitiosQuery.data && sitiosQuery.data.length > 0
+      ? sitiosQuery.data
+      : (SITIO_OPTIONS as unknown as string[]);
   const pendingOnlinePayments = pendingQuery.data ?? [];
   const recentOnlinePayments = recentQuery.data ?? [];
   const loading = residentsQuery.isLoading;
@@ -625,13 +629,17 @@ const Payments: React.FC = () => {
 
               {/* Sitio Filter */}
               <StyledSelect
-                value={sitioFilter}
-                onChange={(e) => setSitioFilter(e.target.value)}
-                className="w-full py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                searchable
+                searchPlaceholder="Search sitios…"
+                value={sitioFilter || 'all'}
+                onChange={(e) =>
+                  setSitioFilter(e.target.value === 'all' ? '' : e.target.value)
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 wrapperClassName="w-full"
                 title="Filter by Sitio"
               >
-                <option value="">All Sitios</option>
+                <option value="all">All Sitios</option>
                 {sitios.map((s) => (
                   <option key={s} value={s}>
                     {s}

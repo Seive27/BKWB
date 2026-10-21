@@ -22,7 +22,9 @@ import {
   formatPaymentDateTime,
   formatPaymentMethod,
   getOfficialReceiptForPayment,
-  getPaymentForBill,
+  getPaymentsForBill,
+  type OfficialReceiptSnapshot,
+  type ResidentPayment,
 } from '@/services/paymentService';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -75,38 +77,49 @@ export function BillDetailModal({
   const dialog = useDialog();
   const [downloading, setDownloading] = useState(false);
   const [showPay, setShowPay] = useState(false);
-  const [showOfficialReceipt, setShowOfficialReceipt] = useState(false);
+  const [activeOfficialReceipt, setActiveOfficialReceipt] =
+    useState<OfficialReceiptSnapshot | null>(null);
   const userId = useSessionUserId();
   const unpaid = bill ? isOutstandingBillStatus(bill.status) : false;
-  const paymentQuery = useQuery({
+  const paymentsQuery = useQuery({
     queryKey: queryKeys.payments.forBill(userId ?? '', bill?.id ?? ''),
-    queryFn: () => getPaymentForBill(bill!.id),
+    queryFn: () => getPaymentsForBill(bill!.id),
     enabled: visible && !!bill && !!userId,
   });
-  const payment = paymentQuery.data ?? null;
+  const payments = Array.isArray(paymentsQuery.data) ? paymentsQuery.data : [];
+  const completedPayments = useMemo(
+    () => payments.filter((p) => p.status === 'completed'),
+    [payments]
+  );
   const showPaymentReceipt =
     !!bill &&
     (bill.status === 'paid' ||
       bill.status === 'partially_paid' ||
-      payment?.status === 'completed');
+      completedPayments.length > 0);
 
   useEffect(() => {
-    if (!visible || !bill) setShowOfficialReceipt(false);
+    if (!visible || !bill) setActiveOfficialReceipt(null);
   }, [visible, bill]);
 
-  const officialReceipt = useMemo(() => {
-    if (!bill || !payment) return null;
-    return getOfficialReceiptForPayment(payment, {
+  const receiptFallback = useMemo(() => {
+    if (!bill) return null;
+    return {
       residentName: residentFullName(bill),
       accountNumber: bill.account?.account_number ?? '—',
       billId: bill.id,
       billNumber: bill.bill_number,
       billingPeriod: bill.billing_period,
       amountDue: Number(bill.amount_due) || 0,
-    });
-  }, [bill, payment]);
+    };
+  }, [bill]);
 
   if (!bill) return null;
+
+  const openOfficialReceipt = (payment: ResidentPayment) => {
+    if (!receiptFallback) return;
+    const receipt = getOfficialReceiptForPayment(payment, receiptFallback);
+    if (receipt) setActiveOfficialReceipt(receipt);
+  };
 
   const extras = bill.extra_components ?? [];
 
@@ -211,44 +224,73 @@ export function BillDetailModal({
         </View>
 
         {showPaymentReceipt ? (
-          <View className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-2">
-            <Text className="py-2 text-sm font-bold text-emerald-800">
-              {bill.status === 'partially_paid' ? 'Partial Payment Receipt' : 'Payment Receipt'}
+          <View className="mb-4 gap-3">
+            <Text className="px-1 text-sm font-bold text-emerald-800">
+              {completedPayments.length > 1
+                ? `Payment Receipts (${completedPayments.length})`
+                : bill.status === 'partially_paid'
+                  ? 'Partial Payment Receipt'
+                  : 'Payment Receipt'}
             </Text>
-            <Row
-              label="Amount Paid"
-              value={payment ? formatPeso(payment.amount) : '—'}
-            />
             {bill.status === 'partially_paid' ? (
-              <Row label="Remaining Balance" value={formatPeso(bill.amount_due)} />
+              <View className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2">
+                <Row label="Remaining Balance" value={formatPeso(bill.amount_due)} />
+              </View>
             ) : null}
-            <Row
-              label="Payment Method"
-              value={payment ? formatPaymentMethod(payment.payment_method) : '—'}
-            />
-            <Row label="Payment Reference" value={payment?.reference_number ?? '—'} />
-            <Row
-              label="Payment Date"
-              value={payment ? formatPaymentDateTime(payment.payment_date) : '—'}
-            />
-            <Row
-              label="Status"
-              value={payment?.status === 'completed' ? 'Completed' : (payment?.status ?? '—')}
-            />
-
-            {officialReceipt ? (
-              <Pressable
-                onPress={() => setShowOfficialReceipt(true)}
-                className="mb-2 mt-3 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
-                accessibilityRole="button"
-                accessibilityLabel="View official receipt"
-              >
-                <Text className="text-sm font-bold text-white">View Official Receipt</Text>
-              </Pressable>
+            {completedPayments.length === 0 ? (
+              <View className="rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+                <Text className="text-xs leading-5 text-emerald-700/80">
+                  Payment history will appear here once a payment is recorded.
+                </Text>
+              </View>
             ) : (
-              <Text className="mb-2 mt-2 text-xs leading-5 text-emerald-700/80">
-                Official receipt will appear here after barangay staff sends it from the Payments desk.
-              </Text>
+              completedPayments.map((payment, index) => {
+                const hasOfficial = !!getOfficialReceiptForPayment(
+                  payment,
+                  receiptFallback ?? undefined
+                );
+                const title =
+                  completedPayments.length > 1
+                    ? `Receipt ${completedPayments.length - index}`
+                    : bill.status === 'partially_paid'
+                      ? 'Partial Payment Receipt'
+                      : 'Payment Receipt';
+                return (
+                  <View
+                    key={payment.id}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-2"
+                  >
+                    <Text className="py-2 text-sm font-bold text-emerald-800">{title}</Text>
+                    <Row label="Amount Paid" value={formatPeso(payment.amount)} />
+                    <Row
+                      label="Payment Method"
+                      value={formatPaymentMethod(payment.payment_method)}
+                    />
+                    <Row label="Payment Reference" value={payment.reference_number ?? '—'} />
+                    <Row
+                      label="Payment Date"
+                      value={formatPaymentDateTime(payment.payment_date)}
+                    />
+                    <Row label="Status" value="Completed" />
+
+                    {hasOfficial ? (
+                      <Pressable
+                        onPress={() => openOfficialReceipt(payment)}
+                        className="mb-2 mt-3 items-center justify-center rounded-xl bg-emerald-600 py-3 active:bg-emerald-700"
+                        accessibilityRole="button"
+                        accessibilityLabel={`View official receipt ${index + 1}`}
+                      >
+                        <Text className="text-sm font-bold text-white">View Official Receipt</Text>
+                      </Pressable>
+                    ) : (
+                      <Text className="mb-2 mt-2 text-xs leading-5 text-emerald-700/80">
+                        Official receipt will appear here after barangay staff sends it from the
+                        Payments desk.
+                      </Text>
+                    )}
+                  </View>
+                );
+              })
             )}
           </View>
         ) : null}
@@ -257,9 +299,9 @@ export function BillDetailModal({
       <PaymentFlowModal visible={showPay} onClose={() => setShowPay(false)} bill={bill} />
 
       <OfficialReceiptModal
-        visible={showOfficialReceipt}
-        onClose={() => setShowOfficialReceipt(false)}
-        receipt={officialReceipt}
+        visible={!!activeOfficialReceipt}
+        onClose={() => setActiveOfficialReceipt(null)}
+        receipt={activeOfficialReceipt}
       />
     </>
   );

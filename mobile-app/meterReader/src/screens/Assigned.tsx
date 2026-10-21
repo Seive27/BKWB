@@ -300,6 +300,7 @@ export default function Assigned({
         visible={activeSitio !== null}
         defaultSitio={activeSitio ?? undefined}
         defaultMeterNumber={prefillMeterNumber ?? undefined}
+        assignedReadings={assignments}
         lockSitio
         onClose={() => {
           setActiveSitio(null);

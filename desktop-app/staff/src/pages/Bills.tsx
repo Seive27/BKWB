@@ -19,6 +19,7 @@ import StyledSelect from '../components/ui/StyledSelect';
 import ConfigureBillsModal from '../components/modals/ConfigureBillsModal';
 import BillOverviewModal from '../components/modals/BillOverviewModal';
 import PrintBillsModal from '../components/modals/PrintBillsModal';
+import { SITIO_OPTIONS } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { useInvalidatingMutation } from '../hooks/useInvalidatingMutation';
 import { queryErrorMessage } from '../lib/queryError';
@@ -29,6 +30,7 @@ import {
 } from '../services/billService';
 import { BILL_STATUS_LABELS, isOutstandingBillStatus } from '../types';
 import type { Bill, BillStatus } from '../types';
+import { sitioKey, sitiosMatch } from '../utils';
 import { exportSpreadsheet, singleSharedScope } from '../utils/exportSpreadsheet';
 
 const PAGE_SIZE = 10;
@@ -115,6 +117,7 @@ const Bills: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [periodFilter, setPeriodFilter] = useState('');
+  const [sitioFilter, setSitioFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [showConfigureBills, setShowConfigureBills] = useState(false);
   const [detailBill, setDetailBill] = useState<Bill | null>(null);
@@ -172,12 +175,12 @@ const Bills: React.FC = () => {
   // Reset pagination whenever a filter/search changes.
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, statusFilter, periodFilter]);
+  }, [searchQuery, statusFilter, periodFilter, sitioFilter]);
 
   // Clear selection when filters change; prune stale ids after reloads.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [searchQuery, statusFilter, periodFilter]);
+  }, [searchQuery, statusFilter, periodFilter, sitioFilter]);
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -193,11 +196,23 @@ const Bills: React.FC = () => {
     [bills]
   );
 
+  const sitioFilterOptions = useMemo(() => {
+    const knownKeys = new Set(SITIO_OPTIONS.map((name) => sitioKey(name)));
+    const extras = new Set<string>();
+    for (const bill of bills) {
+      const sitio = (bill.account?.sitio ?? '').trim();
+      const key = sitioKey(sitio);
+      if (key && !knownKeys.has(key)) extras.add(sitio);
+    }
+    return [...SITIO_OPTIONS, ...[...extras].sort((a, b) => a.localeCompare(b))];
+  }, [bills]);
+
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return bills.filter((b) => {
       if (statusFilter && b.status !== statusFilter) return false;
       if (periodFilter && b.billing_period !== periodFilter) return false;
+      if (sitioFilter !== 'all' && !sitiosMatch(b.account?.sitio, sitioFilter)) return false;
       if (!q) return true;
       const residentName = b.resident
         ? `${b.resident.first_name} ${b.resident.last_name}`.toLowerCase()
@@ -209,7 +224,7 @@ const Bills: React.FC = () => {
         (b.account?.sitio ?? '').toLowerCase().includes(q)
       );
     });
-  }, [bills, searchQuery, statusFilter, periodFilter]);
+  }, [bills, searchQuery, statusFilter, periodFilter, sitioFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -345,7 +360,7 @@ const Bills: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Bills Management</h1>
               <p className="text-gray-600">
-                Bills appear as Pending after you Issue Bill from Meter Readings. Select receipts to generate and print.
+                Bills appear as Pending after you Issue Bill from Meter Readings. Filter by sitio, select receipts, then generate and print.
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -479,6 +494,22 @@ const Bills: React.FC = () => {
                       className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
+                  <StyledSelect
+                    searchable
+                    searchPlaceholder="Search sitios…"
+                    value={sitioFilter}
+                    onChange={(e) => setSitioFilter(e.target.value)}
+                    className="min-w-[12rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    title="Filter by sitio"
+                    aria-label="Filter by sitio"
+                  >
+                    <option value="all">All Sitios</option>
+                    {sitioFilterOptions.map((sitio) => (
+                      <option key={sitio} value={sitio}>
+                        {sitio}
+                      </option>
+                    ))}
+                  </StyledSelect>
                   <StyledSelect
                     value={periodFilter}
                     onChange={(e) => setPeriodFilter(e.target.value)}

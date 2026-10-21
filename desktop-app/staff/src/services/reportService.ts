@@ -2,6 +2,7 @@
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { BILL_STATUS_LABELS, METER_READING_STATUS_LABELS, TICKET_CATEGORY_LABELS, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS } from '../types';
+import { sitiosMatch } from '../utils';
 import { downloadFile } from '../utils/downloadFile';
 import { buildExportFilename, exportSpreadsheet, sanitizeFilenamePart } from '../utils/exportSpreadsheet';
 
@@ -12,15 +13,22 @@ import { buildExportFilename, exportSpreadsheet, sanitizeFilenamePart } from '..
  * returns, so client-required metrics can be configured later.
  */
 
-export type PeriodKind = 'monthly' | 'quarterly' | 'yearly';
+export type PeriodKind = 'daily' | 'monthly' | 'quarterly' | 'yearly';
 
 export interface ReportPeriod {
   kind: PeriodKind;
   year: number;
-  /** 1-12, required for monthly */
+  /** 1-12, required for daily and monthly */
   month?: number;
+  /** 1-31, required for daily */
+  day?: number;
   /** 1-4, required for quarterly */
   quarter?: number;
+}
+
+export interface ReportOptions {
+  /** Optional sitio filter (Payments report). Empty / null = all sitios. */
+  sitio?: string | null;
 }
 
 export type ReportCategory =
@@ -62,7 +70,23 @@ export interface ReportResult {
 // ─── Period helpers ───
 
 export function getPeriodRange(period: ReportPeriod): { startIso: string; endIso: string; label: string } {
-  const { kind, year, month, quarter } = period;
+  const { kind, year, month, day, quarter } = period;
+  if (kind === 'daily') {
+    const m = month ?? 1;
+    const d = day ?? 1;
+    const start = new Date(Date.UTC(year, m - 1, d));
+    const end = new Date(Date.UTC(year, m - 1, d + 1));
+    return {
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+      label: start.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }),
+    };
+  }
   if (kind === 'monthly') {
     const m = month ?? 1;
     const start = new Date(Date.UTC(year, m - 1, 1));
@@ -357,7 +381,10 @@ async function billsReport(range: { startIso: string; endIso: string }): Promise
   };
 }
 
-async function paymentsReport(range: { startIso: string; endIso: string }): Promise<ReportResult> {
+async function paymentsReport(
+  range: { startIso: string; endIso: string },
+  sitio?: string | null
+): Promise<ReportResult> {
   const { data, error } = await supabase
     .from('bills')
     .select(
@@ -380,7 +407,12 @@ async function paymentsReport(range: { startIso: string; endIso: string }): Prom
     resident?: { first_name: string; last_name: string } | null;
   };
 
-  const rows = ((data ?? []) as unknown as Row[]).map((b) => ({
+  const sitioFilter = (sitio ?? '').trim();
+  const filtered = ((data ?? []) as unknown as Row[]).filter(
+    (b) => !sitioFilter || sitiosMatch(b.account?.sitio, sitioFilter)
+  );
+
+  const rows = filtered.map((b) => ({
     bill_number: b.bill_number,
     account: b.account?.account_number ?? '—',
     sitio: b.account?.sitio ?? '—',
@@ -390,7 +422,7 @@ async function paymentsReport(range: { startIso: string; endIso: string }): Prom
     paid_on: fmtDate(b.paid_at),
   }));
 
-  const collected = ((data ?? []) as unknown as Row[]).reduce((s, b) => s + Number(b.amount_due ?? 0), 0);
+  const collected = filtered.reduce((s, b) => s + Number(b.amount_due ?? 0), 0);
 
   return {
     category: 'payments',
@@ -410,6 +442,9 @@ async function paymentsReport(range: { startIso: string; endIso: string }): Prom
     summary: [
       { label: 'Payments collected', value: String(rows.length) },
       { label: 'Total collected', value: peso(collected) },
+      ...(sitioFilter
+        ? [{ label: 'Sitio', value: sitioFilter }]
+        : []),
       {
         label: 'Note',
         value: 'Derived from bills marked as paid; dedicated payment records are not yet recorded.',
@@ -482,7 +517,8 @@ async function ticketsReport(range: { startIso: string; endIso: string }): Promi
 /** Generate any registered report for a period. */
 export async function getReport(
   category: ReportCategory,
-  period: ReportPeriod
+  period: ReportPeriod,
+  options: ReportOptions = {}
 ): Promise<ReportResult> {
   const range = getPeriodRange(period);
   let result: ReportResult;
@@ -500,7 +536,7 @@ export async function getReport(
       result = await billsReport(range);
       break;
     case 'payments':
-      result = await paymentsReport(range);
+      result = await paymentsReport(range, options.sitio);
       break;
     case 'tickets':
       result = await ticketsReport(range);

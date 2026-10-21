@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
@@ -9,6 +9,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import StyledSelect from '../components/ui/StyledSelect';
+import { SITIO_OPTIONS } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { ANALYTICS_STALE_TIME } from '../lib/queryClient';
 import { queryErrorMessage } from '../lib/queryError';
@@ -22,8 +23,9 @@ import {
   type ReportCategory,
   type ReportPeriod,
 } from '../services/reportService';
+import { getSitioOptions } from '../services/residentService';
 
-const PERIOD_KINDS: { id: ReportPeriod['kind']; label: string }[] = [
+const BASE_PERIOD_KINDS: { id: ReportPeriod['kind']; label: string }[] = [
   { id: 'monthly', label: 'Monthly' },
   { id: 'quarterly', label: 'Quarterly' },
   { id: 'yearly', label: 'Yearly' },
@@ -38,17 +40,24 @@ function currentYear(): number {
   return new Date().getFullYear();
 }
 
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
 const Reports: React.FC = () => {
   const [category, setCategory] = useState<ReportCategory>('residents');
   const [kind, setKind] = useState<ReportPeriod['kind']>('monthly');
   const [year, setYear] = useState(currentYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [day, setDay] = useState(new Date().getDate());
   const [quarter, setQuarter] = useState(Math.floor(new Date().getMonth() / 3) + 1);
+  const [sitioFilter, setSitioFilter] = useState('');
 
   const { isAuthenticated } = useAuth();
   const [submitted, setSubmitted] = useState<{
     category: ReportCategory;
     period: ReportPeriod;
+    sitio: string;
   }>(() => ({
     category: 'residents',
     period: {
@@ -56,29 +65,70 @@ const Reports: React.FC = () => {
       year: currentYear(),
       month: new Date().getMonth() + 1,
     },
+    sitio: '',
   }));
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const isPayments = category === 'payments';
+
+  const periodKinds = useMemo(
+    () =>
+      isPayments
+        ? [{ id: 'daily' as const, label: 'Daily' }, ...BASE_PERIOD_KINDS]
+        : BASE_PERIOD_KINDS,
+    [isPayments]
+  );
+
+  const dayOptions = useMemo(
+    () => Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1),
+    [year, month]
+  );
+
+  useEffect(() => {
+    if (!isPayments && kind === 'daily') {
+      setKind('monthly');
+    }
+  }, [isPayments, kind]);
+
+  useEffect(() => {
+    const maxDay = daysInMonth(year, month);
+    if (day > maxDay) setDay(maxDay);
+  }, [year, month, day]);
+
+  const sitiosQuery = useQuery({
+    queryKey: queryKeys.residents.sitios(),
+    queryFn: () => getSitioOptions().catch(() => [] as string[]),
+    enabled: isAuthenticated && isPayments,
+  });
+  const sitios =
+    sitiosQuery.data && sitiosQuery.data.length > 0
+      ? sitiosQuery.data
+      : (SITIO_OPTIONS as unknown as string[]);
 
   const activeCategory = useMemo(
     () => REPORT_CATEGORIES.find((c) => c.id === category)!,
     [category]
   );
 
-  const period: ReportPeriod = useMemo(
-    () =>
-      kind === 'monthly'
-        ? { kind, year, month }
-        : kind === 'quarterly'
-          ? { kind, year, quarter }
-          : { kind, year },
-    [kind, year, month, quarter]
-  );
+  const period: ReportPeriod = useMemo(() => {
+    if (kind === 'daily') return { kind, year, month, day };
+    if (kind === 'monthly') return { kind, year, month };
+    if (kind === 'quarterly') return { kind, year, quarter };
+    return { kind, year };
+  }, [kind, year, month, day, quarter]);
 
   const reportQuery = useQuery({
-    queryKey: queryKeys.reports.detail(submitted.category, submitted.period),
-    queryFn: () => getReport(submitted.category, submitted.period),
+    queryKey: queryKeys.reports.detail(
+      submitted.category,
+      submitted.period,
+      { sitio: submitted.sitio || null }
+    ),
+    queryFn: () =>
+      getReport(submitted.category, submitted.period, {
+        sitio: submitted.category === 'payments' ? submitted.sitio || null : null,
+      }),
     enabled: isAuthenticated,
     staleTime: ANALYTICS_STALE_TIME,
   });
@@ -89,14 +139,16 @@ const Reports: React.FC = () => {
 
   const generate = () => {
     setExportError(null);
+    const nextSitio = isPayments ? sitioFilter : '';
     const same =
       submitted.category === category &&
-      JSON.stringify(submitted.period) === JSON.stringify(period);
+      JSON.stringify(submitted.period) === JSON.stringify(period) &&
+      submitted.sitio === nextSitio;
     if (same) {
       void reportQuery.refetch();
       return;
     }
-    setSubmitted({ category, period });
+    setSubmitted({ category, period, sitio: nextSitio });
   };
 
   const handleExportCsv = async () => {
@@ -130,6 +182,14 @@ const Reports: React.FC = () => {
     return [y, y - 1, y - 2, y - 3, y - 4];
   }, []);
 
+  const selectCategory = (next: ReportCategory) => {
+    setCategory(next);
+    if (next !== 'payments') {
+      setSitioFilter('');
+      if (kind === 'daily') setKind('monthly');
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="p-8">
@@ -138,7 +198,7 @@ const Reports: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Reports</h1>
             <p className="text-gray-600">
-              Operational reports generated from live system data — monthly, quarterly, or yearly.
+              Operational reports generated from live system data — daily, monthly, quarterly, or yearly.
             </p>
           </div>
           <button
@@ -158,7 +218,7 @@ const Reports: React.FC = () => {
             {REPORT_CATEGORIES.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setCategory(c.id)}
+                onClick={() => selectCategory(c.id)}
                 title={c.description}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   category === c.id
@@ -176,7 +236,7 @@ const Reports: React.FC = () => {
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Frequency</label>
               <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                {PERIOD_KINDS.map((k) => (
+                {periodKinds.map((k) => (
                   <button
                     key={k.id}
                     onClick={() => setKind(k.id)}
@@ -192,7 +252,7 @@ const Reports: React.FC = () => {
               </div>
             </div>
 
-            {kind === 'monthly' && (
+            {(kind === 'monthly' || kind === 'daily') && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Month</label>
                 <StyledSelect
@@ -202,6 +262,21 @@ const Reports: React.FC = () => {
                 >
                   {MONTHS.map((m, i) => (
                     <option key={m} value={i + 1}>{m}</option>
+                  ))}
+                </StyledSelect>
+              </div>
+            )}
+
+            {kind === 'daily' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Day</label>
+                <StyledSelect
+                  value={day}
+                  onChange={(e) => setDay(Number(e.target.value))}
+                  className="py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  {dayOptions.map((d) => (
+                    <option key={d} value={d}>{d}</option>
                   ))}
                 </StyledSelect>
               </div>
@@ -234,6 +309,29 @@ const Reports: React.FC = () => {
                 ))}
               </StyledSelect>
             </div>
+
+            {isPayments && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Sitio</label>
+                <StyledSelect
+                  searchable
+                  searchPlaceholder="Search sitios…"
+                  value={sitioFilter || 'all'}
+                  onChange={(e) =>
+                    setSitioFilter(e.target.value === 'all' ? '' : e.target.value)
+                  }
+                  className="min-w-[12rem] py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  title="Filter by Sitio"
+                >
+                  <option value="all">All Sitios</option>
+                  {sitios.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </StyledSelect>
+              </div>
+            )}
 
             <button
               onClick={generate}
@@ -281,7 +379,7 @@ const Reports: React.FC = () => {
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
                   Generated {new Date(result.generatedAt).toLocaleString()} ·{' '}
-                  {getPeriodRange(period).label !== '' ? `${result.rows.length} row(s)` : ''}
+                  {getPeriodRange(submitted.period).label !== '' ? `${result.rows.length} row(s)` : ''}
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

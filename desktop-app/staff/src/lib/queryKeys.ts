@@ -69,8 +69,11 @@ export const queryKeys = {
   },
   reports: {
     all: ['reports'] as const,
-    detail: (category: ReportCategory, period: ReportPeriod) =>
-      ['reports', category, period] as const,
+    detail: (
+      category: ReportCategory,
+      period: ReportPeriod,
+      options: { sitio?: string | null } = {}
+    ) => ['reports', category, period, options.sitio ?? null] as const,
   },
   billingConfig: {
     all: ['billing-config'] as const,

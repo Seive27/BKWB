@@ -149,4 +149,11 @@ CREATE POLICY "Residents can update own meter images"
 --   so a resident can never fake the previous reading.
 -- * Staff can distinguish resident submissions by
 --   source = 'resident' (badge + filter in the Meter Readings page).
+-- * Billing period is chosen in the Residents app and stored as
+--   assignment_date (1st of that YYYY-MM). reading_date is always
+--   the real submit timestamp — residents cannot backdate it.
+-- * When staff later assigns that month's sitio route, accepted /
+--   billed resident rows are linked to the meter reader
+--   (meter_reader_id) so they appear under Completed in the
+--   meter reader app instead of as pending visits.
 -- ============================================================

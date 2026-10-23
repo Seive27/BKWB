@@ -423,6 +423,10 @@ export async function createAssignment(
  * A sitio that already has open assignments (assigned / pending_review)
  * for the same calendar month cannot be selected again until those
  * readings are finished. A different month is treated as a new cycle.
+ *
+ * Accounts that already have an approved or billed resident self-submission
+ * for the same billing month are linked to this reader (not re-assigned),
+ * so they appear under Completed in the meter reader app.
  */
 export async function createSitioAssignment(
   input: {
@@ -485,11 +489,66 @@ export async function createSitioAssignment(
     );
   }
 
+  // Resident self-submissions already accepted (or billed) for this month —
+  // attach them to the assigned reader instead of creating a fresh visit.
+  const { data: settledResidentRows, error: settledError } = await supabase
+    .from('meter_readings')
+    .select('id, account_id, status')
+    .in('account_id', accountIds)
+    .eq('source', 'resident')
+    .in('status', ['approved', 'billed'])
+    .gte('assignment_date', start)
+    .lt('assignment_date', endExclusive)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  if (settledError) {
+    throw new Error(getMeterReadingErrorMessage(settledError));
+  }
+
+  const settledByAccount = new Map<string, { id: string; status: string }>();
+  for (const row of settledResidentRows ?? []) {
+    const r = row as { id: string; account_id: string; status: string };
+    if (!settledByAccount.has(r.account_id)) {
+      settledByAccount.set(r.account_id, { id: r.id, status: r.status });
+    }
+  }
+
+  const accountsNeedingAssign = accounts.filter((a) => !settledByAccount.has(a.id));
+  const adoptedIds = [...settledByAccount.values()].map((r) => r.id);
+
+  let adopted: MeterReading[] = [];
+  if (adoptedIds.length > 0) {
+    const { data: adoptedRows, error: adoptError } = await supabase
+      .from('meter_readings')
+      .update({
+        meter_reader_id: input.meter_reader_id,
+        assigned_by: assignedBy,
+        // Align with the sitio route date so progress grouping stays consistent.
+        assignment_date: input.assignment_date,
+      })
+      .in('id', adoptedIds)
+      .select(READING_SELECT);
+
+    if (adoptError) {
+      throw new Error(getMeterReadingErrorMessage(adoptError));
+    }
+    adopted = (adoptedRows ?? []).map((row) => mapRow(row as unknown as MeterReadingRow));
+  }
+
+  if (accountsNeedingAssign.length === 0) {
+    return {
+      created: 0,
+      skipped: adopted.length,
+      readings: adopted,
+    };
+  }
+
   const previousReadings = await Promise.all(
-    accounts.map((account) => getPreviousReading(account.id))
+    accountsNeedingAssign.map((account) => getPreviousReading(account.id))
   );
 
-  const rows = accounts.map((account, index) => ({
+  const rows = accountsNeedingAssign.map((account, index) => ({
     account_id: account.id,
     resident_id: account.resident_id,
     meter_id: account.meter_id,
@@ -498,6 +557,7 @@ export async function createSitioAssignment(
     assignment_date: input.assignment_date,
     previous_reading: previousReadings[index],
     status: 'assigned' as const,
+    source: 'meter_reader' as const,
   }));
 
   const { data, error } = await supabase
@@ -509,10 +569,64 @@ export async function createSitioAssignment(
     throw new Error(getMeterReadingErrorMessage(error));
   }
 
+  const created = (data ?? []).map((row) => mapRow(row as unknown as MeterReadingRow));
+
   return {
-    created: data?.length ?? 0,
-    skipped: 0,
-    readings: (data ?? []).map((row) => mapRow(row as unknown as MeterReadingRow)),
+    created: created.length,
+    skipped: adopted.length,
+    readings: [...created, ...adopted],
+  };
+}
+
+/**
+ * Soft-delete an open meter-reader assignment for the same account + billing
+ * month, and return the reader/assigner to attach onto an accepted resident reading.
+ */
+async function claimOpenAssignmentForResidentReading(reading: {
+  id: string;
+  account_id: string;
+  assignment_date: string;
+  source?: string | null;
+}): Promise<{ meter_reader_id: string; assigned_by: string | null } | null> {
+  if ((reading.source ?? 'meter_reader') !== 'resident') return null;
+
+  const { start, endExclusive } = assignmentMonthBounds(
+    reading.assignment_date.length === 10
+      ? reading.assignment_date
+      : `${reading.assignment_date.slice(0, 7)}-01`
+  );
+
+  const { data: openAssigned, error: openError } = await supabase
+    .from('meter_readings')
+    .select('id, meter_reader_id, assigned_by')
+    .eq('account_id', reading.account_id)
+    .eq('source', 'meter_reader')
+    .eq('status', 'assigned')
+    .gte('assignment_date', start)
+    .lt('assignment_date', endExclusive)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (openError) {
+    throw new Error(getMeterReadingErrorMessage(openError));
+  }
+  if (!openAssigned?.meter_reader_id) return null;
+
+  const { error: clearError } = await supabase
+    .from('meter_readings')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', openAssigned.id)
+    .eq('status', 'assigned');
+
+  if (clearError) {
+    throw new Error(getMeterReadingErrorMessage(clearError));
+  }
+
+  return {
+    meter_reader_id: openAssigned.meter_reader_id as string,
+    assigned_by: (openAssigned.assigned_by as string | null) ?? null,
   };
 }
 
@@ -534,7 +648,37 @@ export async function approveReading(id: string, reviewerId: string): Promise<Me
     throw new Error(getMeterReadingErrorMessage(error));
   }
 
-  return mapRow(data as unknown as MeterReadingRow);
+  const approved = mapRow(data as unknown as MeterReadingRow);
+
+  // If a meter-reader visit was already scheduled for this billing month,
+  // retire that open assignment and show the accepted self-submit as completed
+  // on the reader's route.
+  try {
+    const claim = await claimOpenAssignmentForResidentReading({
+      id: approved.id,
+      account_id: approved.account_id,
+      assignment_date: approved.assignment_date,
+      source: approved.source,
+    });
+    if (claim) {
+      const { data: linked, error: linkError } = await supabase
+        .from('meter_readings')
+        .update({
+          meter_reader_id: claim.meter_reader_id,
+          assigned_by: claim.assigned_by,
+        })
+        .eq('id', approved.id)
+        .select(READING_SELECT)
+        .single();
+      if (!linkError && linked) {
+        return mapRow(linked as unknown as MeterReadingRow);
+      }
+    }
+  } catch (err) {
+    console.warn('[meter-readings] could not link approved resident reading to route:', err);
+  }
+
+  return approved;
 }
 
 /**

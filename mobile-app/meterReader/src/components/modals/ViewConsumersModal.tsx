@@ -106,6 +106,11 @@ function ConsumerRow({
             {residentName}
           </Text>
           <Text className="text-[11px] font-mono text-slate-400"># {accountNumber}</Text>
+          {(reading.source ?? 'meter_reader') === 'resident' ? (
+            <Text className="mt-1 text-[10px] font-semibold text-violet-700">
+              Resident self-submitted
+            </Text>
+          ) : null}
         </View>
         <StatusBadge status={reading.status} />
       </View>

@@ -75,6 +75,17 @@ function fullName(person?: { first_name: string; last_name: string } | null): st
   return `${person.first_name} ${person.last_name}`.trim();
 }
 
+/** `YYYY-MM-DD` / ISO → `May 2026` billing period label. */
+function formatBillingPeriod(assignmentDate: string | null | undefined): string {
+  if (!assignmentDate) return '—';
+  const period = assignmentDate.slice(0, 7);
+  const m = period.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return period;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  if (Number.isNaN(d.getTime())) return period;
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 function initials(person?: { first_name: string; last_name: string } | null): string {
   const name = fullName(person);
   if (!name) return '?';
@@ -352,10 +363,17 @@ const MeterReadings: React.FC<{
       setSelectedSitio('');
       setSelectedReaderId('');
       setAssignmentDate(todayISO());
-      showToast(
-        'success',
-        `Assigned ${result.created} reading${result.created === 1 ? '' : 's'} in ${selectedSitio}.`
-      );
+      const assignedPart =
+        result.created > 0
+          ? `Assigned ${result.created} reading${result.created === 1 ? '' : 's'}`
+          : 'No new assignments';
+      const adoptedPart =
+        result.skipped > 0
+          ? ` · ${result.skipped} accepted resident submission${
+              result.skipped === 1 ? '' : 's'
+            } marked completed for the reader`
+          : '';
+      showToast('success', `${assignedPart} in ${selectedSitio}${adoptedPart}.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to assign reading.');
     } finally {
@@ -675,7 +693,7 @@ const MeterReadings: React.FC<{
                       Meter Reader
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Assigned
+                      Billing Period
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Consumption
@@ -794,7 +812,10 @@ const MeterReadings: React.FC<{
                             ))}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {formatDate(reading.assignment_date)}
+                          <div>{formatBillingPeriod(reading.assignment_date)}</div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            {formatDate(reading.assignment_date)}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {formatNumber(reading.consumption)} m³
@@ -1130,7 +1151,7 @@ const MeterReadings: React.FC<{
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <span className="text-[11px] text-gray-500 font-medium">Submitted by</span>
                   <p className="text-sm font-semibold text-gray-900 mt-0.5">
@@ -1141,10 +1162,21 @@ const MeterReadings: React.FC<{
                   </p>
                 </div>
                 <div>
+                  <span className="text-[11px] text-gray-500 font-medium">Billing Period</span>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                    {formatBillingPeriod(selectedReading.assignment_date)}
+                  </p>
+                </div>
+                <div>
                   <span className="text-[11px] text-gray-500 font-medium">Reading Date</span>
                   <p className="text-sm font-semibold text-gray-900 mt-0.5">
                     {formatDate(selectedReading.reading_date)}
                   </p>
+                  {(selectedReading.source ?? 'meter_reader') === 'resident' ? (
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Real-time submit stamp (not editable by resident)
+                    </p>
+                  ) : null}
                 </div>
               </div>
 

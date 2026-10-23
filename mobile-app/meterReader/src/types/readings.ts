@@ -46,6 +46,8 @@ export interface MeterReading {
   /** Auto-calculated by the database: current - previous (never negative). */
   consumption: number | null;
   status: MeterReadingStatus;
+  /** Who submitted the reading — resident self-submit vs meter-reader visit. */
+  source?: 'meter_reader' | 'resident' | null;
   remarks: string | null;
   photo_url: string | null;
   reviewed_by: string | null;

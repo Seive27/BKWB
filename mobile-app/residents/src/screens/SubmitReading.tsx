@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -15,11 +18,17 @@ import { useDialog } from '@/components/ui/AppDialog';
 import { Navbar, type NavTab } from '@/components/ui/Navbar';
 import { friendlyErrorMessage } from '@/lib/errors';
 import {
+  billingMonthKey,
+  firstAvailableAssignmentDate,
+  formatBillingPeriod,
   getMyReadings,
   getReadingAccount,
+  getUnavailableBillingMonths,
+  parseAssignmentDate,
   READING_STATUS_LABELS,
   resubmitRejectedReading,
   submitResidentReading,
+  todayAssignmentDate,
   type ResidentReading,
   type ResidentReadingAccount,
 } from '@/services/readingService';
@@ -88,14 +97,32 @@ export default function SubmitReadingScreen({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [account, setAccount] = useState<ResidentReadingAccount | null>(null);
   const [history, setHistory] = useState<ResidentReading[]>([]);
+  /** Months (`YYYY-MM`) that already have a reading or bill — not selectable. */
+  const [unavailableMonths, setUnavailableMonths] = useState<string[]>([]);
 
   const [currentReading, setCurrentReading] = useState('');
   const [notes, setNotes] = useState('');
+  /** Billing period date — same meaning as staff Assignment Date (`YYYY-MM-DD`). */
+  const [assignmentDate, setAssignmentDate] = useState(todayAssignmentDate);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   // False while showing the rejected reading's stored photo (kept on resubmit).
   const [photoChanged, setPhotoChanged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const assignmentDateValue = useMemo(() => {
+    try {
+      return parseAssignmentDate(assignmentDate);
+    } catch {
+      return parseAssignmentDate(todayAssignmentDate());
+    }
+  }, [assignmentDate]);
+
+  const unavailableMonthSet = useMemo(
+    () => new Set(unavailableMonths),
+    [unavailableMonths]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -107,6 +134,11 @@ export default function SubmitReadingScreen({
       setAccount(accountInfo);
       setHistory(readings);
 
+      const blocked = accountInfo
+        ? await getUnavailableBillingMonths(accountInfo.id)
+        : [];
+      setUnavailableMonths(blocked);
+
       // A rejected reading can be corrected and sent again — start from it.
       // Only the latest reading counts (an older rejection is already settled).
       const rejected = readings[0]?.status === 'rejected' ? readings[0] : null;
@@ -116,6 +148,12 @@ export default function SubmitReadingScreen({
         );
         setNotes(rejected.remarks ?? '');
         setPhotoUri(rejected.photo_url ?? null);
+        const rejectedDate = (rejected.assignment_date ?? '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(rejectedDate)) {
+          setAssignmentDate(rejectedDate);
+        }
+      } else {
+        setAssignmentDate(firstAvailableAssignmentDate(blocked));
       }
     } catch (err) {
       setLoadError(
@@ -150,12 +188,49 @@ export default function SubmitReadingScreen({
   const consumption =
     current !== null && current >= previousReading ? current - previousReading : null;
   const hasPhoto = Boolean(photoUri || photoBase64);
+  const selectedMonthBlocked =
+    !rejectedReading && unavailableMonthSet.has(billingMonthKey(assignmentDate));
+
   const canSubmit =
     !submitting &&
     !pendingReading &&
+    Boolean(assignmentDate) &&
+    !selectedMonthBlocked &&
     current !== null &&
     current >= previousReading &&
     hasPhoto;
+
+  function toISODate(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function applyAssignmentDate(selected: Date) {
+    const next = toISODate(selected);
+    const monthKey = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, '0')}`;
+    if (unavailableMonthSet.has(monthKey)) {
+      dialog.alert(
+        'Month unavailable',
+        `${formatBillingPeriod(monthKey)} already has a reading or bill. Please choose another month.`,
+        { tone: 'warning' }
+      );
+      return;
+    }
+    setAssignmentDate(next);
+  }
+
+  function onAssignmentDateValueChange(_event: unknown, selected: Date) {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    applyAssignmentDate(selected);
+  }
+
+  function onAssignmentDateDismiss() {
+    setShowDatePicker(false);
+  }
 
   async function pickPhoto(source: 'camera' | 'library') {
     try {
@@ -243,6 +318,7 @@ export default function SubmitReadingScreen({
       } else {
         await submitResidentReading({
           currentReading: current,
+          assignmentDate,
           remarks: notes,
           photoUri,
           photoBase64,
@@ -378,9 +454,99 @@ export default function SubmitReadingScreen({
                     {rejectedReading ? 'Correct your reading' : 'Send your reading'}
                   </Text>
                   <Text className="mt-1 text-sm text-slate-500">
-                    Tap the box below to photograph your meter, then type the numbers
-                    shown on the dial.
+                    Choose the billing period date, photograph your meter, then type the
+                    numbers on the dial. Read on is recorded automatically when you send.
                   </Text>
+
+                  <Text className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Billing period date
+                  </Text>
+                  {rejectedReading ? (
+                    <View className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <Text className="text-base font-semibold text-slate-800">
+                        {formatDate(rejectedReading.assignment_date)}
+                      </Text>
+                      <Text className="mt-0.5 text-xs text-slate-500">
+                        Kept from your original submission
+                      </Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => setShowDatePicker(true)}
+                      className="mt-2 flex-row items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3.5 active:border-brand"
+                      accessibilityRole="button"
+                      accessibilityLabel="Choose billing period date"
+                    >
+                      <Text className="text-base font-semibold text-slate-900">
+                        {formatDate(assignmentDate)}
+                      </Text>
+                      <Text className="text-sm font-semibold text-brand">Change</Text>
+                    </Pressable>
+                  )}
+                  <Text className="mt-2 text-xs leading-5 text-slate-500">
+                    Months that already have a reading or bill cannot be selected. Read on
+                    stays real-time when you submit.
+                  </Text>
+                  {selectedMonthBlocked ? (
+                    <Text className="mt-1 text-xs font-semibold text-red-600">
+                      {formatBillingPeriod(assignmentDate)} is unavailable. Choose another
+                      month.
+                    </Text>
+                  ) : null}
+                  {unavailableMonths.length > 0 && !rejectedReading ? (
+                    <Text className="mt-1 text-xs leading-5 text-slate-400">
+                      Unavailable:{' '}
+                      {unavailableMonths.map((m) => formatBillingPeriod(m)).join(', ')}
+                    </Text>
+                  ) : null}
+
+                  {showDatePicker && Platform.OS === 'android' ? (
+                    <DateTimePicker
+                      value={assignmentDateValue}
+                      mode="date"
+                      display="default"
+                      onValueChange={onAssignmentDateValueChange}
+                      onDismiss={onAssignmentDateDismiss}
+                    />
+                  ) : null}
+
+                  {Platform.OS === 'ios' ? (
+                    <Modal
+                      visible={showDatePicker}
+                      transparent
+                      animationType="fade"
+                      onRequestClose={() => setShowDatePicker(false)}
+                    >
+                      <Pressable
+                        className="flex-1 justify-end bg-black/40"
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <Pressable
+                          className="rounded-t-2xl bg-white px-4 pb-8 pt-3"
+                          onPress={(e) => e.stopPropagation()}
+                        >
+                          <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="text-base font-bold text-slate-800">
+                              Billing period date
+                            </Text>
+                            <Pressable
+                              onPress={() => setShowDatePicker(false)}
+                              className="rounded-lg bg-brand px-4 py-2 active:opacity-80"
+                            >
+                              <Text className="text-sm font-semibold text-white">Done</Text>
+                            </Pressable>
+                          </View>
+                          <DateTimePicker
+                            value={assignmentDateValue}
+                            mode="date"
+                            display="spinner"
+                            onValueChange={onAssignmentDateValueChange}
+                            style={{ alignSelf: 'stretch' }}
+                          />
+                        </Pressable>
+                      </Pressable>
+                    </Modal>
+                  ) : null}
 
                   <Pressable
                     onPress={choosePhoto}
@@ -507,7 +673,10 @@ export default function SubmitReadingScreen({
                                 : ''}
                             </Text>
                             <Text className="mt-0.5 text-xs text-slate-500">
-                              {formatDate(reading.reading_date ?? reading.assignment_date)} ·{' '}
+                              Assigned {formatDate(reading.assignment_date)}
+                              {' · '}
+                              Read on {formatDate(reading.reading_date ?? reading.created_at)}
+                              {' · '}
                               {reading.source === 'resident' ? 'Sent by you' : 'Meter reader'}
                             </Text>
                           </View>

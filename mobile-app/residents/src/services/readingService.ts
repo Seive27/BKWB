@@ -287,12 +287,206 @@ async function uploadMeterPhoto(
 
 export interface SubmitReadingInput {
   currentReading: number;
+  /**
+   * Billing / assignment date (`YYYY-MM-DD`), same field staff uses when assigning.
+   * Required for new submissions. Stored as `assignment_date`.
+   * Reading date stays real-time so the submit timestamp cannot be faked.
+   * On resubmit of a rejected reading the original date is kept.
+   */
+  assignmentDate?: string;
   remarks?: string;
   /** New local photo picked from the camera or gallery. */
   photoUri?: string | null;
   photoBase64?: string | null;
   /** Keep the photo already stored on a rejected reading. */
   keepExistingPhoto?: boolean;
+}
+
+/** Today's date as `YYYY-MM-DD` (local). */
+export function todayAssignmentDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Parse `YYYY-MM-DD` into a local Date at noon (avoids timezone day-shift). */
+export function parseAssignmentDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) {
+    throw new Error('Please choose a valid billing period date.');
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    throw new Error('Please choose a valid billing period date.');
+  }
+  return date;
+}
+
+function normalizeAssignmentDate(value: string): string {
+  const date = parseAssignmentDate(value);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Month bounds for the calendar month of an assignment date. */
+function assignmentMonthBounds(assignmentDate: string): { start: string; endExclusive: string } {
+  const date = parseAssignmentDate(assignmentDate);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endExclusive = `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
+  return { start, endExclusive };
+}
+
+/** '2026-05' or assignment date → 'May 2026'. */
+export function formatBillingPeriod(periodOrDate: string): string {
+  const period = periodOrDate.slice(0, 7);
+  const m = period.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return periodOrDate;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  if (Number.isNaN(d.getTime())) return periodOrDate;
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+/** `YYYY-MM` key for a date string. */
+export function billingMonthKey(assignmentDate: string): string {
+  return normalizeAssignmentDate(assignmentDate).slice(0, 7);
+}
+
+/**
+ * Months (`YYYY-MM`) that already have a reading or bill for this account.
+ * Residents cannot self-submit for these months.
+ * Rejected-only months stay available (they can send a new reading).
+ */
+export async function getUnavailableBillingMonths(accountId: string): Promise<string[]> {
+  const [readingsResult, billsResult] = await Promise.all([
+    supabase
+      .from('meter_readings')
+      .select('assignment_date, status')
+      .eq('account_id', accountId)
+      .in('status', ['assigned', 'pending_review', 'approved', 'billed'])
+      .is('deleted_at', null),
+    supabase
+      .from('bills')
+      .select('billing_period')
+      .eq('account_id', accountId)
+      .is('deleted_at', null),
+  ]);
+
+  if (readingsResult.error) {
+    throw new Error(readingErrorMessage(readingsResult.error));
+  }
+  if (billsResult.error) {
+    // Bills table may be unavailable in some setups — fall back to readings only.
+    console.warn('[readings] could not load bills for month lockout:', billsResult.error.message);
+  }
+
+  const months = new Set<string>();
+  for (const row of readingsResult.data ?? []) {
+    const date = (row.assignment_date as string | null)?.slice(0, 10);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      months.add(date.slice(0, 7));
+    }
+  }
+  for (const row of billsResult.data ?? []) {
+    const period = (row.billing_period as string | null)?.trim();
+    if (period && /^\d{4}-\d{2}$/.test(period)) {
+      months.add(period);
+    }
+  }
+
+  return [...months].sort();
+}
+
+/** True when this account already has a reading or bill in that calendar month. */
+export async function assertBillingMonthAvailable(
+  accountId: string,
+  assignmentDate: string
+): Promise<void> {
+  const month = billingMonthKey(assignmentDate);
+  const { start, endExclusive } = assignmentMonthBounds(assignmentDate);
+
+  const [readingResult, billResult] = await Promise.all([
+    supabase
+      .from('meter_readings')
+      .select('id, status, source')
+      .eq('account_id', accountId)
+      .in('status', ['assigned', 'pending_review', 'approved', 'billed'])
+      .gte('assignment_date', start)
+      .lt('assignment_date', endExclusive)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('bills')
+      .select('id, status')
+      .eq('account_id', accountId)
+      .eq('billing_period', month)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (readingResult.error) {
+    throw new Error(readingErrorMessage(readingResult.error));
+  }
+  if (billResult.error) {
+    console.warn('[readings] could not check bills for month lockout:', billResult.error.message);
+  }
+
+  if (billResult.data) {
+    throw new Error(
+      `${formatBillingPeriod(month)} already has a bill. Please choose another billing period date.`
+    );
+  }
+  if (readingResult.data) {
+    const status = readingResult.data.status as string;
+    const detail =
+      status === 'billed'
+        ? 'already billed'
+        : status === 'approved'
+          ? 'already approved'
+          : status === 'pending_review'
+            ? 'already waiting for review'
+            : 'already has a meter reading scheduled or recorded';
+    throw new Error(
+      `${formatBillingPeriod(month)} ${detail}. Please choose another billing period date.`
+    );
+  }
+}
+
+/** First day of the nearest month that is still free (prefers today, then next months). */
+export function firstAvailableAssignmentDate(
+  unavailableMonths: string[],
+  fromDate = todayAssignmentDate()
+): string {
+  const blocked = new Set(unavailableMonths);
+  let cursor = parseAssignmentDate(fromDate);
+  for (let i = 0; i < 36; i += 1) {
+    const y = cursor.getFullYear();
+    const m = String(cursor.getMonth() + 1).padStart(2, '0');
+    const key = `${y}-${m}`;
+    if (!blocked.has(key)) {
+      if (i === 0) return fromDate;
+      return `${key}-01`;
+    }
+    cursor = new Date(y, cursor.getMonth() + 1, 1, 12, 0, 0, 0);
+  }
+  return fromDate;
 }
 
 function validateReading(input: SubmitReadingInput, previousReading: number): number {
@@ -326,6 +520,13 @@ export async function submitResidentReading(
     throw new Error('You already have a meter reading waiting for staff review.');
   }
 
+  if (!input.assignmentDate?.trim()) {
+    throw new Error('Please choose the billing period date for this reading.');
+  }
+  const assignmentDate = normalizeAssignmentDate(input.assignmentDate);
+  // Block months that already have any reading (reader or resident) or a bill.
+  await assertBillingMonthAvailable(account.id, assignmentDate);
+
   const currentReading = validateReading(input, account.previousReading);
   const photoUrl = await uploadMeterPhoto(
     input.photoUri ?? `meter.${Date.now()}.jpg`,
@@ -333,13 +534,15 @@ export async function submitResidentReading(
     input.photoBase64
   );
 
+  // Billing period → assignment_date (cycle). reading_date is always "now"
+  // so residents cannot backdate when the meter was photographed/submitted.
   const { data, error } = await supabase
     .from('meter_readings')
     .insert({
       account_id: account.id,
       resident_id: userId,
       meter_id: account.meterId,
-      assignment_date: new Date().toISOString().slice(0, 10),
+      assignment_date: assignmentDate,
       reading_date: new Date().toISOString(),
       current_reading: currentReading,
       status: 'pending_review',
@@ -377,6 +580,8 @@ export async function resubmitRejectedReading(
     );
   }
 
+  // Billing period stays on the original row (DB guard blocks residents from
+  // changing assignment_date). Only the reading values + real-time submit stamp update.
   const { data, error } = await supabase
     .from('meter_readings')
     .update({

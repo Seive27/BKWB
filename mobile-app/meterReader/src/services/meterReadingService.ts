@@ -99,9 +99,10 @@ export async function getAssignedReadings(): Promise<MeterReading[]> {
 }
 
 /**
- * Fetch progress for sitios the reader still has open assignments in.
- * Includes submitted readings from the same assignment dates so the progress
- * bar can move as the reader completes the route.
+ * Fetch progress for sitios on the reader's current routes.
+ * Includes submitted / accepted readings from the same assignment dates
+ * (including resident self-submissions linked to this reader) so Completed
+ * counts stay accurate even when every account already self-submitted.
  */
 export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
   const userId = await requireUserId();
@@ -122,14 +123,44 @@ export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
   const remaining = (openRows ?? []).map((row) =>
     mapRow(row as unknown as MeterReadingRow)
   );
-  if (remaining.length === 0) return [];
 
-  const sitios = [
+  // Also pull this calendar month's route rows so a sitio that is 100%
+  // completed via accepted resident self-submissions still appears.
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const nextMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+  const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+  const monthEndExclusive = `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
+
+  const { data: monthRows, error: monthError } = await supabase
+    .from('meter_readings')
+    .select(READING_SELECT)
+    .eq('meter_reader_id', userId)
+    .gte('assignment_date', monthStart)
+    .lt('assignment_date', monthEndExclusive)
+    .is('deleted_at', null)
+    .order('assignment_date', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (monthError) {
+    throw new Error(getMeterReadingErrorMessage(monthError));
+  }
+
+  const monthRoute = (monthRows ?? []).map((row) =>
+    mapRow(row as unknown as MeterReadingRow)
+  );
+
+  // Prefer open-assignment dates when present; otherwise use this month's rows
+  // so fully completed (self-submitted) sitios still show under Completed.
+  const dates = [
     ...new Set(
-      remaining.map((r) => (r.account?.sitio ?? '').trim() || 'Unassigned Sitio')
+      remaining.length > 0
+        ? remaining.map((r) => r.assignment_date)
+        : monthRoute.map((r) => r.assignment_date)
     ),
   ];
-  const dates = [...new Set(remaining.map((r) => r.assignment_date))];
+
+  if (remaining.length === 0 && dates.length === 0) return [];
 
   const { data: routeRows, error: routeError } = await supabase
     .from('meter_readings')
@@ -146,6 +177,14 @@ export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
     mapRow(row as unknown as MeterReadingRow)
   );
 
+  const sitios = [
+    ...new Set(
+      [...remaining, ...allRoute].map(
+        (r) => (r.account?.sitio ?? '').trim() || 'Unassigned Sitio'
+      )
+    ),
+  ];
+
   return sitios
     .map((sitio) => {
       const sitioRemaining = remaining.filter(
@@ -156,6 +195,8 @@ export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
           ((r.account?.sitio ?? '').trim() || 'Unassigned Sitio') === sitio &&
           dates.includes(r.assignment_date)
       );
+      if (sitioAll.length === 0 && sitioRemaining.length === 0) return null;
+
       const total = Math.max(sitioAll.length, sitioRemaining.length);
       const completed = Math.max(0, total - sitioRemaining.length);
       const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -180,6 +221,7 @@ export async function getSitioRouteProgress(): Promise<SitioRouteProgress[]> {
         readings,
       };
     })
+    .filter((group): group is SitioRouteProgress => group !== null)
     .sort((a, b) => a.sitio.localeCompare(b.sitio));
 }
 

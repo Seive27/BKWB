@@ -28,17 +28,14 @@
 //   (best-effort) send-email → real email gets the temporary password
 //
 // EMAIL IS OPTIONAL:
-//   Staff may leave the Email Address field blank (e.g. the resident
-//   has no email yet). When email is omitted:
-//     * auth.users gets a unique no-email-<random>@example.com
-//       placeholder identifier (GoTrue requires one; the IANA-reserved
-//       domain can never receive mail),
-//     * profiles.email stays NULL — same convention as the masterlist
-//       import, so staff tooling (canIssueLogin / resident-login)
-//       correctly offers the Issue Login flow,
-//     * no credential email is sent (there is no mailbox to send to).
-//   The resident activates through Issue Login + the mobile Account
-//   Setup flow, where they verify their own real email.
+//   Staff may leave the Email Address field blank. When omitted for a
+//   resident, profiles.email stays NULL (never auto-generated).
+//   Auth is still wired for Account Number login (same as Issue Login):
+//     - auth email → acc-<account>@example.com (internal GoTrue handle only)
+//     - password   → AccountNumber_LastName (e.g. 123323_Fallen)
+//     - profiles.mobile_login_issued_at set so Staff shows Active
+//   The resident signs in with Account Number + that password, then adds
+//   a real email during Account Setup.
 //
 // Credentials (ALL auto-provisioned by the platform — nothing to set manually):
 //   * Admin client  → SUPABASE_SECRET_KEYS (current architecture:
@@ -79,19 +76,19 @@ type RoleName = (typeof VALID_ROLES)[number];
 const PHONE_REGEX = /^09\d{9}$/;
 
 interface CreateUserPayload {
-  /** Optional for residents: when blank, a no-email placeholder identifier
-   *  is generated for GoTrue and profiles.email stays NULL (see header). */
+  /** Optional for residents: when blank, account-number login is activated
+   *  (same credentials as Issue Login — see header). */
   email?: string | null;
   password?: string | null;
   first_name: string;
   middle_name?: string | null;
   last_name: string;
-  /** Profiles.date_of_birth — required for residents (drives auto password). */
+  /** Profiles.date_of_birth — required when a real email is set (DOB password). */
   date_of_birth?: string | null;
   /** PH cell number (09XXXXXXXXX) — required for residents, unique. */
   phone?: string | null;
   role: RoleName;
-  /** Residents only: optional consumer account number (e.g. ACC-0001).
+  /** Residents only: optional Cons Code (e.g. 9283 or 2024-9828).
    *  Auto-generated (ACC-####) when omitted. */
   account_number?: string | null;
   /** Residents only: service address for the new account. */
@@ -142,6 +139,43 @@ function generateTemporaryPassword(
   const yyyy = String(parts.y);
 
   return `${titleCase(lastName)}${titleCase(firstName)}${mm}${dd}${yyyy}`;
+}
+
+function titleCaseName(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+/** Login-handle domain: IANA-reserved, can never receive mail. */
+const LOGIN_HANDLE_DOMAIN = 'example.com';
+
+/**
+ * Deterministic login handle for an account number. MUST stay in sync with
+ * resident-login and the mobile apps' `loginHandleForAccount`.
+ */
+function loginHandleForAccount(accountNumber: string): string {
+  const sanitized = accountNumber.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `acc-${sanitized}@${LOGIN_HANDLE_DOMAIN}`;
+}
+
+/**
+ * Same temporary password as Issue Login (resident-login):
+ * AccountNumber_LastName (e.g. 123322_Safad). Leading ACC- is stripped.
+ */
+function generateAccountLastNamePassword(accountNumber: string, lastName: string): string {
+  const last = titleCaseName(lastName);
+  if (!last) {
+    throw new Error('Resident last name is required to generate a temporary password.');
+  }
+  const accountPart = accountNumber.trim().replace(/^ACC-/i, '');
+  if (!accountPart) {
+    throw new Error('Account number is required to generate a temporary password.');
+  }
+  return `${accountPart}_${last}`;
 }
 
 function firstStringValue(values: unknown[]): string | undefined {
@@ -330,22 +364,28 @@ async function handleRequest(req: Request): Promise<Response> {
     return fail(400, 'Cell number is required for resident accounts.');
   }
 
-  // ── 3b. Password: use provided value, otherwise auto-generate from DOB ──
+  // ── 3b. Password: provided, DOB (when email given), or throwaway (no email) ──
+  //        No-email residents get AccountNumber_LastName after the Cons Code
+  //        exists (same as Issue Login); the throwaway is only for createUser.
   let password = body.password?.trim() ?? '';
+  const emailSkipped = !email;
   if (!password) {
-    if (!dateOfBirth) {
+    if (emailSkipped && role === 'resident') {
+      password = `tmp-${randomPlaceholderLocalPart()}${randomPlaceholderLocalPart()}`;
+    } else if (!dateOfBirth) {
       return fail(400, 'Date of birth is required to generate a temporary password.');
-    }
-    try {
-      password = generateTemporaryPassword(firstName, lastName, dateOfBirth);
-    } catch (err) {
-      return fail(400, err instanceof Error ? err.message : 'Invalid date of birth format.');
+    } else {
+      try {
+        password = generateTemporaryPassword(firstName, lastName, dateOfBirth);
+      } catch (err) {
+        return fail(400, err instanceof Error ? err.message : 'Invalid date of birth format.');
+      }
     }
   }
   if (password.length < 8) {
     return fail(400, 'Password must be at least 8 characters.');
   }
-  console.log('[create-user] password ready', { length: password.length });
+  console.log('[create-user] password ready', { length: password.length, emailSkipped });
 
   // ── 4. Create the auth user via the Admin API (secret key — bypasses RLS) ──
   const adminClient = createClient(supabaseUrl, secretKey, {
@@ -353,9 +393,8 @@ async function handleRequest(req: Request): Promise<Response> {
   });
 
   // GoTrue requires an identifier. When staff left the email blank we mint a
-  // unique placeholder on the IANA-reserved example.com domain — it can never
-  // receive mail and is replaced by the resident's real email during the
-  // mobile Account Setup flow (verified via OTP).
+  // temporary no-email-* placeholder; for residents it is replaced with the
+  // acc-<account>@example.com login handle once the Cons Code is known.
   const authEmail = email ?? `no-email-${randomPlaceholderLocalPart()}@example.com`;
 
   console.log('[create-user] creating auth user...', {
@@ -403,9 +442,10 @@ async function handleRequest(req: Request): Promise<Response> {
     date_of_birth: dateOfBirth,
     phone,
     role_id: roleRow.id,
-    // Real email when given; NULL when omitted (same convention as the
-    // masterlist import) so canIssueLogin offers the Issue Login flow.
-    // The auth identifier (placeholder) is NOT copied into profiles.
+    // Real email when given. When omitted for residents, this is set to the
+    // account-number login handle after the Cons Code exists (below).
+    // Non-residents / pre-handle: keep NULL so the placeholder stays out of
+    // profiles.
     email,
     // NULL until the person finishes first login: OTP on the registration
     // email, a password they choose, then a profile review. Existing rows
@@ -500,11 +540,60 @@ async function handleRequest(req: Request): Promise<Response> {
       account_number: accountNumber,
       sitio: body.sitio?.trim() || null,
     });
+
+    // No email → activate account-number login (same as Issue Login).
+    if (emailSkipped && accountNumber) {
+      let accountLoginPassword: string;
+      try {
+        accountLoginPassword = generateAccountLastNamePassword(accountNumber, lastName);
+      } catch (err) {
+        await rollback();
+        return fail(400, err instanceof Error ? err.message : 'Could not generate a password.');
+      }
+      if (accountLoginPassword.length < 8) {
+        await rollback();
+        return fail(
+          400,
+          'Generated temporary password is too short. Use a longer last name or account number.'
+        );
+      }
+
+      const loginHandle = loginHandleForAccount(accountNumber);
+      const { error: activateError } = await adminClient.auth.admin.updateUserById(userId, {
+        email: loginHandle,
+        password: accountLoginPassword,
+        email_confirm: true,
+      });
+      if (activateError) {
+        await rollback();
+        return fail(500, `Could not activate account-number login: ${activateError.message}`);
+      }
+
+      // profiles.email stays NULL — never invent an email for blank creates.
+      // mobile_login_issued_at marks Active / credentials ready.
+      const { error: issuedError } = await adminClient
+        .from('profiles')
+        .update({
+          email: null,
+          mobile_login_issued_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+      if (issuedError) {
+        await rollback();
+        return fail(500, issuedError.message);
+      }
+
+      password = accountLoginPassword;
+      console.log('[create-user] account-number login activated', {
+        account_number: accountNumber,
+        login_handle: loginHandle,
+      });
+    }
   }
 
   // ── 7. Email the credentials (best-effort — never fails the request) ──
   //        Anyone registered with a real mailbox gets the temporary password.
-  //        Residents left without an email use Issue Login + account number.
+  //        No-email residents sign in with Account Number (credentials above).
   if (email) {
     const fullName = `${firstName} ${lastName}`.trim();
     const appName =
@@ -537,7 +626,7 @@ async function handleRequest(req: Request): Promise<Response> {
     });
   }
 
-  console.log('[create-user] success', { user_id: userId, role });
+  console.log('[create-user] success', { user_id: userId, role, email_skipped: emailSkipped });
   return json({
     ok: true,
     user_id: userId,
@@ -545,11 +634,11 @@ async function handleRequest(req: Request): Promise<Response> {
     role,
     account_number: accountNumber,
     // The temporary password is returned so the caller can display it once
-    // (it is never stored in plaintext anywhere).
+    // (it is never stored in plaintext anywhere). For no-email residents this
+    // is AccountNumber_LastName (mobile account-number login).
     temporary_password: role === 'resident' ? password : null,
-    // True when no email was provided: the UI should skip "email sent"
-    // messaging and point staff at the Issue Login flow instead.
-    email_skipped: !email,
+    // True when no real email was provided — UI shows Account Number login.
+    email_skipped: emailSkipped,
   });
 }
 

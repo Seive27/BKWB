@@ -11,12 +11,11 @@
 //   Staff  ->  supabase.functions.invoke('resident-login', { body })
 //          ->  caller verified as staff/super_admin via JWT
 //          ->  account_number resolved to its auth user (Admin API)
-//          ->  a LOGIN HANDLE email is assigned when the user has none:
-//                acc-<cons code>@example.com   (internal identifier,
-//                IANA-reserved domain — never a real mailbox)
+//          ->  auth.users gets acc-<cons>@example.com when there is no
+//              real email (internal GoTrue handle only — NOT written to
+//              profiles.email)
 //          ->  temporary password set as AccountNumber_LastName
-//              (e.g. 0006_DelaCruz — ACC- prefix stripped if present)
-//              and returned ONCE
+//          ->  profiles.mobile_login_issued_at set; profiles.email stays NULL
 //
 // The resident then signs in on the mobile app using their Account
 // Number + temporary password, and completes their profile.
@@ -279,14 +278,22 @@ async function handleRequest(req: Request): Promise<Response> {
     return fail(500, `Could not update the auth user: ${updateError.message}`);
   }
 
-  // Keep profiles.email in sync so the mobile app shows the same identifier.
+  // Do NOT copy the internal login handle into profiles.email — leave email
+  // blank until the resident adds a real one in Account Setup. Mark that
+  // Account Number login was issued so Staff shows Active (not No Account Yet).
   if (!hasRealEmail) {
-    const { error: syncError } = await adminClient
+    const { error: issuedError } = await adminClient
       .from('profiles')
-      .update({ email: loginEmail })
+      .update({
+        email: null,
+        mobile_login_issued_at: new Date().toISOString(),
+      })
       .eq('id', residentId);
-    if (syncError) {
-      console.warn('[resident-login] profile email sync failed:', syncError.message);
+    if (issuedError) {
+      console.warn(
+        '[resident-login] mobile_login_issued_at update failed:',
+        issuedError.message
+      );
     }
   }
 

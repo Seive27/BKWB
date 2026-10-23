@@ -10,6 +10,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RealtimeSync } from '@/components/RealtimeSync';
+import { ConnectionToast } from '@/components/ui/ConnectionToast';
 import { SessionUserProvider } from '@/hooks/useSessionUserId';
 import { invalidateDebounced } from '@/lib/invalidate';
 import { persistOptions, queryClient } from '@/lib/queryClient';
@@ -45,6 +46,7 @@ function RestoredApp() {
       <OfflineSync />
       <RealtimeSync />
       <Stack screenOptions={{ headerShown: false }} />
+      <ConnectionToast />
     </>
   );
 }

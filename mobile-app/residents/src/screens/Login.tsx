@@ -442,13 +442,13 @@ export default function Login({ onLogin }: LoginProps) {
             <TextInput
               value={username}
               onChangeText={setUsername}
-              placeholder="Email address"
+              placeholder="Email or Account Number"
               placeholderTextColor="#94A3B8"
               className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-4 text-[15px] text-slate-800"
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="email"
-              keyboardType="email-address"
+              autoComplete="username"
+              keyboardType="default"
               returnKeyType="next"
             />
             <View className="relative justify-center">

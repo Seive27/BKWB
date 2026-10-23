@@ -183,9 +183,9 @@ const AddResidentModal: React.FC<{
         sitio: form.sitio || undefined,
         meterNumber: form.meterNumber,
       });
-      // Show the credentials once so staff can record them before closing.
+      const hasEmail = !!form.email.trim();
       setCreated({
-        email: form.email.trim().toLowerCase(),
+        email: hasEmail ? form.email.trim().toLowerCase() : '',
         temporaryPassword: result.temporary_password ?? generatedPassword,
         accountNumber: result.account_number,
       });
@@ -444,8 +444,10 @@ const SuccessView: React.FC<{
   onClose: () => void;
 }> = ({ email, temporaryPassword, accountNumber, onClose }) => {
   const [copied, setCopied] = useState(false);
+  const usesAccountLogin = !email;
 
   const handleCopy = async () => {
+    if (!temporaryPassword) return;
     try {
       await navigator.clipboard.writeText(temporaryPassword);
       setCopied(true);
@@ -463,52 +465,81 @@ const SuccessView: React.FC<{
         </div>
         <h2 className="text-xl font-bold text-gray-900">Resident account created</h2>
         <p className="mt-1 text-sm text-gray-600">
-          The resident can now sign in to the Residents mobile app with these credentials.
+          {usesAccountLogin
+            ? 'The resident can sign in to the Residents mobile app with their Account Number and temporary password.'
+            : 'The resident can now sign in to the Residents mobile app with these credentials.'}
         </p>
       </div>
 
       <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-        {email ? (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-            <p className="text-sm font-semibold text-gray-900">{email}</p>
-          </div>
+        {usesAccountLogin ? (
+          <>
+            {accountNumber && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Account Number (Login)</p>
+                <p className="text-sm font-semibold text-gray-900 font-mono">{accountNumber}</p>
+              </div>
+            )}
+            {temporaryPassword ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-mono font-bold text-primary-700 break-all">
+                    {temporaryPassword}
+                  </code>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                  >
+                    {copied ? (
+                      <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Format: AccountNumber_LastName. On the app, enter the Account Number (not email), then this password. They add and verify their email during Account Setup.
+                </p>
+              </div>
+            ) : null}
+          </>
         ) : (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-            <p className="text-sm text-gray-500 italic">
-              Not provided — the resident will add and verify their email during first-login setup.
-            </p>
-          </div>
-        )}
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
-          <div className="flex items-center justify-between gap-2">
-            <code className="text-sm font-mono font-bold text-primary-700 break-all">
-              {temporaryPassword}
-            </code>
-            <button
-              onClick={handleCopy}
-              className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
-            >
-              {copied ? (
-                <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
-              ) : (
-                <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
-              )}
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            {email
-              ? 'Resident should change this after their first login.'
-              : 'The resident signs in with their Account Number + this password, then completes Account Setup.'}
-          </p>
-        </div>
-        {accountNumber && (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Account Number</p>
-            <p className="text-sm font-semibold text-gray-900">{accountNumber}</p>
-          </div>
+          <>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+              <p className="text-sm font-semibold text-gray-900">{email}</p>
+            </div>
+            {temporaryPassword ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-mono font-bold text-primary-700 break-all">
+                    {temporaryPassword}
+                  </code>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                  >
+                    {copied ? (
+                      <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Resident should change this after their first login.
+                </p>
+              </div>
+            ) : null}
+            {accountNumber && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Account Number</p>
+                <p className="text-sm font-semibold text-gray-900">{accountNumber}</p>
+              </div>
+            )}
+          </>
         )}
       </div>
 

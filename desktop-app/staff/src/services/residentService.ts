@@ -14,6 +14,12 @@ export interface ResidentRecord {
   email: string;
   phone: string | null;
   dateOfBirth: string | null;
+  /**
+   * Set when Account Number login was activated (Add New Resident without
+   * email, or Issue Login). profiles.email stays null until the resident
+   * adds a real email — this flag is what makes status Active.
+   */
+  mobileLoginIssuedAt: string | null;
   /** Primary (first) resident account. */
   accountId: string | null;
   accountNumber: string | null;
@@ -43,7 +49,7 @@ export interface ResidentCreateInput {
   serviceAddress?: string;
   sitio?: string;
   meterNumber?: string;
-  /** Staff-entered consumer/account number (the UI no longer auto-generates it). */
+  /** Staff-entered or suggested consumer/account number (Cons Code). */
   accountNumber?: string;
 }
 
@@ -157,7 +163,8 @@ interface ResidentRow {
   first_name: string;
   middle_name: string | null;
   last_name: string;
-  email: string;
+  email: string | null;
+  mobile_login_issued_at?: string | null;
   phone: string | null;
   date_of_birth: string | null;
   created_at: string;
@@ -175,17 +182,32 @@ interface ResidentRow {
   }[];
 }
 
+/** Internal GoTrue handle — never treat or display as a real email. */
+export function isLoginHandleEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return normalized.endsWith('@example.com') && /^acc-[a-z0-9-]+@/.test(normalized);
+}
+
+export function hasRealEmail(email: string | null | undefined): boolean {
+  return !!(email && email.trim() && !isLoginHandleEmail(email));
+}
+
 function mapRow(row: ResidentRow): ResidentRecord {
   const account = row.accounts?.[0] ?? null;
+  const rawEmail = row.email ?? '';
+  // Never surface the internal acc-*@example.com handle as the resident's email.
+  const email = hasRealEmail(rawEmail) ? rawEmail.trim() : '';
   return {
     id: row.id,
     firstName: row.first_name,
     middleName: row.middle_name ?? null,
     lastName: row.last_name,
     fullName: `${row.first_name} ${row.last_name}`.trim(),
-    email: row.email,
+    email,
     phone: row.phone,
     dateOfBirth: row.date_of_birth,
+    mobileLoginIssuedAt: row.mobile_login_issued_at ?? null,
     accountId: account?.id ?? null,
     accountNumber: account?.account_number ?? null,
     serviceAddress: account?.service_address ?? null,
@@ -209,7 +231,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, middle_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
+      'id, first_name, middle_name, last_name, email, mobile_login_issued_at, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -287,6 +309,38 @@ export async function issueResidentLogin(
     throw new Error(message);
   }
 
+  // Leave profiles.email blank when it was empty or only a login handle.
+  // Never wipe a real email the resident already has.
+  const { data: accountRow } = await supabase
+    .from('resident_accounts')
+    .select('resident_id')
+    .eq('account_number', accountNumber.trim())
+    .maybeSingle();
+  const residentId = (accountRow as { resident_id?: string } | null)?.resident_id;
+  if (residentId) {
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', residentId)
+      .maybeSingle();
+    const profileEmail = (profileRow as { email?: string | null } | null)?.email;
+    if (!hasRealEmail(profileEmail)) {
+      const { error: clearError } = await supabase
+        .from('profiles')
+        .update({
+          email: null,
+          mobile_login_issued_at: new Date().toISOString(),
+        })
+        .eq('id', residentId);
+      if (clearError) {
+        console.warn(
+          '[issueResidentLogin] could not clear profile email / set login issued:',
+          clearError.message
+        );
+      }
+    }
+  }
+
   return {
     login_email: data.login_email as string,
     temporary_password: data.temporary_password as string,
@@ -296,12 +350,49 @@ export async function issueResidentLogin(
 }
 
 /**
- * True when the resident already has mobile-app login credentials
- * (Issue Login has been run, or they signed up with an email).
- * Migrated masterlist rows with a NULL/blank email are "No Account Yet".
+ * True when the resident already has mobile-app login credentials.
+ * - Real email on the profile, or
+ * - Account Number login was issued (mobile_login_issued_at), or
+ * - Legacy rows that still have an acc-*@example.com handle stored as email
+ *
+ * Imported consumers with blank email and no issued login stay "No Account Yet".
+ * Blank email on Add New Resident is left blank — we never invent a profile email.
  */
-export function hasMobileAccount(resident: Pick<ResidentRecord, 'email'>): boolean {
-  return !!(resident.email && resident.email.trim());
+export function hasMobileAccount(
+  resident: Pick<ResidentRecord, 'email' | 'mobileLoginIssuedAt'>
+): boolean {
+  return (
+    hasRealEmail(resident.email) ||
+    !!resident.mobileLoginIssuedAt ||
+    isLoginHandleEmail(resident.email)
+  );
+}
+
+/**
+ * Preview of the Issue Login / no-email temporary password:
+ * AccountNumber_LastName (e.g. 123323_Fallen). Leading ACC- is stripped.
+ */
+export function generateAccountLastNamePassword(
+  accountNumber: string,
+  lastName: string
+): string {
+  const titleCase = (name: string) =>
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join('');
+
+  const last = titleCase(lastName);
+  if (!last) {
+    throw new Error('Last name is required to generate a temporary password.');
+  }
+  const accountPart = accountNumber.trim().replace(/^ACC-/i, '');
+  if (!accountPart) {
+    throw new Error('Account number is required to generate a temporary password.');
+  }
+  return `${accountPart}_${last}`;
 }
 
 // ── Resident creation (server-side via edge function) ──
@@ -369,10 +460,77 @@ export async function getCreateUserErrorMessage(
 }
 
 /**
+ * Numeric sequence from a Cons Code.
+ * Supports plain digits (`9283`) and year-prefixed codes (`2024-9828`).
+ * Returns null for non-numeric formats (e.g. legacy ACC-####).
+ */
+export function accountNumberSequence(accountNumber: string): number | null {
+  const trimmed = accountNumber.trim();
+  const yearPrefixed = trimmed.match(/^(\d{4})-(\d+)$/);
+  if (yearPrefixed) {
+    const n = Number(yearPrefixed[2]);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    const n = Number(trimmed);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Next unique Cons Code: max numeric sequence across existing
+ * `9283` / `2024-9828` style accounts, then +1 as a plain number.
+ * Skips any value that already exists as an exact account_number string.
+ */
+export async function suggestNextAccountNumber(): Promise<string> {
+  // Page through all rows — PostgREST defaults to a 1,000-row page size.
+  const pageSize = 1000;
+  const existing = new Set<string>();
+  let maxSeq = 0;
+  let from = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from('resident_accounts')
+      .select('account_number')
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(getResidentServiceErrorMessage(error));
+    }
+
+    const rows = data ?? [];
+    for (const row of rows) {
+      const value = String((row as { account_number?: string | null }).account_number ?? '').trim();
+      if (!value) continue;
+      existing.add(value);
+      const seq = accountNumberSequence(value);
+      if (seq != null && seq > maxSeq) maxSeq = seq;
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  let next = maxSeq + 1;
+  let candidate = String(next);
+  while (existing.has(candidate)) {
+    next += 1;
+    candidate = String(next);
+  }
+  return candidate;
+}
+
+/**
  * Create a resident through the `create-user` edge function: auth user +
  * profile (role=resident) + resident_account (+ meter) + credential email.
- * The account number is typed by staff; the edge function only falls back to
- * its generated ACC-#### value when the caller omits it.
+ *
+ * New residents must be able to log in immediately:
+ * - With email → DOB temporary password (emailed when possible)
+ * - Without email → activate Account Number login via `resident-login`
+ *   (same credentials as Issue Login). "No Account Yet" is only for
+ *   imported/transferred consumers, not for Add New Resident.
  */
 export async function createResident(
   input: ResidentCreateInput
@@ -381,9 +539,10 @@ export async function createResident(
   temporary_password: string | null;
   account_number: string | null;
 }> {
+  const email = input.email?.trim().toLowerCase() || '';
   const { data, error } = await supabase.functions.invoke('create-user', {
     body: {
-      email: input.email,
+      email: email || null,
       password: input.password ?? null,
       first_name: input.firstName,
       middle_name: input.middleName ?? null,
@@ -412,12 +571,49 @@ export async function createResident(
     throw new Error(message);
   }
 
+  const userId = data.user_id as string;
+  const accountNumber =
+    (data as { account_number?: string | null }).account_number ??
+    input.accountNumber?.trim() ??
+    null;
+  let temporaryPassword =
+    (data as { temporary_password?: string | null }).temporary_password ?? null;
+
+  // No email → activate account-number login (resident-login). Auth gets an
+  // internal handle; profiles.email stays NULL (never auto-generated).
+  if (!email && accountNumber) {
+    try {
+      const issued = await issueResidentLogin(accountNumber);
+      temporaryPassword = issued.temporary_password;
+    } catch (activateErr) {
+      const detail =
+        activateErr instanceof Error ? activateErr.message : 'Unknown error.';
+      throw new Error(
+        `Resident ${accountNumber} was created, but mobile login could not be activated. Use Actions → Issue Login, then try again. (${detail})`
+      );
+    }
+
+    // Clear any login-handle copied into profiles.email by older resident-login
+    // deploys, and mark login as issued so status is Active (not No Account Yet).
+    const { error: clearError } = await supabase
+      .from('profiles')
+      .update({
+        email: null,
+        mobile_login_issued_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    if (clearError) {
+      console.warn(
+        '[createResident] could not clear profile email / set login issued:',
+        clearError.message
+      );
+    }
+  }
+
   return {
-    user_id: data.user_id as string,
-    temporary_password: (data as { temporary_password?: string | null })
-      .temporary_password ?? null,
-    account_number: (data as { account_number?: string | null })
-      .account_number ?? null,
+    user_id: userId,
+    temporary_password: temporaryPassword,
+    account_number: accountNumber,
   };
 }
 

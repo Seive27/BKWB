@@ -14,6 +14,8 @@ export interface ResidentRecord {
   email: string;
   phone: string | null;
   dateOfBirth: string | null;
+  /** Set when Account Number login was activated; email may still be blank. */
+  mobileLoginIssuedAt: string | null;
   /** Primary (first) resident account. */
   accountId: string | null;
   accountNumber: string | null;
@@ -140,7 +142,8 @@ interface ResidentRow {
   first_name: string;
   middle_name: string | null;
   last_name: string;
-  email: string;
+  email: string | null;
+  mobile_login_issued_at?: string | null;
   phone: string | null;
   date_of_birth: string | null;
   created_at: string;
@@ -158,17 +161,30 @@ interface ResidentRow {
   }[];
 }
 
+function isLoginHandleEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return normalized.endsWith('@example.com') && /^acc-[a-z0-9-]+@/.test(normalized);
+}
+
+function hasRealEmail(email: string | null | undefined): boolean {
+  return !!(email && email.trim() && !isLoginHandleEmail(email));
+}
+
 function mapRow(row: ResidentRow): ResidentRecord {
   const account = row.accounts?.[0] ?? null;
+  const rawEmail = row.email ?? '';
+  const email = hasRealEmail(rawEmail) ? rawEmail.trim() : '';
   return {
     id: row.id,
     firstName: row.first_name,
     middleName: row.middle_name ?? null,
     lastName: row.last_name,
     fullName: `${row.first_name} ${row.last_name}`.trim(),
-    email: row.email,
+    email,
     phone: row.phone,
     dateOfBirth: row.date_of_birth,
+    mobileLoginIssuedAt: row.mobile_login_issued_at ?? null,
     accountId: account?.id ?? null,
     accountNumber: account?.account_number ?? null,
     serviceAddress: account?.service_address ?? null,
@@ -192,7 +208,7 @@ export async function getResidents(): Promise<ResidentRecord[]> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, first_name, middle_name, last_name, email, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
+      'id, first_name, middle_name, last_name, email, mobile_login_issued_at, phone, date_of_birth, created_at, role:roles(name), accounts:resident_accounts(id, account_number, service_address, sitio, connection_status, previous_reading, current_reading, previous_reading_date, meter:meters(meter_number))'
     )
     .eq('role.name', 'resident')
     .order('created_at', { ascending: false });
@@ -237,12 +253,18 @@ export async function getResidentStats(): Promise<ResidentStats> {
 }
 
 /**
- * True when the resident already has mobile-app login credentials
- * (Issue Login has been run, or they signed up with an email).
- * Migrated masterlist rows with a NULL/blank email are "No Account Yet".
+ * True when mobile login exists: real email, issued Account Number login,
+ * or a legacy acc-*@example.com handle. Blank email is left blank — never
+ * invented. Imports without issued login stay "No Account Yet".
  */
-export function hasMobileAccount(resident: Pick<ResidentRecord, 'email'>): boolean {
-  return !!(resident.email && resident.email.trim());
+export function hasMobileAccount(
+  resident: Pick<ResidentRecord, 'email' | 'mobileLoginIssuedAt'>
+): boolean {
+  return (
+    hasRealEmail(resident.email) ||
+    !!resident.mobileLoginIssuedAt ||
+    isLoginHandleEmail(resident.email)
+  );
 }
 
 // ── Resident creation (server-side via edge function) ──
@@ -307,9 +329,34 @@ export async function getCreateUserErrorMessage(error: unknown): Promise<string>
 }
 
 /**
+ * Issue first-time login credentials for a resident by Account Number
+ * (same edge function as Staff Issue Login).
+ */
+async function issueResidentLogin(accountNumber: string): Promise<{
+  temporary_password: string;
+}> {
+  const { data, error } = await supabase.functions.invoke('resident-login', {
+    body: { account_number: accountNumber.trim() },
+  });
+  if (error) {
+    console.error('[issueResidentLogin] edge function error:', error);
+    throw new Error(await getCreateUserErrorMessage(error));
+  }
+  if (!data?.ok) {
+    throw new Error(
+      (data as { error?: string } | null)?.error ??
+        'Failed to issue login credentials. Please try again.'
+    );
+  }
+  return { temporary_password: data.temporary_password as string };
+}
+
+/**
  * Create a resident through the `create-user` edge function: auth user +
  * profile (role=resident) + resident_account (+ meter) + credential email.
- * The account number is auto-generated server-side (ACC-####).
+ *
+ * Without email, activates Account Number login immediately via resident-login
+ * so new residents are not left as "No Account Yet" (imports only).
  */
 export async function createResident(
   input: ResidentCreateInput
@@ -318,9 +365,10 @@ export async function createResident(
   temporary_password: string | null;
   account_number: string | null;
 }> {
+  const email = input.email?.trim().toLowerCase() || '';
   const { data, error } = await supabase.functions.invoke('create-user', {
     body: {
-      email: input.email,
+      email: email || null,
       password: input.password ?? null,
       first_name: input.firstName,
       middle_name: input.middleName ?? null,
@@ -348,12 +396,44 @@ export async function createResident(
     throw new Error(message);
   }
 
+  const userId = data.user_id as string;
+  const accountNumber =
+    (data as { account_number?: string | null }).account_number ?? null;
+  let temporaryPassword =
+    (data as { temporary_password?: string | null }).temporary_password ?? null;
+
+  if (!email && accountNumber) {
+    try {
+      const issued = await issueResidentLogin(accountNumber);
+      temporaryPassword = issued.temporary_password;
+    } catch (activateErr) {
+      const detail =
+        activateErr instanceof Error ? activateErr.message : 'Unknown error.';
+      throw new Error(
+        `Resident ${accountNumber} was created, but mobile login could not be activated. Use Issue Login, then try again. (${detail})`
+      );
+    }
+
+    // Leave profiles.email blank — never keep the internal login handle there.
+    const { error: clearError } = await supabase
+      .from('profiles')
+      .update({
+        email: null,
+        mobile_login_issued_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    if (clearError) {
+      console.warn(
+        '[createResident] could not clear profile email / set login issued:',
+        clearError.message
+      );
+    }
+  }
+
   return {
-    user_id: data.user_id as string,
-    temporary_password: (data as { temporary_password?: string | null })
-      .temporary_password ?? null,
-    account_number: (data as { account_number?: string | null })
-      .account_number ?? null,
+    user_id: userId,
+    temporary_password: temporaryPassword,
+    account_number: accountNumber,
   };
 }
 

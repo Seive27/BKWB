@@ -29,6 +29,8 @@ import {
   setResidentStatus,
   getSitioOptions,
   generateTemporaryPassword,
+  generateAccountLastNamePassword,
+  suggestNextAccountNumber,
   validatePhone,
   hasMobileAccount,
   type ResidentRecord,
@@ -139,6 +141,7 @@ const AddResidentModal: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof AddResidentForm, string>>>({});
   const [passwordCopied, setPasswordCopied] = useState(false);
+  const [generatingAccount, setGeneratingAccount] = useState(false);
   const [created, setCreated] = useState<{
     email: string;
     temporaryPassword: string;
@@ -150,15 +153,39 @@ const AddResidentModal: React.FC<{
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  // Auto-generated temporary password, shown before saving so staff can copy it.
+  const handleGenerateAccountNumber = async () => {
+    setError(null);
+    setGeneratingAccount(true);
+    try {
+      const next = await suggestNextAccountNumber();
+      set('accountNumber', next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate account number.');
+    } finally {
+      setGeneratingAccount(false);
+    }
+  };
+
+  const hasEmail = !!form.email.trim();
+
+  // Preview of the temporary password staff will hand over after save.
+  // With email → DOB format. Without email → AccountNumber_LastName (Issue Login).
   const generatedPassword = useMemo(() => {
+    if (!hasEmail) {
+      if (!form.lastName.trim() || !form.accountNumber.trim()) return '';
+      try {
+        return generateAccountLastNamePassword(form.accountNumber, form.lastName);
+      } catch {
+        return '';
+      }
+    }
     if (!form.lastName.trim() || !form.dateOfBirth) return '';
     try {
       return generateTemporaryPassword(form.firstName, form.lastName, form.dateOfBirth);
     } catch {
       return '';
     }
-  }, [form.firstName, form.lastName, form.dateOfBirth]);
+  }, [hasEmail, form.firstName, form.lastName, form.dateOfBirth, form.accountNumber]);
 
   const handleCopyPassword = async () => {
     if (!generatedPassword) return;
@@ -178,7 +205,11 @@ const AddResidentModal: React.FC<{
     if (!form.lastName.trim()) errors.lastName = 'Last name is required.';
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
       errors.email = 'Enter a valid email address.';
-    if (!form.dateOfBirth) errors.dateOfBirth = 'Date of birth is required (used for the temporary password).';
+    if (!form.dateOfBirth) {
+      errors.dateOfBirth = hasEmail
+        ? 'Date of birth is required (used for the temporary password).'
+        : 'Date of birth is required.';
+    }
     const phoneError = validatePhone(form.phone);
     if (phoneError) errors.phone = phoneError;
     // Staff type the meter serial from the physical meter; it is never generated.
@@ -189,6 +220,8 @@ const AddResidentModal: React.FC<{
       errors.accountNumber = 'Account number cannot contain spaces.';
     } else if (form.accountNumber.trim().length > 32) {
       errors.accountNumber = 'Account number must be 32 characters or fewer.';
+    } else if (!/^\d+$/.test(form.accountNumber.trim()) && !/^\d{4}-\d+$/.test(form.accountNumber.trim())) {
+      errors.accountNumber = 'Use a number (e.g. 9283) or year format (e.g. 2024-9828).';
     }
     if (!form.sitio.trim()) errors.sitio = 'Sitio is required.';
     setFieldErrors(errors);
@@ -208,9 +241,9 @@ const AddResidentModal: React.FC<{
         meterNumber: form.meterNumber,
         accountNumber: form.accountNumber,
       });
-      // Show the credentials once so staff can record them before closing.
+      // createResident activates Account Number login when email is blank.
       setCreated({
-        email: form.email.trim().toLowerCase(),
+        email: hasEmail ? form.email.trim().toLowerCase() : '',
         temporaryPassword: result.temporary_password ?? generatedPassword,
         accountNumber: result.account_number,
       });
@@ -329,7 +362,11 @@ const AddResidentModal: React.FC<{
                 {fieldErrors.dateOfBirth ? (
                   <p className="mt-1 text-xs text-red-500">{fieldErrors.dateOfBirth}</p>
                 ) : (
-                  <p className="mt-1 text-xs text-gray-400">Used to generate the temporary password.</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {hasEmail
+                      ? 'Used to generate the temporary password.'
+                      : 'Stored on the profile. Login uses Account Number + temporary password below.'}
+                  </p>
                 )}
               </div>
               <div className="col-span-2">
@@ -343,7 +380,9 @@ const AddResidentModal: React.FC<{
                   <code className="text-sm font-mono font-bold text-primary-700">
                     {generatedPassword || (
                       <span className="text-gray-400 italic font-normal">
-                        Enter last name and date of birth to generate
+                        {hasEmail
+                          ? 'Enter last name and date of birth to generate'
+                          : 'Enter last name and account number to preview'}
                       </span>
                     )}
                   </code>
@@ -362,8 +401,17 @@ const AddResidentModal: React.FC<{
                   )}
                 </div>
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Format: <strong>LastNameFirstNameMMDDYYYY</strong> (e.g. DelaCruzJuan05122003).
-                  This is emailed to the resident; they can change it after first login.
+                  {hasEmail ? (
+                    <>
+                      Format: <strong>LastNameFirstNameMMDDYYYY</strong> (e.g. DelaCruzJuan05122003).
+                      This is emailed to the resident; they can change it after first login.
+                    </>
+                  ) : (
+                    <>
+                      Format: <strong>AccountNumber_LastName</strong> (e.g. 123323_Fallen).
+                      The resident signs in with their Account Number and this password, then adds email in Account Setup.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -391,19 +439,36 @@ const AddResidentModal: React.FC<{
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 uppercase mb-2">Account Number *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. ACC-0001 or 2024-0006697"
-                  value={form.accountNumber}
-                  onChange={(e) => set('accountNumber', e.target.value)}
-                  maxLength={32}
-                  className={`${inputClass} ${fieldErrors.accountNumber ? 'border-red-400' : ''}`}
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Enter Cons Code or click Generate"
+                    value={form.accountNumber}
+                    onChange={(e) => set('accountNumber', e.target.value)}
+                    maxLength={32}
+                    className={`${inputClass} ${fieldErrors.accountNumber ? 'border-red-400' : ''}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateAccountNumber}
+                    disabled={generatingAccount || saving}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg transition-colors"
+                    title="Generate the next unique Cons Code"
+                  >
+                    {generatingAccount ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    <span>{generatingAccount ? 'Generating…' : 'Generate'}</span>
+                  </button>
+                </div>
                 {fieldErrors.accountNumber ? (
                   <p className="mt-1 text-xs text-red-500">{fieldErrors.accountNumber}</p>
                 ) : (
                   <p className="mt-1 text-xs text-gray-400">
-                    Typed by staff — this is the number the resident uses to sign in.
+                    Type a Cons Code, or Generate the next unique number from existing accounts.
                   </p>
                 )}
               </div>
@@ -483,8 +548,10 @@ const SuccessView: React.FC<{
   onClose: () => void;
 }> = ({ email, temporaryPassword, accountNumber, onClose }) => {
   const [copied, setCopied] = useState(false);
+  const usesAccountLogin = !email;
 
   const handleCopy = async () => {
+    if (!temporaryPassword) return;
     try {
       await navigator.clipboard.writeText(temporaryPassword);
       setCopied(true);
@@ -502,52 +569,81 @@ const SuccessView: React.FC<{
         </div>
         <h2 className="text-xl font-bold text-gray-900">Resident account created</h2>
         <p className="mt-1 text-sm text-gray-600">
-          The resident can now sign in to the Residents mobile app with these credentials.
+          {usesAccountLogin
+            ? 'The resident can sign in to the Residents mobile app with their Account Number and temporary password.'
+            : 'The resident can now sign in to the Residents mobile app with these credentials.'}
         </p>
       </div>
 
       <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-        {email ? (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-            <p className="text-sm font-semibold text-gray-900">{email}</p>
-          </div>
+        {usesAccountLogin ? (
+          <>
+            {accountNumber && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Account Number (Login)</p>
+                <p className="text-sm font-semibold text-gray-900 font-mono">{accountNumber}</p>
+              </div>
+            )}
+            {temporaryPassword ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-mono font-bold text-primary-700 break-all">
+                    {temporaryPassword}
+                  </code>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                  >
+                    {copied ? (
+                      <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Format: AccountNumber_LastName. On the app, enter the Account Number (not email), then this password. They add and verify their email during Account Setup.
+                </p>
+              </div>
+            ) : null}
+          </>
         ) : (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
-            <p className="text-sm text-gray-500 italic">
-              Not provided — the resident will add and verify their email during first-login setup.
-            </p>
-          </div>
-        )}
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
-          <div className="flex items-center justify-between gap-2">
-            <code className="text-sm font-mono font-bold text-primary-700 break-all">
-              {temporaryPassword}
-            </code>
-            <button
-              onClick={handleCopy}
-              className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
-            >
-              {copied ? (
-                <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
-              ) : (
-                <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
-              )}
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            {email
-              ? 'Resident should change this after their first login.'
-              : 'The resident signs in with their Account Number + this password, then completes Account Setup.'}
-          </p>
-        </div>
-        {accountNumber && (
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase">Account Number</p>
-            <p className="text-sm font-semibold text-gray-900">{accountNumber}</p>
-          </div>
+          <>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase">Email</p>
+              <p className="text-sm font-semibold text-gray-900">{email}</p>
+            </div>
+            {temporaryPassword ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Temporary Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-mono font-bold text-primary-700 break-all">
+                    {temporaryPassword}
+                  </code>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+                  >
+                    {copied ? (
+                      <><Check className="w-3.5 h-3.5 text-emerald-600" /><span className="text-emerald-700">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Resident should change this after their first login.
+                </p>
+              </div>
+            ) : null}
+            {accountNumber && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase">Account Number</p>
+                <p className="text-sm font-semibold text-gray-900">{accountNumber}</p>
+              </div>
+            )}
+          </>
         )}
       </div>
 

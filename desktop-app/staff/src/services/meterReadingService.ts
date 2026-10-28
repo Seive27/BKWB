@@ -27,11 +27,22 @@ export interface AccountOption {
   meter_number: string | null;
 }
 
+/** Statuses that occupy a billing period for a sitio (rejected can be reassigned). */
+const OCCUPIED_ASSIGNMENT_STATUSES = [
+  'assigned',
+  'pending_review',
+  'approved',
+  'billed',
+] as const;
+
 /** Sitio option for the assign-reading picker, with active account counts. */
 export interface SitioAssignOption {
   name: string;
   activeAccountCount: number;
-  /** True when the sitio already has open reading assignments for the target month. */
+  /**
+   * True when the sitio already has a meter-reader reading for the target
+   * billing month (open, approved, or billed). Rejected-only months stay free.
+   */
   isAssigned: boolean;
   /** Reader currently covering this sitio (when isAssigned). */
   assignedReaderName: string | null;
@@ -204,8 +215,9 @@ export async function getResidentAccounts(): Promise<AccountOption[]> {
 
 /**
  * Fetch sitios with active account counts for the assign-reading picker.
- * Open assignments only block a sitio for the same calendar month as
- * `assignmentDate` — a new month starts fresh.
+ * A billing month already used by a meter-reader route (open, approved, or
+ * billed) blocks that sitio. A different month starts fresh. Rejected-only
+ * months stay available so staff can reassign.
  */
 export async function getSitioOptions(assignmentDate: string): Promise<SitioAssignOption[]> {
   const { start, endExclusive } = assignmentMonthBounds(assignmentDate);
@@ -216,7 +228,7 @@ export async function getSitioOptions(assignmentDate: string): Promise<SitioAssi
       .select('sitio')
       .eq('connection_status', 'active')
       .not('sitio', 'is', null),
-    // Open assignments in this month mark a sitio as already assigned.
+    // Any non-rejected meter-reader reading in this month marks the sitio taken.
     supabase
       .from('meter_readings')
       .select(
@@ -225,7 +237,7 @@ export async function getSitioOptions(assignmentDate: string): Promise<SitioAssi
       // Only meter-reader routes block a sitio; a resident's self-submitted
       // reading must not stop staff from scheduling the sitio.
       .eq('source', 'meter_reader')
-      .in('status', ['assigned', 'pending_review'])
+      .in('status', [...OCCUPIED_ASSIGNMENT_STATUSES])
       .gte('assignment_date', start)
       .lt('assignment_date', endExclusive)
       .is('deleted_at', null),
@@ -422,9 +434,9 @@ export async function createAssignment(
 
 /**
  * Assign every active account in a sitio to a meter reader.
- * A sitio that already has open assignments (assigned / pending_review)
- * for the same calendar month cannot be selected again until those
- * readings are finished. A different month is treated as a new cycle.
+ * A sitio that already has a meter-reader reading for the same billing month
+ * (assigned / pending_review / approved / billed) cannot be selected again.
+ * Rejected-only months stay free. A different month is a new cycle.
  *
  * Accounts that already have an approved or billed resident self-submission
  * for the same billing month are linked to this reader (not re-assigned),
@@ -444,6 +456,15 @@ export async function createSitioAssignment(
   }
 
   const { start, endExclusive } = assignmentMonthBounds(input.assignment_date);
+  const now = new Date();
+  const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  if (start < currentMonthStart) {
+    throw new Error('Previous months cannot be selected. Choose the current or a future month.');
+  }
+  const periodLabel = new Date(`${start}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   // Case-insensitive: DB values may be stored as "LARIHA" while the picker
   // shows the canonical "Lariha" label.
@@ -464,30 +485,35 @@ export async function createSitioAssignment(
 
   const accountIds = accounts.map((a) => a.id);
 
-  const { data: openRows, error: openError } = await supabase
+  const { data: occupiedRows, error: occupiedError } = await supabase
     .from('meter_readings')
-    .select('account_id, meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)')
+    .select('account_id, status, meter_reader:profiles!meter_readings_meter_reader_id_fkey(first_name, last_name)')
     .in('account_id', accountIds)
-    // Resident self-submissions do not count as an open meter-reader route.
+    // Resident self-submissions do not count as a meter-reader route.
     .eq('source', 'meter_reader')
-    .in('status', ['assigned', 'pending_review'])
+    .in('status', [...OCCUPIED_ASSIGNMENT_STATUSES])
     .gte('assignment_date', start)
     .lt('assignment_date', endExclusive)
     .is('deleted_at', null);
 
-  if (openError) {
-    throw new Error(getMeterReadingErrorMessage(openError));
+  if (occupiedError) {
+    throw new Error(getMeterReadingErrorMessage(occupiedError));
   }
 
-  if (openRows && openRows.length > 0) {
-    const first = openRows[0] as unknown as {
+  if (occupiedRows && occupiedRows.length > 0) {
+    const first = occupiedRows[0] as unknown as {
+      status?: string;
       meter_reader?: { first_name: string; last_name: string } | null;
     };
     const reader = first.meter_reader
       ? `${first.meter_reader.first_name} ${first.meter_reader.last_name}`.trim()
       : 'a meter reader';
+    const detail =
+      first.status === 'approved' || first.status === 'billed'
+        ? `already has meter readings for ${periodLabel}`
+        : `is already assigned to ${reader || 'a meter reader'} for ${periodLabel}`;
     throw new Error(
-      `${sitio} is already assigned to ${reader || 'a meter reader'} for this month. Finish or clear those readings before reassigning.`
+      `${sitio} ${detail}. Choose another billing period, or finish/clear those readings before reassigning.`
     );
   }
 

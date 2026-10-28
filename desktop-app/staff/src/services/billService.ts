@@ -80,8 +80,22 @@ export function getBillErrorMessage(error: {
 type BillRow = Bill;
 
 function mapRow(row: BillRow): Bill {
+  // Paid/void bills must show zero remaining due. Older "mark as paid" writes
+  // only flipped status, so normalize here until those rows are rewritten.
+  const settled = row.status === 'paid' || row.status === 'void';
+  let amount = row.amount;
+  let amountDue = Number(row.amount_due) || 0;
+  if (settled) {
+    if (amount == null || !Number.isFinite(Number(amount))) {
+      amount = amountDue;
+    }
+    amountDue = 0;
+  }
+
   return {
     ...row,
+    amount,
+    amount_due: amountDue,
     extra_components: Array.isArray(row.extra_components) ? row.extra_components : [],
     account: row.account ?? null,
     resident: row.resident ?? null,
@@ -540,8 +554,27 @@ export async function generateBillForReading(readingId: string): Promise<BillGen
 /** Update a bill status (mark as Paid / Overdue / Void). */
 export async function setBillStatus(billId: string, status: BillStatus): Promise<void> {
   const patch: Record<string, unknown> = { status };
+
   if (status === 'paid') {
+    const { data: bill, error: fetchError } = await supabase
+      .from('bills')
+      .select('amount, amount_due')
+      .eq('id', billId)
+      .single();
+
+    if (fetchError) {
+      throw new Error(getBillErrorMessage(fetchError));
+    }
+
+    const original =
+      bill?.amount != null && Number.isFinite(Number(bill.amount))
+        ? Number(bill.amount)
+        : Number(bill?.amount_due ?? 0);
+
     patch.paid_at = new Date().toISOString();
+    patch.amount = original;
+    // Full settlement: remaining balance clears so Amount Paid = Bill Amount.
+    patch.amount_due = 0;
   } else {
     patch.paid_at = null;
   }

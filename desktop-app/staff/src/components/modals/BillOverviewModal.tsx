@@ -342,8 +342,8 @@ const BillOverviewModal: React.FC<{
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
                     <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Total Outstanding Balance</p>
-                    {Number((selectedHistoryBill ?? historyBills[0]).amount_due) > 0 ? (
-                      <p className="text-xl font-bold text-rose-600">{formatPeso((selectedHistoryBill ?? historyBills[0]).amount_due)}</p>
+                    {outstandingBalance > 0 ? (
+                      <p className="text-xl font-bold text-rose-600">{formatPeso(outstandingBalance)}</p>
                     ) : (
                       <p className="text-xl font-bold text-emerald-600">{formatPeso(0)}</p>
                     )}

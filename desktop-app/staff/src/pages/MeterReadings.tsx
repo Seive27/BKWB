@@ -113,7 +113,21 @@ function formatNumber(value: number | null): string {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** First day of the current calendar month (`YYYY-MM-01`) — earliest assignable date. */
+function currentMonthStartISO(): string {
+  return `${todayISO().slice(0, 7)}-01`;
+}
+
+/** True when the date falls in the current month or a future month. */
+function isAssignableMonth(date: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date.slice(0, 7) >= currentMonthStartISO().slice(0, 7);
 }
 
 const MeterReadings: React.FC<{
@@ -345,6 +359,11 @@ const MeterReadings: React.FC<{
     if (!selectedSitio || !selectedReaderId || actionBusy) return;
     if (!actorId) {
       showToast('error', 'You must be logged in to assign readings.');
+      return;
+    }
+    if (!isAssignableMonth(assignmentDate)) {
+      showToast('error', 'Previous months cannot be selected. Choose the current or a future month.');
+      setAssignmentDate(todayISO());
       return;
     }
     setActionBusy(true);
@@ -945,7 +964,9 @@ const MeterReadings: React.FC<{
                       disabled={sitio.isAssigned || sitio.activeAccountCount === 0}
                     >
                       {sitio.isAssigned
-                        ? `${sitio.name} — already assigned to ${sitio.assignedReaderName ?? 'a meter reader'}`
+                        ? `${sitio.name} — already assigned for ${formatBillingPeriod(assignmentDate)}${
+                            sitio.assignedReaderName ? ` (${sitio.assignedReaderName})` : ''
+                          }`
                         : `${sitio.name} (${sitio.activeAccountCount} account${
                             sitio.activeAccountCount === 1 ? '' : 's'
                           })`}
@@ -1007,18 +1028,30 @@ const MeterReadings: React.FC<{
                 <input
                   type="date"
                   value={assignmentDate}
-                  onChange={(e) => setAssignmentDate(e.target.value)}
+                  min={currentMonthStartISO()}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) {
+                      setAssignmentDate(todayISO());
+                      return;
+                    }
+                    setAssignmentDate(isAssignableMonth(next) ? next : todayISO());
+                  }}
                   className={fieldStyles}
                 />
+                <p className="mt-2 text-xs text-gray-500">
+                  Only the current month and future months can be selected.
+                </p>
               </div>
 
               <div className="flex items-start space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <Calendar className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-blue-800">
-                  Every active account in the selected sitio is assigned at once. Sitios with open
-                  assignments for the selected month cannot be selected again; a new month starts
-                  fresh. Previous readings are filled from each account&apos;s latest approved
-                  reading.
+                  Every active account in the selected sitio is assigned at once. Sitios that already
+                  have meter readings for the selected month (in progress, approved, or billed)
+                  cannot be selected again. Pick another month, or reassign only after readings
+                  were rejected. Previous readings are filled from each account&apos;s latest
+                  approved reading.
                 </p>
               </div>
             </div>

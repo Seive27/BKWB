@@ -185,6 +185,13 @@ const ResidentOverviewModal: React.FC<{
   );
   /** Newest period until a row is clicked. */
   const selectedBill = bills.find((b) => b.id === selectedBillId) ?? bills[0] ?? null;
+  const outstandingBalance = useMemo(
+    () =>
+      bills
+        .filter((b) => b.status === 'pending' || b.status === 'partially_paid' || b.status === 'overdue')
+        .reduce((sum, b) => sum + Number(b.amount_due ?? 0), 0),
+    [bills]
+  );
 
   const displayStatus = getDisplayStatus(resident);
   const statusBadge = getStatusBadge(displayStatus);
@@ -454,8 +461,8 @@ const ResidentOverviewModal: React.FC<{
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
                     <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Total Outstanding Balance</p>
-                    {selectedBill && Number(selectedBill.amount_due) > 0 ? (
-                      <p className="text-xl font-bold text-rose-600">{formatPeso(selectedBill.amount_due)}</p>
+                    {outstandingBalance > 0 ? (
+                      <p className="text-xl font-bold text-rose-600">{formatPeso(outstandingBalance)}</p>
                     ) : (
                       <p className="text-xl font-bold text-emerald-600">{formatPeso(0)}</p>
                     )}

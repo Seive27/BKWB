@@ -33,7 +33,17 @@ BEGIN
       AND mr.deleted_at IS NULL
       AND mr.status IN ('approved', 'billed')
       AND mr.current_reading IS NOT NULL
-    ORDER BY COALESCE(mr.reading_date, mr.created_at) DESC, mr.created_at DESC
+      AND (
+        NEW.assignment_date IS NULL
+        OR mr.assignment_date < NEW.assignment_date
+        OR (
+          mr.assignment_date = NEW.assignment_date
+          AND mr.created_at < COALESCE(NEW.created_at, NOW())
+        )
+      )
+    ORDER BY mr.assignment_date DESC,
+             COALESCE(mr.reading_date, mr.created_at) DESC,
+             mr.created_at DESC
     LIMIT 1;
 
     IF v_resolved IS NULL THEN

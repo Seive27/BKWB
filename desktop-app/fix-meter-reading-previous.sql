@@ -30,7 +30,18 @@ BEGIN
       AND mr.deleted_at IS NULL
       AND mr.status IN ('approved', 'billed')
       AND mr.current_reading IS NOT NULL
-    ORDER BY COALESCE(mr.reading_date, mr.created_at) DESC, mr.created_at DESC
+      AND (
+        NEW.assignment_date IS NULL
+        OR mr.assignment_date < NEW.assignment_date
+        OR (
+          mr.assignment_date = NEW.assignment_date
+          AND mr.created_at < COALESCE(NEW.created_at, NOW())
+        )
+      )
+    -- Billing period first: reading_date can precede an earlier period's date.
+    ORDER BY mr.assignment_date DESC,
+             COALESCE(mr.reading_date, mr.created_at) DESC,
+             mr.created_at DESC
     LIMIT 1;
 
     IF v_resolved IS NULL THEN
@@ -161,7 +172,7 @@ WITH ordered AS (
     created_at,
     LAG(current_reading) OVER (
       PARTITION BY account_id
-      ORDER BY COALESCE(reading_date, created_at), created_at, id
+      ORDER BY assignment_date, COALESCE(reading_date, created_at), created_at, id
     ) AS prior_current
   FROM public.meter_readings
   WHERE deleted_at IS NULL
@@ -193,7 +204,8 @@ FROM (
   WHERE deleted_at IS NULL
     AND status IN ('approved', 'billed')
     AND current_reading IS NOT NULL
-  ORDER BY account_id, COALESCE(reading_date, created_at) DESC, created_at DESC
+  ORDER BY account_id, assignment_date DESC,
+           COALESCE(reading_date, created_at) DESC, created_at DESC
 ) latest
 WHERE mr.account_id = latest.account_id
   AND mr.deleted_at IS NULL
@@ -235,6 +247,7 @@ FROM (
   WHERE deleted_at IS NULL
     AND status IN ('approved', 'billed')
     AND current_reading IS NOT NULL
-  ORDER BY account_id, COALESCE(reading_date, created_at) DESC, created_at DESC
+  ORDER BY account_id, assignment_date DESC,
+           COALESCE(reading_date, created_at) DESC, created_at DESC
 ) latest
 WHERE ra.id = latest.account_id;

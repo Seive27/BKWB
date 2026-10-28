@@ -334,7 +334,8 @@ export async function getAccountReadings(accountId: string): Promise<MeterReadin
 
 /**
  * Resolve the previous reading for an account: the current_reading of its
- * most recent Approved (or Billed) reading. Falls back to the account
+ * most recent Approved (or Billed) reading by billing period
+ * (assignment_date), not calendar reading_date. Falls back to the account
  * snapshot dial position, then 0. The DB trigger also re-resolves this on
  * insert/submit/approve so early assignments are corrected later.
  */
@@ -345,6 +346,7 @@ async function getPreviousReading(accountId: string): Promise<number> {
     .eq('account_id', accountId)
     .in('status', ['approved', 'billed'])
     .is('deleted_at', null)
+    .order('assignment_date', { ascending: false })
     .order('reading_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(1)

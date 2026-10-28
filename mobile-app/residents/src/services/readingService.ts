@@ -145,6 +145,7 @@ export async function getReadingAccount(): Promise<ResidentReadingAccount | null
       .eq('account_id', row.id)
       .in('status', ['approved', 'billed'])
       .not('current_reading', 'is', null)
+      .order('assignment_date', { ascending: false })
       .order('reading_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(1)

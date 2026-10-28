@@ -48,7 +48,7 @@ export const REPORT_CATEGORIES: {
   { id: 'meter_readings', label: 'Meter Readings', description: 'Reading assignments and submissions.' },
   { id: 'consumption', label: 'Water Consumption', description: 'Approved consumption by sitio and account.' },
   { id: 'bills', label: 'Bills', description: 'Generated bills and their status.' },
-  { id: 'payments', label: 'Payments', description: 'Collected payments (from bills marked paid).' },
+  { id: 'payments', label: 'Payments', description: 'Recorded payments and total money collected.' },
   { id: 'tickets', label: 'Tickets', description: 'Consumer concerns and resolution progress.' },
 ];
 
@@ -386,43 +386,50 @@ async function paymentsReport(
   sitio?: string | null
 ): Promise<ReportResult> {
   const { data, error } = await supabase
-    .from('bills')
+    .from('payments')
     .select(
-      'bill_number, billing_period, amount_due, paid_at, account:resident_accounts!bills_account_id_fkey(account_number, sitio), resident:profiles!bills_resident_id_fkey(first_name, last_name)'
+      'amount, payment_method, payment_date, reference_number, status, bill:bills!payments_bill_id_fkey(bill_number, billing_period), account:resident_accounts!payments_account_id_fkey(account_number, sitio), resident:profiles!payments_resident_id_fkey(first_name, last_name)'
     )
     .is('deleted_at', null)
-    .eq('status', 'paid')
-    .gte('paid_at', range.startIso)
-    .lt('paid_at', range.endIso)
-    .order('paid_at', { ascending: false });
+    .eq('status', 'completed')
+    .gte('payment_date', range.startIso)
+    .lt('payment_date', range.endIso)
+    .order('payment_date', { ascending: false });
 
   if (error) throw new Error(error.message);
 
   type Row = {
-    bill_number: string;
-    billing_period: string;
-    amount_due: number;
-    paid_at: string;
+    amount: number;
+    payment_method: string;
+    payment_date: string;
+    reference_number: string | null;
+    status: string;
+    bill?: { bill_number: string | null; billing_period: string | null } | null;
     account?: { account_number: string; sitio: string | null } | null;
     resident?: { first_name: string; last_name: string } | null;
   };
 
+  const methodLabel = (method: string) =>
+    (method || '—').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
   const sitioFilter = (sitio ?? '').trim();
   const filtered = ((data ?? []) as unknown as Row[]).filter(
-    (b) => !sitioFilter || sitiosMatch(b.account?.sitio, sitioFilter)
+    (p) => !sitioFilter || sitiosMatch(p.account?.sitio, sitioFilter)
   );
 
-  const rows = filtered.map((b) => ({
-    bill_number: b.bill_number,
-    account: b.account?.account_number ?? '—',
-    sitio: b.account?.sitio ?? '—',
-    resident: person(b.resident),
-    billing_period: b.billing_period,
-    amount_paid: peso(Number(b.amount_due)),
-    paid_on: fmtDate(b.paid_at),
+  const rows = filtered.map((p) => ({
+    bill_number: p.bill?.bill_number ?? '—',
+    account: p.account?.account_number ?? '—',
+    sitio: p.account?.sitio ?? '—',
+    resident: person(p.resident),
+    billing_period: p.bill?.billing_period ?? '—',
+    method: methodLabel(p.payment_method),
+    amount_paid: peso(Number(p.amount ?? 0)),
+    paid_on: fmtDate(p.payment_date),
+    reference: p.reference_number?.trim() || '—',
   }));
 
-  const collected = filtered.reduce((s, b) => s + Number(b.amount_due ?? 0), 0);
+  const collected = filtered.reduce((s, p) => s + Number(p.amount ?? 0), 0);
 
   return {
     category: 'payments',
@@ -435,8 +442,10 @@ async function paymentsReport(
       { key: 'sitio', label: 'Sitio' },
       { key: 'resident', label: 'Resident' },
       { key: 'billing_period', label: 'Billing Period' },
+      { key: 'method', label: 'Method' },
       { key: 'amount_paid', label: 'Amount Paid' },
       { key: 'paid_on', label: 'Paid On' },
+      { key: 'reference', label: 'Reference' },
     ],
     rows,
     summary: [
@@ -445,10 +454,6 @@ async function paymentsReport(
       ...(sitioFilter
         ? [{ label: 'Sitio', value: sitioFilter }]
         : []),
-      {
-        label: 'Note',
-        value: 'Derived from bills marked as paid; dedicated payment records are not yet recorded.',
-      },
     ],
   };
 }
